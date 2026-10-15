@@ -125,8 +125,8 @@ export async function backupManager() {
     await Promise.all([database, archive, path.join(temporary, 'manifest.json')].map(syncPath));
     await syncPath(temporary);
     await fs.rename(temporary, path.join(BACKUP_PATHS.directory, generation));
-    await syncPath(BACKUP_PATHS.directory);
     published = true;
+    await syncPath(BACKUP_PATHS.directory);
     return { ok: true, generation, sourceCommit: release.commit, integrity: 'ok', files: metadata.files.length };
   } finally {
     if (!published) {

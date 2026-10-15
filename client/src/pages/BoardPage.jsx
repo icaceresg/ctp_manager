@@ -14,7 +14,7 @@ import {
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { addDays, parseKey, toKey, todayKey } from '../dates.js';
-import { EmptyState, Modal, Spinner } from '../components/ui.jsx';
+import { EmptyState, LoadError, Modal, Spinner } from '../components/ui.jsx';
 
 const shortDate = (key) => parseKey(key).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '');
 const initials = (name) =>
@@ -444,7 +444,7 @@ function LabelsEditor({ labels, onClose, onSaved }) {
 
 export function BoardPage() {
   const { me, toast } = useApp();
-  const { data: board, loading, reload, setData } = useData(() => api.get('/board'));
+  const { data: board, loading, error, reload, setData } = useData(() => api.get('/board'));
   const [openCard, setOpenCard] = useState(null);
   const [addingIn, setAddingIn] = useState(null);
   const [addingList, setAddingList] = useState(false);
@@ -482,7 +482,7 @@ export function BoardPage() {
   const closeCard = useCallback(() => setOpenCard(null), []);
 
   if (loading && !board) return <Spinner />;
-  if (!board) return null;
+  if (!board) return <div className="page"><h1>Tablero</h1><LoadError error={error} onRetry={reload} busy={loading} /></div>;
 
   const filtering = memberFilter !== 'all' || labelFilter !== 'all';
   const visible = (card) =>
@@ -595,6 +595,7 @@ export function BoardPage() {
           </button>
         </div>
       </div>
+      <LoadError error={error} onRetry={reload} busy={loading} hasData />
       {filtering && <p className="muted small" style={{ marginTop: -10 }}>Con filtros activos no se pueden arrastrar tarjetas.</p>}
 
       <div className="board" onDragOver={listDragOver} onDrop={listDropOn}>

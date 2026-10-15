@@ -4,10 +4,10 @@ import { ArrowDown, ArrowUp, Check, Clapperboard, Copy, Eye, GripVertical, Penci
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { formatDayKey, formatDuration, parseDuration } from '../dates.js';
-import { EmptyState, Spinner } from '../components/ui.jsx';
+import { EmptyState, LoadError, Spinner } from '../components/ui.jsx';
+import { useDebouncedSave } from '../useDebouncedSave.js';
 
 const LAST_KEY = 'mrm:lastRundown';
-const SAVE_DELAY = 600;
 
 function remember(id) {
   try {
@@ -23,43 +23,6 @@ function recall() {
   } catch {
     return null;
   }
-}
-
-/**
- * Guarda con retardo mientras se escribe y fuerza el guardado al salir.
- * Devuelve [schedule(patch), flush()].
- */
-function useDebouncedSave(save, onStatus) {
-  const pending = useRef(null);
-  const timer = useRef(null);
-  const saveRef = useRef(save);
-  saveRef.current = save;
-
-  const flush = useCallback(async () => {
-    clearTimeout(timer.current);
-    const patch = pending.current;
-    pending.current = null;
-    if (!patch) return;
-    onStatus?.('saving');
-    try {
-      await saveRef.current(patch);
-      onStatus?.('saved');
-    } catch (err) {
-      onStatus?.('error', err);
-    }
-  }, [onStatus]);
-
-  const schedule = useCallback(
-    (patch) => {
-      pending.current = { ...pending.current, ...patch };
-      clearTimeout(timer.current);
-      timer.current = setTimeout(flush, SAVE_DELAY);
-    },
-    [flush],
-  );
-
-  useEffect(() => () => void flush(), [flush]);
-  return [schedule, flush];
 }
 
 function fitHeight(el) {
@@ -98,21 +61,28 @@ function AutoTextarea({ value, onChange, onBlur, placeholder, className, ...rest
   );
 }
 
-function PartRow({ part, index, total, start, autoFocus, onStatus, onDurationChange, onMove, onAddBelow, onDelete, dragHandlers, dropState }) {
+function PartRow({ part, index, total, start, autoFocus, onStatus, onSaved, registerSave, onDurationChange, onMove, onAddBelow, onDelete, dragHandlers, dropState }) {
   const { toast } = useApp();
   const [fields, setFields] = useState({ title: part.title, content: part.content, notes: part.notes });
   const [durationText, setDurationText] = useState(formatDuration(part.duration));
   const [dragEnabled, setDragEnabled] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const titleRef = useRef(null);
+  const reportSave = useCallback((state, error) => {
+    setSaveError(state === 'error' ? error : null);
+    onStatus?.(state, error);
+  }, [onStatus]);
 
-  const [schedule, flush] = useDebouncedSave(
+  const [schedule, flush, retrySave] = useDebouncedSave(
     (patch) =>
-      api.patch(`/parts/${part.id}`, patch).catch((err) => {
+      api.patch(`/parts/${part.id}`, patch).then(onSaved).catch((err) => {
         // Si la parte se acaba de borrar, los cambios pendientes ya no importan.
         if (err.status !== 404) throw err;
       }),
-    onStatus,
+    reportSave,
   );
+
+  useEffect(() => registerSave(part.id, flush), [part.id, flush, registerSave]);
 
   useEffect(() => {
     if (autoFocus) titleRef.current?.focus();
@@ -215,6 +185,7 @@ function PartRow({ part, index, total, start, autoFocus, onStatus, onDurationCha
             <AutoTextarea className="part-text" value={fields.notes} placeholder="Plano, música, grafismos, recursos…" onChange={change('notes')} onBlur={flush} />
           </div>
         </div>
+        <LoadError error={saveError} onRetry={retrySave} />
       </div>
     </li>
   );
@@ -263,12 +234,24 @@ function RundownEditor({ id, list, onListChange }) {
   const { toast } = useApp();
   const navigate = useNavigate();
   const [rundown, setRundown] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [readAttempt, setReadAttempt] = useState(0);
   const [meta, setMeta] = useState(null);
   const [mode, setMode] = useState('edit');
   const [status, setStatus] = useState('idle');
+  const [metaError, setMetaError] = useState(null);
   const [focusPartId, setFocusPartId] = useState(null);
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [duplicating, setDuplicating] = useState(false);
+  const partWriters = useRef(new Map());
+  const registerPartSave = useCallback((partId, flush) => {
+    partWriters.current.set(partId, flush);
+    return () => { partWriters.current.delete(partId); };
+  }, []);
+  const partSaved = useCallback(updated => {
+    setRundown(current => current ? { ...current, parts: current.parts.map(part => part.id === updated.id ? updated : part) } : current);
+  }, []);
 
   const onStatus = useCallback(
     (s, err) => {
@@ -282,6 +265,7 @@ function RundownEditor({ id, list, onListChange }) {
   useEffect(() => {
     let cancelled = false;
     setRundown(null);
+    setLoadError(null);
     api
       .get(`/rundowns/${id}`)
       .then((r) => {
@@ -292,15 +276,17 @@ function RundownEditor({ id, list, onListChange }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        toast(err.message, 'error');
-        navigate('/escaleta', { replace: true });
+        setLoadError(err);
       });
     return () => {
       cancelled = true;
     };
-  }, [id, toast, navigate]);
+  }, [id, readAttempt]);
 
-  const [scheduleMeta, flushMeta] = useDebouncedSave((patch) => api.put(`/rundowns/${id}`, patch), onStatus);
+  const [scheduleMeta, flushMeta, retryMeta] = useDebouncedSave((patch) => api.put(`/rundowns/${id}`, patch), (state, error) => {
+    setMetaError(state === 'error' ? error : null);
+    onStatus(state, error);
+  });
 
   const starts = useMemo(() => {
     let acc = 0;
@@ -311,6 +297,7 @@ function RundownEditor({ id, list, onListChange }) {
     });
   }, [rundown]);
 
+  if (loadError) return <div className="page"><h1>No se puede abrir la escaleta</h1><LoadError error={loadError} onRetry={() => setReadAttempt(attempt => attempt + 1)} /><button className="btn" onClick={async () => { await onListChange(); navigate('/escaleta', { replace: true }); }}>Volver a las escaletas</button></div>;
   if (!rundown || !meta) return <Spinner />;
 
   const total = rundown.parts.reduce((s, p) => s + p.duration, 0);
@@ -400,13 +387,18 @@ function RundownEditor({ id, list, onListChange }) {
     return from < to ? 'drop-below' : 'drop-above';
   };
 
+  const flushEditor = async () => (await Promise.all([flushMeta(), ...[...partWriters.current.values()].map(flush => flush())])).every(Boolean);
   const duplicate = async () => {
-    await flushMeta();
-    const copy = await run(() => api.post(`/rundowns/${id}/duplicate`));
-    if (copy) {
-      toast('Escaleta duplicada.');
-      navigate(`/escaleta/${copy.id}`);
-    }
+    if (duplicating) return;
+    setDuplicating(true);
+    try {
+      if (!await flushEditor()) return;
+      const copy = await run(() => api.post(`/rundowns/${id}/duplicate`));
+      if (copy) {
+        toast('Escaleta duplicada.');
+        navigate(`/escaleta/${copy.id}`);
+      }
+    } finally { setDuplicating(false); }
   };
 
   const remove = async () => {
@@ -460,19 +452,20 @@ function RundownEditor({ id, list, onListChange }) {
                 <Check size={13} /> Guardado
               </>
             )}
+            {status === 'error' && <span role="alert">Cambios sin guardar</span>}
           </span>
           <div className="segmented">
             <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
               <Pencil size={13} /> Editar
             </button>
-            <button className={mode === 'view' ? 'active' : ''} onClick={() => setMode('view')}>
+            <button className={mode === 'view' ? 'active' : ''} onClick={async () => { if (await flushEditor()) setMode('view'); }}>
               <Eye size={13} /> Ver
             </button>
           </div>
-          <button className="btn icon" onClick={() => window.print()} title="Imprimir" aria-label="Imprimir">
+          <button className="btn icon" onClick={async () => { if (await flushEditor()) { await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); window.print(); } }} title="Imprimir" aria-label="Imprimir">
             <Printer size={16} />
           </button>
-          <button className="btn icon" onClick={duplicate} title="Duplicar escaleta" aria-label="Duplicar escaleta">
+          <button className="btn icon" disabled={duplicating} onClick={duplicate} title="Duplicar escaleta" aria-label="Duplicar escaleta">
             <Copy size={16} />
           </button>
           <button className="btn icon danger" onClick={remove} title="Eliminar escaleta" aria-label="Eliminar escaleta">
@@ -482,6 +475,7 @@ function RundownEditor({ id, list, onListChange }) {
       </div>
 
       <section className="card rundown-meta">
+        <LoadError error={metaError} onRetry={retryMeta} />
         <input
           className="title-input"
           value={meta.title}
@@ -540,6 +534,8 @@ function RundownEditor({ id, list, onListChange }) {
                 start={starts[i]}
                 autoFocus={p.id === focusPartId}
                 onStatus={onStatus}
+                onSaved={partSaved}
+                registerSave={registerPartSave}
                 onDurationChange={(partId, duration) =>
                   setRundown((r) => ({ ...r, parts: r.parts.map((x) => (x.id === partId ? { ...x, duration } : x)) }))
                 }
@@ -573,10 +569,10 @@ export function RundownPage() {
   const { id } = useParams();
   const { toast } = useApp();
   const navigate = useNavigate();
-  const { data: list, reload } = useData(() => api.get('/rundowns'));
+  const { data: list, loading, error, reload } = useData(() => api.get('/rundowns'));
   const [creating, setCreating] = useState(false);
 
-  if (!list) return <Spinner />;
+  if (!list) return <div className="page"><h1>Escaleta</h1>{loading ? <Spinner /> : <LoadError error={error} onRetry={reload} />}</div>;
 
   if (!id) {
     if (list.length) {
@@ -586,6 +582,7 @@ export function RundownPage() {
     }
     return (
       <div className="page">
+        <LoadError error={error} onRetry={reload} busy={loading} hasData />
         <div className="page-header">
           <div>
             <h1>Escaleta</h1>
@@ -623,5 +620,5 @@ export function RundownPage() {
     );
   }
 
-  return <RundownEditor key={id} id={Number(id)} list={list} onListChange={reload} />;
+  return <><LoadError error={error} onRetry={reload} busy={loading} hasData /><RundownEditor key={id} id={Number(id)} list={list} onListChange={reload} /></>;
 }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {canSendCommand} from '../client/src/operations/model.js';
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-ranked-club-qa-'));
 process.env.DATA_DIR=temporary;process.env.DB_PATH=path.join(temporary,'qa.db');
 const operations=await import('../server/operations.js');
@@ -25,6 +26,11 @@ test('season preparation uses explicit capabilities, admin permissions and sourc
  assert.throws(()=>operations.prepareRankedCommand(admin,{...input,expected_version:2},initial),{status:409});
  const first=operations.prepareRankedCommand(admin,input,initial).command;
  assert.equal(first.expected_version,3);assert.equal(first.status,'pending');
+ assert.equal(first.source_version_current,undefined);
+ assert.equal(canSendCommand(first,true,true),true);
+ const listed=operations.rememberRankedState(initial).commands.find(row=>row.id===first.id);
+ assert.equal(listed.source_version_current,undefined);
+ assert.equal(canSendCommand(listed,true,true),true);
  assert.equal(operations.prepareRankedCommand(admin,input,initial).command.id,first.id);
  assert.equal(operations.bootstrap(admin).commands.some(row=>row.id===first.id),true);
  assert.equal(operations.bootstrap(noAdmin).commands.some(row=>row.id===first.id),false);
@@ -38,12 +44,15 @@ test('future update/cancel targets the scheduled version and blocks after bounda
  assert.throws(()=>operations.prepareRankedCommand(admin,input,{...scheduled,current:{...scheduled.current,ends_at:'2020-01-01T00:00:00Z'}}),{status:409});
  const prepared=operations.prepareRankedCommand(admin,input,scheduled).command;
  assert.equal(prepared.resource_id,scheduled.scheduled.id);assert.equal(prepared.expected_version,2);
+ assert.equal(canSendCommand(prepared,true,true),true);
  operations.cancelCommand(admin,prepared.id,{expected_updated_at:prepared.updated_at});
 });
 test('manual club proposals are private, deduplicate retries and never fabricate official clubs',()=>{
  const club={type:'club.create',payload:{name:'QA Manual Club',tag:'QAMC',leader_id:randomUUID(),reason:'Alta del club con líder registrado y pago externo'}};
  assert.throws(()=>operations.prepareManualClubCommand(noAdmin,club),{status:403});
  const prepared=operations.prepareManualClubCommand(admin,club).command;
+ assert.equal(prepared.source_version_current,undefined);
+ assert.equal(canSendCommand(prepared,true,true),true);
  assert.equal(operations.prepareManualClubCommand(admin,club).command.id,prepared.id);
  assert.throws(()=>operations.prepareManualClubCommand(admin,{...club,payload:{...club.payload,name:'Otra propuesta'}}),{status:409});
  assert.equal(operations.bootstrap(admin).clubs.some(row=>row.id===prepared.target_id),false);

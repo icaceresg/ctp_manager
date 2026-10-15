@@ -4,6 +4,14 @@ Manager es el backoffice de staff, competición y arbitraje. La aplicación cons
 
 Las decisiones oficiales se preparan en Manager y se envían explícitamente al backend CTP, con identidad y permisos del operador. Esto no crea una segunda base competitiva ni permite acceso directo a Supabase desde el navegador. La [matriz funcional](OPERATIONS_IMPLEMENTATION.md) describe los siete bloques implementados, incluidos torneos, inscripciones, sorteo oficial, publicación, horarios e histórico. Requieren desplegar el puente y las migraciones compatibles; véase el [plan de PRE](PRE_RELEASE_2026-10-02.md).
 
+## Estado de PRE verificado el 15 de octubre de 2026
+
+`https://manager.playctp.com` sirve la revisión `b867c885c75abf76a0099584b3515aa5d3df4cba`. Autenticación, enlaces web y puente de operaciones apuntan exclusivamente a `https://pre.playctp.com`. En esta instalación están activos `CTP_AUTH_MODE=ctp`, `CTP_ENABLE_WRITES=true` y `CTP_SYNC_SECONDS=30`; el backend PRE admite las operaciones firmadas. Las propuestas siguen necesitando el envío explícito de administración y un ACK válido, conservando la identidad del autor original.
+
+`OBS_ENABLE_CONTROL=false` y el corte exclusivo de competición continúa con `enforced=false`: no se han retirado las herramientas de gestión existentes de la web CTP. Esta revisión no aplicó migraciones ni modificó producción. Las plantillas de instalación de este documento y de `infra/vps` mantienen deliberadamente las escrituras desactivadas para instalaciones nuevas. No copiar la activación de PRE a otro entorno sin validarlo.
+
+La [recepción QA](MANAGER_PRE_QA_2026-10-15.md) distingue pruebas automatizadas aisladas, flujos reales de PRE y límites de la revisión. El paquete del 2 de octubre citado arriba es histórico, no el estado actual de despliegue.
+
 ## Acceso público con la misma cuenta CTP
 
 En la VPS se usa `CTP_AUTH_MODE=ctp`: el staff entra con **el mismo correo y contraseña de CTP**. No crear administradores ni contraseñas independientes en Manager. GoTrue verifica las credenciales en el servidor y la RPC `manager_link_own_identity` confirma que la cuenta mantiene un rol CTP admitido (`admin` o `referee`) y vincula exclusivamente su propia identidad estable `ctp:<UUID>`. Una cuenta de jugador o una vinculación desactivada no concede acceso.
@@ -90,7 +98,7 @@ Para enviar una solicitud oficial, tras revisión y autorización de despliegue:
 3. Sincronizar para conocer las acciones admitidas por CTP. El administrador revisa la solicitud pendiente y pulsa Enviar. No existe envío automático de comandos.
 4. El adaptador comprueba que el autor original continúa activo y conserva el permiso local; CTP valida además su vinculación, permisos, versión y reglas de negocio.
 
-El envío usa un identificador de idempotencia estable. Ante un timeout no se presupone éxito; un reintento usa el mismo identificador y CTP debe devolver el resultado guardado sin repetir el efecto. Solo un ACK `{applied:true}` con el mismo identificador, tipo y destino se convierte en confirmación local. Las acciones que el puente no anuncie como admitidas permanecen pendientes. Las sanciones oficiales requieren además la migración CTP 070 y sus permisos explícitos.
+El envío usa un identificador de idempotencia estable. Ante un timeout no se presupone éxito; un reintento usa el mismo identificador y CTP debe devolver el resultado guardado sin repetir el efecto. Solo un ACK `{applied:true}` con el mismo identificador, tipo y destino se convierte en confirmación local. Si la primera entrega recibe una denegación definitiva 401/403, se registra como rechazada y no aplicada, y puede descartarse expresamente para corregir la propuesta. Una respuesta posterior no elimina la incertidumbre de un intento anterior ambiguo: ese comando conserva su identidad y exige reconciliación. Las acciones que el puente no anuncie como admitidas permanecen pendientes. Las sanciones oficiales requieren además la migración CTP 070 y sus permisos explícitos.
 
 Las rutas `/api/operations/integration` requieren sesión; sincronizar exige Operaciones o administrador y enviar exige administrador. Las respuestas de estado nunca incluyen URL de conexión privada, tokens o credenciales. El origen público `CTP_WEB_ORIGIN` sirve únicamente para enlaces a la web y es visible: HTTPS o HTTP exclusivamente de loopback para QA local.
 

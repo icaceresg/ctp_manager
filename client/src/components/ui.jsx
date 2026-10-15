@@ -7,6 +7,15 @@ export function Spinner({ size = 16 }) {
   return <LoaderCircle size={size} className="spin" aria-label="Cargando" />;
 }
 
+export function LoadError({ error, onRetry, busy = false, hasData = false }) {
+  if (!error) return null;
+  return <div className="card card-body stack" role="alert">
+    <strong>No se han podido actualizar los datos</strong>
+    <p>{error.message || 'No se puede contactar con el servidor.'}{hasData ? ' Se conserva la última consulta; puede estar desactualizada.' : ''}</p>
+    <div><button type="button" className="btn" disabled={busy} onClick={onRetry}>{busy ? 'Reintentando…' : 'Reintentar'}</button></div>
+  </div>;
+}
+
 // Pila de modales abiertos: Escape solo cierra el de arriba.
 const modalStack = [];
 

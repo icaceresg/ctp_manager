@@ -60,6 +60,37 @@ test('transporte limita respuestas, rechaza redirecciones y no revela secretos r
   }
 });
 
+test('solo club_candidates acepta arrays y mantiene el contrato de respuesta de las demás acciones', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
+  const invoke = (action, data) => createOperationsTransport(config, async () => Response.json({ ok: true, data }))({ action });
+  const candidates = [{ id: '10000000-0000-4000-8000-000000000001', username: 'QA leader' }];
+  assert.deepEqual(await invoke('club_candidates', []), []);
+  assert.deepEqual(await invoke('club_candidates', candidates), candidates);
+  for (const data of [{}, { items: candidates }, null, false, 'players', 1]) {
+    await assert.rejects(invoke('club_candidates', data), { status: 502 });
+  }
+  for (const action of ['snapshot', 'competition', 'command', 'ranked_state', 'guard_state', 'case_context']) {
+    assert.deepEqual(await invoke(action, {}), {});
+    for (const data of [[], candidates, null, false, 'object', 1]) {
+      await assert.rejects(invoke(action, data), { status: 502 });
+    }
+  }
+});
+
+test('un rechazo HTTP de autorización es definitivo y una caída mantiene la incertidumbre', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
+  for (const status of [401, 403]) {
+    const invoke = createOperationsTransport(config, async () => Response.json({ error: token }, { status }));
+    await assert.rejects(invoke({ action: 'command' }), error => error.status === 502 && error.remoteRejected === true && !error.message.includes(token));
+  }
+  for (const status of [409, 500, 503]) {
+    const invoke = createOperationsTransport(config, async () => Response.json({ error: token }, { status }));
+    await assert.rejects(invoke({ action: 'command' }), error => error.remoteRejected !== true && !error.message.includes(token));
+  }
+  const unavailable = createOperationsTransport(config, async () => { throw new TypeError('connection lost'); });
+  await assert.rejects(unavailable({ action: 'command' }), error => error.remoteRejected !== true);
+});
+
 let port, remote, child, mode = 'ok', observed = [], snapshot = {
   generated_at: '2026-09-29T10:00:00Z', supported_actions: { 'stats.review': true, 'club.verify': true, 'discord.retry': true, 'incident.resolve': true, 'incident.reply': true, 'sanction.create': false },
   matches: [{ id: 'match-integration', title: 'A vs B', kind: 'tournament', status: 'live', team_a: { name: 'A' }, team_b: { name: 'B' }, version: 1 }],
@@ -67,7 +98,7 @@ let port, remote, child, mode = 'ok', observed = [], snapshot = {
   clubs: [], deliveries: [],
   competition_cutover_enabled: false,
 };
-let cookie = '', operatorId;
+let cookie = '', operatorId, clubCandidates = [];
 async function api(method, route, body, session = cookie) {
   const response = await fetch(`http://localhost:${port}/api${route}`, { method, headers: { Cookie: session, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const setCookie = response.headers.get('set-cookie');
@@ -99,7 +130,12 @@ before(async () => {
     response.setHeader('Content-Type', 'application/json');
     if (mode === 'outage') { response.statusCode = 503; response.end(JSON.stringify({ error: token })); return; }
     if (mode === 'rejected') { response.statusCode = 422; response.end(JSON.stringify({ ok: false, code: 'invalid_command' })); return; }
+    if (mode === 'unauthenticated' || mode === 'forbidden' || mode === 'self_review' && parsed.action === 'command' && parsed.actor_id === operatorId) {
+      response.statusCode = mode === 'unauthenticated' ? 401 : 403;
+      response.end(JSON.stringify({ ok: false, code: 'forbidden', error: token })); return;
+    }
     if (mode === 'malformed') { response.end(JSON.stringify({ ok: true, data: { matches: 'bad' } })); return; }
+    if (parsed.action === 'club_candidates') { response.end(JSON.stringify({ ok: true, data: clubCandidates })); return; }
     if (parsed.action === 'case_context') { response.end(JSON.stringify({ ok: true, data: { incident_id: parsed.target_id, messages: [{ id: 'message-1', author_name: 'Jugador', text: 'Necesitamos ayuda', created_at: '2026-09-29T10:00:00Z', source: 'ticket', is_staff: false, private_token: token }], next_cursor: null, web_path: '/app/retos/test' } })); return; }
     response.end(JSON.stringify({ ok: true, data: parsed.action === 'snapshot' ? snapshot : { applied: true, command_id: mode === 'wrong_ack' ? 'another-command' : parsed.command_id, type: parsed.type, target_id: parsed.target_id, ...(parsed.type?.startsWith('sanction.') ? { version: 1, source_version: 1 } : {}) } }));
   });
@@ -219,6 +255,33 @@ test('conversación privada usa actor de sesión y solo expone campos permitidos
   assert.equal(observed.length, calls);
 });
 
+test('buscar líderes de club funciona por HTTP, filtra campos privados y controla respuestas inválidas', async () => {
+  snapshot.supported_actions['club.create'] = true;
+  assert.equal((await api('POST', '/operations/integration/sync', {})).status, 200);
+  const route = '/operations/clubs/candidates?query=Leader';
+  const callsBefore = observed.length;
+  assert.equal((await api('GET', route, undefined, '')).status, 401);
+  assert.equal((await api('GET', '/operations/clubs/candidates?query=ab')).status, 400);
+  assert.equal(observed.length, callsBefore);
+  clubCandidates = [];
+  const empty = await api('GET', route);
+  assert.equal(empty.status, 200); assert.deepEqual(empty.data, []);
+  clubCandidates = [{ id: '10000000-0000-4000-8000-000000000001', username: 'QA Leader', email: 'private@example.invalid', provider_secret: token }];
+  const found = await api('GET', route);
+  assert.equal(found.status, 200);
+  assert.deepEqual(found.data, [{ id: clubCandidates[0].id, username: 'QA Leader' }]);
+  assert.equal(observed.at(-1).actor_id, operatorId);
+  assert.equal(observed.at(-1).query, 'Leader');
+  for (const invalid of [{ items: [] }, [{ id: 'not-a-user', username: 'Invalid' }], [{ id: clubCandidates[0].id, username: null }], Array(21).fill(clubCandidates[0])]) {
+    clubCandidates = invalid;
+    const rejected = await api('GET', route);
+    assert.equal(rejected.status, 502);
+    assert.equal(JSON.stringify(rejected.data).includes(token), false);
+  }
+  clubCandidates = [];
+  delete snapshot.supported_actions['club.create'];
+});
+
 test('solo un rechazo definitivo en primer intento permite descartar; tras fallo ambiguo conserva la solicitud', async () => {
   async function prepare(id) {
     mode = 'ok'; snapshot.stats = [{ id, match_id: 'match-integration', status: 'pending', version: 1, players: [] }];
@@ -238,6 +301,65 @@ test('solo un rechazo definitivo en primer intento permite descartar; tras fallo
   const ambiguous = (await api('GET', '/operations/bootstrap')).data.commands.find((c) => c.id === second.id);
   assert.equal(ambiguous.status, 'failed'); assert.equal(ambiguous.attempts, 2);
   assert.equal((await api('POST', `/operations/commands/${second.id}/cancel`, { expected_updated_at: ambiguous.updated_at })).status, 409);
+  mode = 'ok';
+});
+
+test('un primer rechazo de autorización permite descartar y proponer otra revisión con un actor independiente', async () => {
+  const role = (await api('POST', '/roles', { name: 'REVISOR INDEPENDIENTE AUTHZ', staff_kind: 'referee', sections: ['arbitraje'] })).data;
+  const reviewer = (await api('POST', '/users', { username: 'independent-authz', password: 'independent-test-password', role_ids: [role.id] })).data;
+  const reviewerCookie = (await api('POST', '/auth/login', { username: 'independent-authz', password: 'independent-test-password' }, '')).cookie;
+  assert.ok(reviewerCookie);
+  const reviewerActor = (await api('GET', '/operations/bootstrap')).data.staff.find(person => person.id === reviewer.id).integration_actor_id;
+  for (const denial of ['unauthenticated', 'forbidden', 'self_review']) {
+    mode = 'ok';
+    const id = `stat-authz-${denial}`;
+    snapshot.stats = [{ id, match_id: 'match-integration', status: 'pending', version: 1, players: [] }];
+    assert.equal((await api('POST', '/operations/integration/sync', {})).status, 200);
+    let item = (await api('GET', '/operations/bootstrap')).data.stats.find(row => row.id === id);
+    const first = await api('POST', `/operations/stats/${id}/review`, { expected_version: item.version, decision: 'approve', reason: 'Revisión que requiere comprobar la independencia' });
+    assert.equal(first.status, 200);
+    mode = denial;
+    const rejectedResponse = await api('POST', `/operations/integration/commands/${first.data.command.id}/send`, {});
+    assert.equal(rejectedResponse.status, 502);
+    assert.equal(JSON.stringify(rejectedResponse.data).includes(token), false);
+    let state = (await api('GET', '/operations/bootstrap')).data;
+    const rejected = state.commands.find(row => row.id === first.data.command.id);
+    assert.equal(rejected.status, 'rejected'); assert.equal(rejected.attempts, 1);
+    assert.equal(rejected.result.rejected_confirmed, true);
+    assert.equal(state.stats.find(row => row.id === id).status, 'pending');
+    assert.equal((await api('POST', `/operations/commands/${rejected.id}/cancel`, { expected_updated_at: rejected.updated_at })).status, 200);
+    state = (await api('GET', '/operations/bootstrap')).data;
+    item = state.stats.find(row => row.id === id);
+    assert.equal(item.pending_command_id, null);
+    const independent = await api('POST', `/operations/stats/${id}/review`, { expected_version: item.version, decision: 'approve', reason: 'Revisión completada por un árbitro independiente' }, reviewerCookie);
+    assert.equal(independent.status, 200); assert.notEqual(independent.data.command.id, rejected.id);
+    mode = denial === 'self_review' ? 'self_review' : 'ok';
+    const confirmed = await api('POST', `/operations/integration/commands/${independent.data.command.id}/send`, {});
+    assert.equal(confirmed.status, 200); assert.equal(confirmed.data.confirmed, true);
+    assert.equal(observed.at(-1).actor_id, reviewerActor);
+    assert.notEqual(observed.at(-1).actor_id, operatorId);
+    assert.equal((await api('GET', '/operations/bootstrap')).data.stats.find(row => row.id === id).status, 'approved');
+  }
+  mode = 'ok';
+});
+
+test('un rechazo de autorización tras un intento ambiguo no permite borrar ni sustituir el comando', async () => {
+  for (const denial of ['unauthenticated', 'forbidden']) {
+    mode = 'ok';
+    const id = `stat-ambiguous-${denial}`;
+    snapshot.stats = [{ id, match_id: 'match-integration', status: 'pending', version: 1, players: [] }];
+    await api('POST', '/operations/integration/sync', {});
+    const item = (await api('GET', '/operations/bootstrap')).data.stats.find(row => row.id === id);
+    const prepared = (await api('POST', `/operations/stats/${id}/review`, { expected_version: item.version, decision: 'approve', reason: 'Comprobar conservación ante un fallo de conexión' })).data.command;
+    mode = 'outage'; assert.equal((await api('POST', `/operations/integration/commands/${prepared.id}/send`, {})).status, 502);
+    mode = denial; assert.equal((await api('POST', `/operations/integration/commands/${prepared.id}/send`, {})).status, 502);
+    const state = (await api('GET', '/operations/bootstrap')).data;
+    const ambiguous = state.commands.find(row => row.id === prepared.id);
+    assert.equal(ambiguous.status, 'failed'); assert.equal(ambiguous.attempts, 2);
+    assert.equal(ambiguous.result, null);
+    assert.equal((await api('POST', `/operations/commands/${prepared.id}/cancel`, { expected_updated_at: ambiguous.updated_at })).status, 409);
+    assert.equal((await api('POST', `/operations/stats/${id}/review`, { expected_version: state.stats.find(row => row.id === id).version, decision: 'reject', reason: 'Nueva propuesta que no debe sustituir un intento ambiguo' })).status, 409);
+  }
   mode = 'ok';
 });
 

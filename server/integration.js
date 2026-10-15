@@ -86,7 +86,14 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
       });
       if (!response.ok) {
         await response.body?.cancel();
-        if ([401, 403].includes(response.status)) throw integrationError(502, 'CTP ha rechazado las credenciales o los permisos del operador.');
+        if ([401, 403].includes(response.status)) {
+          // An explicit authentication/authorization denial cannot apply the
+          // command. A first-attempt denial can therefore be discarded safely;
+          // an earlier ambiguous attempt must still retain its command ID.
+          const error = integrationError(502, 'CTP ha rechazado las credenciales o los permisos del operador.');
+          error.remoteRejected = true;
+          throw error;
+        }
         if (response.status === 409) throw integrationError(409, 'El estado oficial ha cambiado. Sincroniza y revisa la solicitud.');
         if ([400, 404, 422].includes(response.status)) {
           const error = integrationError(422, 'CTP ha rechazado la solicitud. Revisa el recurso y los datos.');
@@ -119,7 +126,12 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
       }
       let parsed;
       try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw integrationError(502, 'CTP ha devuelto JSON no válido.'); }
-      if (!parsed || parsed.ok !== true || !parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+      // Candidate lookup is the only bridge action whose RPC returns a JSON
+      // array. Keep the object contract for snapshots, queries and commands.
+      const validData = body.action === 'club_candidates'
+        ? Array.isArray(parsed?.data)
+        : parsed?.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data);
+      if (!parsed || parsed.ok !== true || !validData) {
         throw integrationError(502, 'CTP no ha confirmado la solicitud.');
       }
       return parsed.data;

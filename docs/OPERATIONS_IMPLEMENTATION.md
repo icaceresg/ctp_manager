@@ -1,6 +1,8 @@
-# Centro operativo CTP · entrega local
+# Centro operativo CTP
 
-Rama de desarrollo Manager: `codex/manager-development`. El trabajo operativo previo se conserva; esta revisión del 2 de octubre de 2026 delimita Manager frente al Panel de emisión externo. Los cambios de este bloque afectan solo a Manager y no implican despliegue, publicación o activación de otros servicios.
+Estado actualizado el **15 de octubre de 2026** en la rama `codex/manager-flow-qa-20261015`: Manager está desplegado en `https://manager.playctp.com`, conectado exclusivamente a PRE, con escrituras oficiales habilitadas mediante propuesta, envío explícito de administración y ACK. La [recepción QA de PRE](MANAGER_PRE_QA_2026-10-15.md) documenta las pruebas y correcciones de este bloque. OBS permanece desactivado y no se ha activado la exclusividad de gestión competitiva. Producción conserva la landing de espera.
+
+La separación funcional con CTP Panel y las evidencias históricas del 2 de octubre se conservan a continuación. Una prueba antigua o una plantilla de instalación no describen por sí solas el estado de la instalación actual.
 
 ## Propiedad funcional y alcance real
 
@@ -9,14 +11,14 @@ Manager es el backoffice de staff, competición y arbitraje. La web general atie
 | Función | Interfaz responsable | Estado y límite actuales |
 | --- | --- | --- |
 | Participación, equipos, calendario/resultados públicos, subida de evidencias, apertura de disputas y notificaciones | Web CTP general | Continúan en la web de participantes. Este trabajo de Manager no modifica esa web. |
-| Gestión de torneos, inscripciones, formatos y calendario competitivo | Manager | Implementado localmente: formularios de alta/edición, estados, revisión de inscripciones y roster, puntos y seed oficiales, generación/publicación de fases y reprogramación. Consulta y envía comandos al backend CTP compartido; necesita las capacidades de la nueva versión del puente. El calendario editorial no sustituye al calendario competitivo. |
-| Incidencias, revisiones de estadísticas, resoluciones, verificación y disciplina | Manager | Ya existen pantallas y comandos del puente para las acciones descritas abajo. Su uso oficial exige conexión, capacidades anunciadas, operador vinculado, permisos y confirmación del backend; no equivale a gestión remota ya desplegada. |
+| Gestión de torneos, inscripciones, formatos y calendario competitivo | Manager | Implementado y probado contra PRE: alta/edición, revisión de inscripciones, generación y publicación de cruces y reprogramación. Consulta y envía comandos al backend CTP compartido; el backend conserva puntos y seed oficiales. El calendario editorial no sustituye al calendario competitivo. |
+| Incidencias, revisiones de estadísticas, resoluciones, verificación y disciplina | Manager | Pantallas y comandos desplegados y probados contra PRE. Cada decisión exige conexión, capacidad anunciada, operador vinculado, permisos y ACK; la propuesta local no modifica el dato oficial. |
 | Disponibilidad, asignación de árbitros/casters/realizadores, turnos y confirmación del staff | Manager | Planificador semanal, candidatos disponibles, cobertura y filtros; sustitución/reprogramación con motivo, validación de disponibilidad y solapamientos, auditoría y nueva confirmación del asignado. |
 | Contenido, recursos, escaletas, notas y preparación | Manager | Implementado; complementa el trabajo de competición y arbitraje, no define por sí solo el alcance del producto. |
 | Tarjetas en emisión, cámaras, marcador visual y control OBS | CTP Panel | Herramienta externa descrita por el equipo, no verificada aquí. Su conexión de lectura con Manager sigue pendiente. |
 | Datos competitivos, permisos y reglas oficiales | Backend CTP compartido | Una sola fuente para web y Manager. Cada escritura se valida en servidor; SQLite solo mantiene coordinación, comandos y proyecciones. |
 
-Los siete bloques solicitados tienen implementación local en Manager. Su disponibilidad oficial depende de desplegar la versión correspondiente del backend compartido, vincular operadores y verificar las capacidades reales del entorno. La migración del acceso de staff en CTP se valida con el backend: una pantalla de Manager no sustituye permisos ni reglas remotas.
+Los siete bloques solicitados tienen implementación en Manager. La instalación PRE ya se ha comprobado con cuentas de administración, arbitraje y producción; otros entornos requieren validar su despliegue, operadores y capacidades. Una pantalla de Manager no sustituye permisos ni reglas remotas.
 
 ## Áreas operativas
 
@@ -75,13 +77,13 @@ npm.cmd run build
 npm.cmd run serve
 ```
 
-Abrir `http://localhost:3210`. En una instalación nueva aparece el alta del administrador. Los roles y cuentas existentes se conservan: conceder las secciones nuevas desde **Usuarios y roles**. Por ejemplo, Dossier requiere `casters`; Preparación, `realizacion` y acceso a las escaletas que se vayan a editar; personal que marque disponibilidad necesita `disponibilidad`.
+Abrir `http://localhost:3210` para desarrollo. El alta del primer administrador solo corresponde al modo local; el despliegue público usa `CTP_AUTH_MODE=ctp` y la misma cuenta staff de CTP, sin alta local. Los roles y cuentas existentes se conservan: conceder las secciones nuevas desde **Usuarios y roles**. Por ejemplo, Dossier requiere `casters`; Preparación, `realizacion` y acceso a las escaletas que se vayan a editar; personal que marque disponibilidad necesita `disponibilidad`.
 
-En **Competición y staff → Conexión** se ve el estado de la integración y los UUID de operadores que el administrador CTP debe vincular. No se introducen secretos en el navegador.
+En **Competición y staff → Conexión** se ve el estado de la integración y la identidad del operador. El acceso público establece el vínculo propio con CTP al autenticar al staff; las identidades locales de desarrollo requieren su configuración separada. No se introducen secretos del puente en el navegador.
 
-## Activación pendiente
+## Inspección histórica de PRE: 2 de octubre de 2026
 
-La inspección de PRE encontró el historial de migraciones **000–073**, pero la comprobación del esquema real confirmó los cambios de **074–078 ya presentes**. No se deben repetir esas migraciones ni lanzar `db push` basándose solo en el historial. La función `manager-operations`, los cambios nuevos 079–080 y los vínculos de operadores siguen pendientes de despliegue coordinado; no hay una conexión PRE acreditada. La instalación propuesta mantiene inicialmente la gestión de la web existente. El estado y las pruebas sobre una restauración exacta del esquema se detallan en [el paquete de PRE](PRE_RELEASE_2026-10-02.md).
+La inspección inicial encontró el historial de migraciones **000–073**, pero la comprobación del esquema real confirmó los cambios de **074–078 ya presentes**. En esa fecha estaban pendientes el nuevo puente, los cambios 079–080 y los vínculos de operadores; esa observación ya no describe el despliegue actual. No repetir migraciones ni lanzar `db push` basándose solo en aquel historial. El estado y las pruebas sobre una restauración exacta de ese esquema se conservan en [el paquete histórico de PRE](PRE_RELEASE_2026-10-02.md).
 
 La conexión QA local se documenta en [LOCAL_CTP_CONNECTION.md](LOCAL_CTP_CONNECTION.md). Para una instalación remota hay que verificar las migraciones y la Edge Function del entorno CTP elegido, configurar sus secretos, vincular operadores y comprobar el dominio HTTPS de la VPS. La numeración 069/070 corresponde a la referencia histórica del puente y disciplina; comprobar el historial del entorno antes de aplicar cambios. Las escrituras externas permanecen desactivadas por defecto.
 

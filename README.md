@@ -26,7 +26,7 @@ Debe mantenerse un único Panel por emisión. Manager no abre otra instancia del
 - **Decisiones:** revisar propuestas junto a su expediente o desde la bandeja común. Solo administración envía a CTP; no se confunde una solicitud con un cambio aplicado.
 - **Histórico:** búsqueda remota por tipo y fechas, páginas y detalle, incluso fuera de los partidos de la jornada.
 
-Estos bloques están implementados y comprobados localmente. La activación del nuevo puente en **PRE sigue pendiente** según la inspección inicial de este bloque; no se presenta la base de QA como datos oficiales ni como una integración ya desplegada. Consulta el estado y los límites en [OPERATIONS_IMPLEMENTATION.md](docs/OPERATIONS_IMPLEMENTATION.md).
+Estado verificado el **15 de octubre de 2026**: [Manager](https://manager.playctp.com) está conectado a **PRE**, con acceso mediante las cuentas de staff de CTP y escrituras habilitadas. Cada cambio oficial requiere una propuesta, envío explícito de administración y confirmación del backend; abrir o guardar un formulario no aplica la decisión. La [recepción QA de PRE](docs/MANAGER_PRE_QA_2026-10-15.md) recoge las pruebas multicuenta, las correcciones y sus límites. Producción conserva la landing de espera y OBS permanece desactivado.
 
 ### Calendario de contenido
 - Vista **mensual** y **semanal**. Haz clic en un día para crear una publicación o arrastra una tarjeta para cambiarla de día.

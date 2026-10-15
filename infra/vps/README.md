@@ -12,6 +12,11 @@ El acceso con la misma cuenta CTP, el puente firmado, DNS, TLS y los flujos real
 deben comprobarse antes de abrirlo al equipo. Véase también
 [DEPLOYMENT.md](../../docs/DEPLOYMENT.md).
 
+La instalación PRE se verificó el **15 de octubre de 2026**, con escrituras
+habilitadas y OBS desactivado. Véanse el [estado desplegado](../../docs/DEPLOYMENT.md#estado-de-pre-verificado-el-15-de-octubre-de-2026)
+y la [recepción QA](../../docs/MANAGER_PRE_QA_2026-10-15.md). Este paquete mantiene
+`CTP_ENABLE_WRITES=false` como valor inicial para instalaciones nuevas.
+
 ## Runtime, release y estado
 
 | Ruta | Propiedad y contenido |

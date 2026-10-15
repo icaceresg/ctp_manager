@@ -76,7 +76,10 @@ export function canSendCommand(command, writeEnabled, supported, now = Date.now(
   if (command.status === 'sending' && now - command.updated_at < 30000) return false;
   // A lost ACK can remove the source from the pending feed. The same command ID
   // must remain retryable so CTP can return its already-committed decision.
-  if (command.attempts === 0 && (command.source_available === false || (command.type !== 'sanction.create' && command.source_version_current !== null && command.source_version_current !== command.expected_version))) return false;
+  // Fresh proposals and the Ranked command list may omit source metadata.
+  // Only a known integer revision can prove that a first attempt is stale;
+  // the server independently revalidates the resource and actor before sending.
+  if (command.attempts === 0 && (command.source_available === false || (command.type !== 'sanction.create' && Number.isInteger(command.source_version_current) && command.source_version_current !== command.expected_version))) return false;
   return true;
 }
 

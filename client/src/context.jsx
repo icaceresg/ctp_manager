@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import { canAccess } from '../../shared/access.js';
+import { createLatestLoader } from './latestLoader.js';
 
 const AppContext = createContext(null);
 
@@ -64,23 +65,33 @@ export function useData(loader, deps = []) {
   const { version, toast } = useApp();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const loaderRef = useRef(loader);
   loaderRef.current = loader;
-
-  const reload = useCallback(async () => {
-    try {
-      setData(await loaderRef.current());
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      setLoading(false);
+  const publishRef = useRef(null);
+  publishRef.current = (event, value) => {
+    if (event === 'start') { setLoading(true); setError(null); }
+    if (event === 'success') setData(value);
+    if (event === 'error') {
+      setError(value);
+      if ([401, 403].includes(value.status)) setData(null);
+      toast(value.message, 'error');
     }
+    if (event === 'finish') setLoading(false);
+  };
+  const requests = useRef(null);
+  if (!requests.current) requests.current = createLatestLoader((...event) => publishRef.current(...event));
+
+  const reload = useCallback(() => requests.current.run(() => loaderRef.current()), [
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, ...deps]);
+    ...deps,
+  ]);
 
   useEffect(() => {
+    requests.current.activate();
     reload();
+    return () => requests.current.dispose();
   }, [reload, version]);
 
-  return { data, loading, reload, setData };
+  return { data, loading, error, reload, setData };
 }

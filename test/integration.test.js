@@ -60,6 +60,23 @@ test('transporte limita respuestas, rechaza redirecciones y no revela secretos r
   }
 });
 
+test('solo club_candidates acepta arrays y mantiene el contrato de respuesta de las demás acciones', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
+  const invoke = (action, data) => createOperationsTransport(config, async () => Response.json({ ok: true, data }))({ action });
+  const candidates = [{ id: '10000000-0000-4000-8000-000000000001', username: 'QA leader' }];
+  assert.deepEqual(await invoke('club_candidates', []), []);
+  assert.deepEqual(await invoke('club_candidates', candidates), candidates);
+  for (const data of [{}, { items: candidates }, null, false, 'players', 1]) {
+    await assert.rejects(invoke('club_candidates', data), { status: 502 });
+  }
+  for (const action of ['snapshot', 'competition', 'command', 'ranked_state', 'guard_state', 'case_context']) {
+    assert.deepEqual(await invoke(action, {}), {});
+    for (const data of [[], candidates, null, false, 'object', 1]) {
+      await assert.rejects(invoke(action, data), { status: 502 });
+    }
+  }
+});
+
 let port, remote, child, mode = 'ok', observed = [], snapshot = {
   generated_at: '2026-09-29T10:00:00Z', supported_actions: { 'stats.review': true, 'club.verify': true, 'discord.retry': true, 'incident.resolve': true, 'incident.reply': true, 'sanction.create': false },
   matches: [{ id: 'match-integration', title: 'A vs B', kind: 'tournament', status: 'live', team_a: { name: 'A' }, team_b: { name: 'B' }, version: 1 }],
@@ -67,7 +84,7 @@ let port, remote, child, mode = 'ok', observed = [], snapshot = {
   clubs: [], deliveries: [],
   competition_cutover_enabled: false,
 };
-let cookie = '', operatorId;
+let cookie = '', operatorId, clubCandidates = [];
 async function api(method, route, body, session = cookie) {
   const response = await fetch(`http://localhost:${port}/api${route}`, { method, headers: { Cookie: session, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const setCookie = response.headers.get('set-cookie');
@@ -100,6 +117,7 @@ before(async () => {
     if (mode === 'outage') { response.statusCode = 503; response.end(JSON.stringify({ error: token })); return; }
     if (mode === 'rejected') { response.statusCode = 422; response.end(JSON.stringify({ ok: false, code: 'invalid_command' })); return; }
     if (mode === 'malformed') { response.end(JSON.stringify({ ok: true, data: { matches: 'bad' } })); return; }
+    if (parsed.action === 'club_candidates') { response.end(JSON.stringify({ ok: true, data: clubCandidates })); return; }
     if (parsed.action === 'case_context') { response.end(JSON.stringify({ ok: true, data: { incident_id: parsed.target_id, messages: [{ id: 'message-1', author_name: 'Jugador', text: 'Necesitamos ayuda', created_at: '2026-09-29T10:00:00Z', source: 'ticket', is_staff: false, private_token: token }], next_cursor: null, web_path: '/app/retos/test' } })); return; }
     response.end(JSON.stringify({ ok: true, data: parsed.action === 'snapshot' ? snapshot : { applied: true, command_id: mode === 'wrong_ack' ? 'another-command' : parsed.command_id, type: parsed.type, target_id: parsed.target_id, ...(parsed.type?.startsWith('sanction.') ? { version: 1, source_version: 1 } : {}) } }));
   });
@@ -217,6 +235,33 @@ test('conversación privada usa actor de sesión y solo expone campos permitidos
   const calls = observed.length;
   assert.equal((await api('GET', '/operations/incidents/incident-context/context', undefined, caster)).status, 403);
   assert.equal(observed.length, calls);
+});
+
+test('buscar líderes de club funciona por HTTP, filtra campos privados y controla respuestas inválidas', async () => {
+  snapshot.supported_actions['club.create'] = true;
+  assert.equal((await api('POST', '/operations/integration/sync', {})).status, 200);
+  const route = '/operations/clubs/candidates?query=Leader';
+  const callsBefore = observed.length;
+  assert.equal((await api('GET', route, undefined, '')).status, 401);
+  assert.equal((await api('GET', '/operations/clubs/candidates?query=ab')).status, 400);
+  assert.equal(observed.length, callsBefore);
+  clubCandidates = [];
+  const empty = await api('GET', route);
+  assert.equal(empty.status, 200); assert.deepEqual(empty.data, []);
+  clubCandidates = [{ id: '10000000-0000-4000-8000-000000000001', username: 'QA Leader', email: 'private@example.invalid', provider_secret: token }];
+  const found = await api('GET', route);
+  assert.equal(found.status, 200);
+  assert.deepEqual(found.data, [{ id: clubCandidates[0].id, username: 'QA Leader' }]);
+  assert.equal(observed.at(-1).actor_id, operatorId);
+  assert.equal(observed.at(-1).query, 'Leader');
+  for (const invalid of [{ items: [] }, [{ id: 'not-a-user', username: 'Invalid' }], [{ id: clubCandidates[0].id, username: null }], Array(21).fill(clubCandidates[0])]) {
+    clubCandidates = invalid;
+    const rejected = await api('GET', route);
+    assert.equal(rejected.status, 502);
+    assert.equal(JSON.stringify(rejected.data).includes(token), false);
+  }
+  clubCandidates = [];
+  delete snapshot.supported_actions['club.create'];
 });
 
 test('solo un rechazo definitivo en primer intento permite descartar; tras fallo ambiguo conserva la solicitud', async () => {

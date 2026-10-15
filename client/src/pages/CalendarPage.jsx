@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { PLATFORMS, PLATFORM_IDS, STATUSES } from '../../../shared/catalog.js';
 import { WEEKDAYS_SHORT, addDays, formatMonth, isSameDay, parseKey, startOfDay, startOfWeek, toKey, todayKey } from '../dates.js';
-import { OwnerBadge, PlatformIcon, PlatformList, ResourceProgress, StatusBadge } from '../components/ui.jsx';
+import { LoadError, OwnerBadge, PlatformIcon, PlatformList, ResourceProgress, StatusBadge } from '../components/ui.jsx';
 
 const VIEW_KEY = 'mrm:calendarView';
 const MAX_CHIPS = 3;
@@ -122,11 +122,19 @@ export function CalendarPage() {
   const fromKey = toKey(range.start);
   const toKeyExclusive = toKey(addDays(range.start, range.days));
 
-  const { data: contents } = useData(() => api.get(`/contents?from=${fromKey}&to=${toKeyExclusive}`), [fromKey, toKeyExclusive]);
-  const { data: ideas } = useData(() => api.get('/contents?unscheduled=1'));
+  const contentsRequest = useData(() => api.get(`/contents?from=${fromKey}&to=${toKeyExclusive}`), [fromKey, toKeyExclusive]);
+  const ideasRequest = useData(() => api.get('/contents?unscheduled=1'));
   // Las escaletas solo se muestran a quien tiene acceso a esa sección.
-  const { data: rundowns } = useData(() => (can('escaleta') ? api.get('/rundowns') : []));
-  const { data: owners } = useData(() => api.get('/owners'));
+  const rundownsRequest = useData(() => (can('escaleta') ? api.get('/rundowns') : []));
+  const ownersRequest = useData(() => api.get('/owners'));
+  const { data: contents } = contentsRequest;
+  const { data: ideas } = ideasRequest;
+  const { data: rundowns } = rundownsRequest;
+  const { data: owners } = ownersRequest;
+  const requests = [contentsRequest, ideasRequest, rundownsRequest, ownersRequest];
+  const loadError = requests.find(request => request.error)?.error;
+  const refreshing = requests.some(request => request.loading);
+  const retry = () => Promise.allSettled(requests.map(request => request.reload()));
 
   const matches = (c) =>
     (statusFilter === 'all' || c.status === statusFilter) &&
@@ -214,7 +222,9 @@ export function CalendarPage() {
         </button>
       </div>
 
-      <div className="calendar-layout">
+      <LoadError error={loadError} onRetry={retry} busy={refreshing} hasData={contents !== null || ideas !== null} />
+      {refreshing && <p className="muted small" role="status">Actualizando calendario…</p>}
+      <div className="calendar-layout" aria-busy={refreshing}>
         <div className="card calendar-card">
           <div className="card-header cal-toolbar">
             <div className="row" style={{ gap: 4 }}>

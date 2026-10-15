@@ -3,7 +3,7 @@ import { CalendarCog, CircleCheck, CircleX, Clapperboard, Plus, Trash2, User, Us
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { capitalize, parseKey, todayKey } from '../dates.js';
-import { EmptyState, Modal, Spinner } from '../components/ui.jsx';
+import { EmptyState, LoadError, Modal, Spinner } from '../components/ui.jsx';
 
 const STATUS_LABEL = { disponible: 'Disponible', no_disponible: 'No disponible' };
 const NEXT_STATUS = { none: 'disponible', disponible: 'no_disponible', no_disponible: null };
@@ -271,7 +271,7 @@ function TeamTable({ groups, users, entries, me, events, onSave }) {
 
 export function AvailabilityPage() {
   const { me, can, toast } = useApp();
-  const { data, loading, setData } = useData(() => api.get('/availability'));
+  const { data, loading, error, reload, setData } = useData(() => api.get('/availability'));
   // Directos programados (escaletas) de esos días, si el usuario puede verlas.
   const { data: rundowns } = useData(() => (can('escaleta') ? api.get('/rundowns') : []));
   const [view, setView] = useState(null);
@@ -312,7 +312,7 @@ export function AvailabilityPage() {
   );
 
   if (loading && !data) return <Spinner />;
-  if (!data) return null;
+  if (!data) return <div className="page"><h1>Disponibilidad</h1><LoadError error={error} onRetry={reload} busy={loading} /></div>;
 
   const effectiveView = view || (data.me_in_team ? 'mine' : 'team');
   const answered = data.days.filter((d) => entries.has(cellKey(me.id, d.date))).length;
@@ -344,6 +344,7 @@ export function AvailabilityPage() {
         </div>
       </div>
 
+      <LoadError error={error} onRetry={reload} busy={loading} hasData />
       {effectiveView === 'mine' && data.days.length > 0 && (
         <div className="card card-body stack" style={{ gap: 8 }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>

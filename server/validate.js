@@ -13,8 +13,12 @@ export function text(value, { field, max = 20000, required = false } = {}) {
 export function date(value) {
   if (value === undefined || value === null || value === '') return null;
   const s = String(value);
-  const d = new Date(`${s}T00:00:00`);
-  if (!DATE_RE.test(s) || Number.isNaN(d.getTime())) throw new HttpError(400, 'Fecha no válida.');
+  // Parse in UTC and round-trip every component: Date otherwise accepts and
+  // normalizes impossible calendar days (for example 30 February).
+  const d = new Date(`${s}T00:00:00.000Z`);
+  if (!DATE_RE.test(s) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) {
+    throw new HttpError(400, 'Fecha no válida.');
+  }
   return s;
 }
 

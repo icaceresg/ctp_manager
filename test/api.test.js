@@ -625,3 +625,19 @@ test('listas: crear, renombrar, reordenar y borrar (con sus tarjetas)', async ()
   const labels = (await dire('PATCH', `/board/labels/${board.labels[0].id}`, { name: 'Muy urgente' })).data;
   assert.equal(labels[0].name, 'Muy urgente');
 });
+
+test('fechas imposibles se rechazan por HTTP sin cambiar contenido, escaletas ni eventos', async () => {
+  const created = await api('POST', '/contents', { title: 'QA fecha válida', date: '2024-02-29' });
+  assert.equal(created.status, 201); assert.equal(created.data.date, '2024-02-29');
+  const contentId = created.data.id;
+  try {
+    for (const invalid of ['2026-02-30', '2026-04-31', '1900-02-29']) {
+      assert.equal((await api('POST', '/contents', { title: 'Fecha imposible', date: invalid })).status, 400);
+      assert.equal((await api('PATCH', `/contents/${contentId}`, { date: invalid })).status, 400);
+      assert.equal((await api('GET', `/contents?from=${invalid}`)).status, 400);
+      assert.equal((await api('POST', '/rundowns', { title: 'Escaleta imposible', date: invalid })).status, 400);
+      assert.equal((await api('POST', '/availability/days', { date: invalid, event: 'Evento imposible' })).status, 400);
+    }
+    assert.equal((await api('GET', `/contents/${contentId}`)).data.date, '2024-02-29');
+  } finally { assert.equal((await api('DELETE', `/contents/${contentId}`)).status, 200); }
+});

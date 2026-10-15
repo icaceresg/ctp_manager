@@ -119,7 +119,12 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
       }
       let parsed;
       try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw integrationError(502, 'CTP ha devuelto JSON no válido.'); }
-      if (!parsed || parsed.ok !== true || !parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+      // Candidate lookup is the only bridge action whose RPC returns a JSON
+      // array. Keep the object contract for snapshots, queries and commands.
+      const validData = body.action === 'club_candidates'
+        ? Array.isArray(parsed?.data)
+        : parsed?.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data);
+      if (!parsed || parsed.ok !== true || !validData) {
         throw integrationError(502, 'CTP no ha confirmado la solicitud.');
       }
       return parsed.data;

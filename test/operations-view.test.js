@@ -45,3 +45,16 @@ test('a lost ACK remains recoverable after the source leaves the pending feed', 
   assert.equal(canSendCommand(command,true,false),false);
   assert.equal(canSendCommand({...command,source_available:true,source_version_current:2,attempts:0},true,true),false);
 });
+
+test('fresh Ranked and club proposals remain sendable without optional source metadata', () => {
+  for (const type of ['ranked.season.schedule', 'ranked.season.update', 'ranked.season.cancel', 'club.create']) {
+    const command = { type, status: 'pending', attempts: 0, expected_version: type === 'club.create' ? 0 : 3 };
+    for (const metadata of [{}, { source_version_current: null }, { source_version_current: undefined }, { source_available: true, source_version_current: command.expected_version }]) {
+      assert.equal(canSendCommand({ ...command, ...metadata }, true, true), true, `${type} valid metadata`);
+    }
+    assert.equal(canSendCommand({ ...command, source_version_current: command.expected_version + 1 }, true, true), false, `${type} stale version`);
+    assert.equal(canSendCommand({ ...command, source_available: false }, true, true), false, `${type} unavailable source`);
+    assert.equal(canSendCommand(command, false, true), false);
+    assert.equal(canSendCommand(command, true, false), false);
+  }
+});

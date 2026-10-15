@@ -126,3 +126,99 @@ test('volver a importar no duplica y --actualizar respeta lo marcado en la app',
   const plantilla = query("SELECT done FROM resources WHERE content_id = ? AND text LIKE 'Plantilla%'", id);
   assert.equal(plantilla[0].done, 1, 'pero no desmarca lo que ya estaba listo');
 });
+
+test('importa las filas libres añadidas a mano sin seguir las columnas', async () => {
+  // Otra descarga del mismo archivo: el " (2)" no cuenta para reconocer las piezas.
+  const libre = path.join(dir, 'Calendario_Prueba (2).xlsx');
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('3_Calendario');
+  ws.getRow(4).values = [
+    'Nº', 'Realizado', 'Fecha', 'Hora', 'Pieza', 'Evento', 'Season', 'T', 'Entrega a revisión', 'Redes',
+    'Contenido / brief', 'CTA', 'Formatos a exportar', 'Plantilla master', 'Ayuda Envato (principal)',
+    'Ayuda Envato (alternativa)', 'Responsable', 'Estado',
+  ];
+  const set = (r, cells) => Object.entries(cells).forEach(([col, value]) => (ws.getRow(r).getCell(Number(col)).value = value));
+  set(5, { 1: 1, 3: utc(2026, 11, 4), 5: 'ANUNCIO · CUP #01', 6: 'CUP01' }); // ya importada
+  // Sin Nº, con el texto en "Evento", el CTA al lado y el resto desplazado.
+  set(6, {
+    3: utc(2026, 10, 14), 4: '15:00 Y 21:00', 6: 'Presentación del equipo', 7: 'Seguir CTP', 9: 'CARTEL MIGUEL',
+    10: { text: { richText: [{ text: 'post de instagram' }] }, hyperlink: 'https://elements.envato.com/x-PMC?_gl=abc' },
+    11: 'd', 12: 'Diseño', 13: '🟡 EN REVISIÓN',
+  });
+  // Con Nº pero sin código de evento.
+  set(7, {
+    1: 7, 2: '☐', 3: utc(2026, 10, 18), 4: excelTime(16, 0), 6: 'Cuenta atrás',
+    9: { text: 'cronometro HECHO', hyperlink: 'https://drive.google.com/file/d/abc/view?usp=drive_link' },
+    10: '#13 Story Template', 11: 'RRSS', 12: '🔴 NO LISTO',
+  });
+  set(8, { 4: excelTime(20, 0), 6: 'Resubir cartel del modo ranked' }); // sin fecha
+  await wb.xlsx.writeFile(libre);
+
+  const run = () =>
+    execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/import-excel.js', libre], {
+      cwd: root,
+      env: { ...process.env, DATA_DIR: dataDir },
+      encoding: 'utf8',
+    });
+  const out = run();
+  assert.match(out, /4 piezas encontradas \(3 en filas libres\)/);
+  assert.match(out, /Creadas: 3 · Actualizadas: 0 · Ya importadas \(sin tocar\): 1/);
+
+  const [equipo] = query("SELECT * FROM contents WHERE title = 'Presentación del equipo'");
+  assert.equal(equipo.date, '2026-10-14');
+  assert.equal(equipo.time, '15:00');
+  assert.equal(equipo.status, 'revision');
+  assert.equal(equipo.owner, 'Diseño');
+  assert.equal(equipo.description, 'CTA: Seguir CTP');
+  assert.match(equipo.notes, /Hora en el Excel: 15:00 Y 21:00/);
+  assert.match(equipo.notes, /Fila 6 del calendario, añadida a mano/);
+  assert.deepEqual(
+    query('SELECT text FROM resources WHERE content_id = ? ORDER BY position', equipo.id).map((r) => r.text),
+    ['CARTEL MIGUEL', 'post de instagram (https://elements.envato.com/x-PMC)'],
+  );
+
+  const [cuenta] = query("SELECT * FROM contents WHERE source_ref = 'excel:Calendario_Prueba#7'");
+  assert.equal(cuenta.title, 'Cuenta atrás');
+  assert.equal(cuenta.time, '16:00');
+  assert.equal(cuenta.owner, 'RRSS');
+  const recursos = query('SELECT text, done FROM resources WHERE content_id = ? ORDER BY position', cuenta.id);
+  assert.deepEqual(recursos.map((r) => ({ ...r })), [
+    { text: 'cronometro HECHO (https://drive.google.com/file/d/abc/view)', done: 1 },
+    { text: 'Envato: #13 Story Template', done: 0 },
+  ]);
+
+  const [idea] = query("SELECT * FROM contents WHERE title = 'Resubir cartel del modo ranked'");
+  assert.equal(idea.date, null, 'sin fecha queda como idea');
+  assert.match(idea.notes, /Hora en el Excel: 20:00/);
+
+  assert.match(run(), /Creadas: 0 · Actualizadas: 0 · Ya importadas \(sin tocar\): 4/);
+});
+
+test('--json guarda las tarjetas y import-json.js las importa en otra base de datos', () => {
+  const json = path.join(dir, 'tarjetas.json');
+  const otherData = path.join(dir, 'servidor');
+  const out = runImport(`--json=${json}`);
+  assert.match(out, /Tarjetas guardadas/);
+  const data = JSON.parse(fs.readFileSync(json, 'utf8'));
+  assert.equal(data.refBase, 'excel:Calendario_Prueba');
+  assert.equal(data.cards.length, 2);
+
+  // Como en el servidor: se ejecuta desde otra carpeta, indicando dónde está la app.
+  const script = path.join(root, 'scripts', 'import-json.js');
+  const importJson = (...flags) =>
+    execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', script, json, `--app=${root}`, ...flags], {
+      cwd: dir,
+      env: { ...process.env, DATA_DIR: otherData },
+      encoding: 'utf8',
+    });
+  assert.match(importJson('--prueba'), /Se crearían: 2/);
+  assert.match(importJson(), /Creadas: 2/);
+  assert.match(importJson(), /Ya importadas \(sin tocar\): 2/);
+  const db = new DatabaseSync(path.join(otherData, 'myredesmanager.db'), { readOnly: true });
+  try {
+    const refs = db.prepare('SELECT source_ref FROM contents ORDER BY source_ref').all().map((r) => r.source_ref);
+    assert.deepEqual(refs, ['excel:Calendario_Prueba#1', 'excel:Calendario_Prueba#2']);
+  } finally {
+    db.close();
+  }
+});

@@ -123,7 +123,11 @@ npm run importar -- "C:\ruta\CTP_Calendario_Contenido_2026_27.xlsx" --prueba
 - **Evento, Season, T y Entrega a revisión** → notas.
 - **Plantilla master, Envato y cada formato a exportar** → recursos necesarios (marcados como listos si la pieza tenía "Realizado ☑").
 
-Volver a importar el mismo archivo no duplica nada: solo añade las piezas nuevas. Con `--actualizar` también sobrescribe las ya importadas con lo que diga el Excel, pero sin desmarcar los recursos que ya marcaste como listos en la app.
+Volver a importar el mismo archivo no duplica nada: solo añade las piezas nuevas. Con `--actualizar` también sobrescribe las ya importadas con lo que diga el Excel, pero sin desmarcar los recursos que ya marcaste como listos en la app. El " (3)" que añade el navegador a una nueva descarga no cuenta: esa versión actualiza las mismas tarjetas.
+
+También entran las **filas libres** que se añaden a mano sin seguir las columnas (sin Nº, o con texto en *Evento* en vez de un código): la pieza o el texto de *Evento* da el título y la descripción, y el resto de celdas se reparte por su contenido (estado, responsable, plantillas de Envato, enlaces y encargos → recursos). Entran sin redes; las que no tienen fecha quedan como ideas.
+
+En un servidor donde la app va sin `exceljs`, lee el Excel en tu ordenador con `--json=tarjetas.json`, copia ese JSON con `scripts/import-json.js` y `scripts/import-cards.js` al servidor e impórtalo con el node de la app: `node import-json.js tarjetas.json --app=/ruta/de/la/app [--prueba]` (con `DATA_DIR` apuntando a la carpeta de datos).
 
 ## Tus datos
 

@@ -9,6 +9,7 @@ const dateTime = (ts) => (ts ? new Date(ts).toLocaleString('es-ES', { dateStyle:
 
 function UserModal({ user, roles, onClose, onSaved }) {
   const { me, toast, onMeChange } = useApp();
+  const ctp = me.auth_mode === 'ctp';
   const editing = Boolean(user);
   const self = user?.id === me.id;
   const [form, setForm] = useState({
@@ -28,7 +29,7 @@ function UserModal({ user, roles, onClose, onSaved }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const body = { ...form };
+      const body = ctp ? { role_ids: form.role_ids, active: form.active } : { ...form };
       if (editing && !body.password) delete body.password;
       if (editing) await api.patch(`/users/${user.id}`, body);
       else await api.post('/users', body);
@@ -60,6 +61,8 @@ function UserModal({ user, roles, onClose, onSaved }) {
     <Modal title={editing ? `Editar ${user.username}` : 'Nuevo usuario'} onClose={onClose}>
       <form onSubmit={save}>
         <div className="modal-body stack">
+          {ctp && <p className="muted">Cuenta de CTP. Aquí solo se asignan secciones y acceso a Manager; su identidad y autoridad se comprueban en CTP.</p>}
+          {!ctp && <>
           <div className="field">
             <label htmlFor="u-name">Nombre</label>
             <input id="u-name" className="input" value={form.name} maxLength={80} onChange={(e) => set('name')(e.target.value)} autoFocus />
@@ -92,16 +95,17 @@ function UserModal({ user, roles, onClose, onSaved }) {
               Mínimo 8 caracteres. Pásasela a la persona por un canal privado; podrá cambiarla en "Mi cuenta".
             </span>
           </div>
+          </>}
 
           <div className="field">
             <span className="label">Roles</span>
-            <label className="checkbox role-option admin">
+            {!ctp && <label className="checkbox role-option admin">
               <input type="checkbox" checked={form.is_admin} disabled={self} onChange={(e) => set('is_admin')(e.target.checked)} />
               <span>
                 <strong>Administrador</strong>
                 <span className="hint">Ve todas las secciones y gestiona usuarios y roles.</span>
               </span>
-            </label>
+            </label>}
             {roles.filter((r) => STAFF_KINDS.some((kind) => kind.id === r.staff_kind)).map((r) => (
               <label key={r.id} className="checkbox role-option">
                 <input type="checkbox" checked={form.role_ids.includes(r.id)} onChange={() => toggleRole(r.id)} />
@@ -127,7 +131,7 @@ function UserModal({ user, roles, onClose, onSaved }) {
           )}
         </div>
         <div className="modal-footer">
-          {editing && !self && (
+          {editing && !self && !ctp && (
             <button type="button" className="btn ghost danger" onClick={remove} disabled={busy}>
               <Trash2 size={15} /> Borrar
             </button>
@@ -152,9 +156,9 @@ function UsersTab({ users, roles, reload }) {
   return (
     <>
       <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn primary" onClick={() => setModal({})}>
+        {me.auth_mode === 'ctp' ? <p className="muted">El staff aparece al entrar con su cuenta CTP. La administración de cuentas se realiza en CTP.</p> : <button className="btn primary" onClick={() => setModal({})}>
           <UserPlus size={16} /> Nuevo usuario
-        </button>
+        </button>}
       </div>
       <div className="card table-card">
         <table className="data-table">

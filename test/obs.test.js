@@ -101,6 +101,8 @@ async function fakeObs({ missing = false, mismatch = false, rejectPassword = fal
     socket.write(frame({ op: 0, d: { rpcVersion: 1, authentication: { salt: 'salt', challenge: 'challenge' } } }));
     let buffer = Buffer.alloc(0);
     socket.on('data', (chunk) => {
+      // A close acknowledgement can arrive after the fixture has ended its side.
+      if (socket.writableEnded || socket.destroyed) return;
       buffer = Buffer.concat([buffer, chunk]);
       while (buffer.length >= 2) {
         const opcode = buffer[0] & 0x0f; let length = buffer[1] & 127, offset = 2;

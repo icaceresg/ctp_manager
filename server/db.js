@@ -197,6 +197,15 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS contents_source_ref ON contents(sourc
 
 // Cada sesión pertenece a un usuario; las de la versión de un solo usuario ya no valen.
 addColumn('sessions', 'user_id', 'INTEGER REFERENCES users(id) ON DELETE CASCADE');
+addColumn('users', 'ctp_user_id', 'TEXT');
+addColumn('users', 'ctp_role', "TEXT NOT NULL DEFAULT ''");
+addColumn('sessions', 'auth_mode', "TEXT NOT NULL DEFAULT 'local'");
+addColumn('sessions', 'ctp_tokens', 'TEXT');
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_ctp_identity ON users(ctp_user_id) WHERE ctp_user_id IS NOT NULL;
+  CREATE TABLE IF NOT EXISTS operation_operator_identities (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    external_id TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL
+  );`);
 db.prepare('DELETE FROM sessions WHERE user_id IS NULL').run();
 
 // Antes había una única contraseña: pasa a ser la del usuario "admin".

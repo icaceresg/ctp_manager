@@ -1,6 +1,6 @@
 // Gestión de usuarios y roles (solo administradores).
 import { db, tx } from './db.js';
-import { HttpError, describeUser, hashPassword, validatePassword, validateUsername } from './auth.js';
+import { HttpError, describeUser, hashPassword, validatePassword, validateUsername, CTP_AUTH_ENABLED } from './auth.js';
 import * as v from './validate.js';
 import { SECTION_IDS, STAFF_KINDS } from '../shared/access.js';
 
@@ -10,10 +10,11 @@ function serializeUser(u) {
   const { roles } = describeUser(u);
   return {
     id: u.id,
-    username: u.username,
+    username: u.ctp_user_id ? u.name : u.username,
     name: u.name,
     is_admin: Boolean(u.is_admin),
     active: Boolean(u.active),
+    ...(CTP_AUTH_ENABLED ? { auth_mode: 'ctp', ctp_user_id: u.ctp_user_id, ctp_role: u.ctp_role } : {}),
     roles,
     created_at: u.created_at,
     last_login_at: u.last_login_at,
@@ -31,7 +32,7 @@ const byName = (a, b) => (a.name || a.username).localeCompare(b.name || b.userna
 
 export function listUsers() {
   return db
-    .prepare('SELECT * FROM users')
+    .prepare(CTP_AUTH_ENABLED ? 'SELECT * FROM users WHERE ctp_user_id IS NOT NULL' : 'SELECT * FROM users')
     .all()
     .sort((a, b) => b.is_admin - a.is_admin || byName(a, b))
     .map(serializeUser);
@@ -63,6 +64,7 @@ function usernameTaken(username, exceptId = 0) {
 }
 
 export function createUser(body = {}) {
+  if (CTP_AUTH_ENABLED) throw new HttpError(403, 'Las cuentas se gestionan en CTP. El staff aparece al iniciar sesión con su cuenta.');
   const username = validateUsername(body.username);
   if (usernameTaken(username)) throw new HttpError(409, `Ya existe el usuario "${username}".`);
   const roleIds = cleanRoleIds(body.role_ids) || [];
@@ -84,6 +86,17 @@ function activeAdminCount() {
 
 export function updateUser(id, body = {}, actingUserId) {
   const user = getUserRow(id);
+  if (CTP_AUTH_ENABLED) {
+    if (!user.ctp_user_id || Object.keys(body).some(key => !['role_ids', 'active'].includes(key))) throw new HttpError(403, 'La identidad, contraseña y autoridad CTP no se pueden modificar desde Manager.');
+    const roleIds = cleanRoleIds(body.role_ids);
+    if (body.active === false && user.id === actingUserId) throw new HttpError(400, 'No puedes desactivar tu propio acceso.');
+    return tx(() => {
+      if (roleIds) setRoles(user.id, roleIds);
+      if (typeof body.active === 'boolean') db.prepare('UPDATE users SET active=? WHERE id=?').run(body.active ? 1 : 0, user.id);
+      if (body.active === false) db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id);
+      return user.id;
+    });
+  }
   const self = user.id === actingUserId;
   const next = {
     username: body.username !== undefined ? validateUsername(body.username) : user.username,
@@ -118,6 +131,7 @@ export function updateUser(id, body = {}, actingUserId) {
 }
 
 export function deleteUser(id, actingUserId) {
+  if (CTP_AUTH_ENABLED) throw new HttpError(403, 'Gestiona la cuenta desde CTP o desactiva únicamente su acceso a Manager.');
   const user = getUserRow(id);
   if (user.id === actingUserId) throw new HttpError(400, 'No puedes borrar tu propio usuario.');
   if (user.is_admin && user.active && activeAdminCount() <= 1) {

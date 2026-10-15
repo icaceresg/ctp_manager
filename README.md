@@ -64,7 +64,8 @@ Estos bloques están implementados y comprobados localmente. La activación del 
 - Lo usan el rol **DIRECTIVOS** y los administradores. Cada uno borra sus comentarios; el administrador, cualquiera.
 
 ### Usuarios y roles
-- Cada persona entra con su **usuario y contraseña**. No hay registro abierto: las cuentas las crea un administrador.
+- En el despliegue público (`CTP_AUTH_MODE=ctp`) el staff entra con **el mismo correo y contraseña de CTP**. No necesita otra cuenta: CTP verifica su rol y Manager conserva un espejo sin contraseña. La identidad y contraseña se gestionan en CTP; aquí solo se organizan las secciones internas y el acceso a Manager.
+- El modo local independiente (`CTP_AUTH_MODE=local`) se conserva exclusivamente para desarrollo y pruebas. En ese modo las cuentas las crea un administrador.
 - El **Administrador** ve todas las secciones y gestiona usuarios y roles.
 - Los **roles** de staff desbloquean secciones y deben tener una categoría explícita de coordinación, arbitraje, producción, caster, comunicación, clubes o dirección. Los roles sin categoría de staff y las cuentas de jugadores no conceden acceso a Manager. El administrador decide secciones y categorías en *Usuarios y roles → Roles y permisos*.
 - Roles de partida:
@@ -81,7 +82,7 @@ Estos bloques están implementados y comprobados localmente. La activación del 
 
 - Quien solo tiene *Recursos* puede marcar recursos como listos, pero no crear ni editar tarjetas.
 - Si desactivas a alguien o le cambias la contraseña, sus sesiones abiertas se cierran al momento.
-- Cada usuario puede cambiar su contraseña en *Mi cuenta*.
+- En modo público, *Mi cuenta* enlaza a la cuenta CTP para gestionar la contraseña. El formulario local solo aparece en desarrollo.
 
 ## Instalación
 

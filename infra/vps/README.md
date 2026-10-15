@@ -4,11 +4,11 @@ Este paquete prepara un servicio Node independiente conectado a la API de
 `https://pre.playctp.com`. El dominio público del Manager es
 `https://manager.playctp.com`. No crea otra base competitiva, publica la web de
 jugadores ni controla OBS: torneos, resultados y permisos oficiales siguen en
-CTP; el SQLite del Manager contiene sus cuentas de staff, organización,
+CTP; el SQLite del Manager contiene espejos del staff, organización,
 proyecciones y comandos pendientes.
 
 La configuración y esta unidad no prueban que exista un despliegue activo.
-El alta del administrador, el puente firmado, DNS, TLS y los flujos reales
+El acceso con la misma cuenta CTP, el puente firmado, DNS, TLS y los flujos reales
 deben comprobarse antes de abrirlo al equipo. Véase también
 [DEPLOYMENT.md](../../docs/DEPLOYMENT.md).
 
@@ -64,6 +64,10 @@ hay que revisar especialmente puerto, rutas y origen antes de reiniciar:
 PORT=3210
 DATA_DIR=/var/lib/ctp-manager-pre
 PUBLIC_ORIGIN=https://manager.playctp.com
+CTP_AUTH_MODE=ctp
+CTP_AUTH_URL=https://pre.playctp.com
+CTP_AUTH_ANON_KEY=<JWT público anon vigente de PRE>
+CTP_AUTH_TOKEN_KEY=<32 bytes aleatorios en base64url canónico>
 CTP_WEB_ORIGIN=https://pre.playctp.com
 CTP_OPERATIONS_URL=https://pre.playctp.com/functions/v1/manager-operations
 CTP_OPERATIONS_TOKEN=<secreto dedicado del puente>
@@ -77,28 +81,33 @@ OPEN_BROWSER=0
 `CTP_OPERATIONS_TOKEN` debe coincidir con `MANAGER_INTEGRATION_TOKEN` del
 backend PRE; la firma debe coincidir con `MANAGER_SIGNING_SECRET`. No son la
 clave `service_role`, no se publican en el frontend y no se guardan en Git.
-Si el puente aún no está preparado, omitir las tres variables `CTP_OPERATIONS_*`
-y `CTP_SIGNING_SECRET` juntas: Manager puede arrancar sin conexión externa y
-debe mostrar esa limitación. No activar una configuración incompleta.
+`CTP_AUTH_URL`, `CTP_WEB_ORIGIN` y el origen de `CTP_OPERATIONS_URL` deben
+coincidir exactamente: esta instalación autentica y opera contra PRE. La clave
+anon es pública y debe pertenecer a esa instancia; no usar `service_role`.
+La clave de cifrado requiere 32 bytes aleatorios en base64url, es independiente
+de los dos secretos del puente y permanece exclusivamente en el servidor.
+No activar una configuración incompleta ni cambiar a autenticación local
+para resolver una caída de CTP.
 
 Mantener `CTP_ENABLE_WRITES=false` hasta validar el puente, los operadores y
 sus permisos en CTP. El token y la firma no conceden por sí solos permisos a
 todos los usuarios del Manager. No activar cron, corte competitivo ni el
 agente OBS como consecuencia de instalar este servicio.
 
-## Administrador inicial y puesta en marcha
+## Acceso CTP y puesta en marcha
 
 1. Crear el usuario de sistema `ctp-manager-pre`, sin contraseña interactiva,
    sin grupos privilegiados y con su estado privado vacío. Preparar runtime,
    release y enlace `current`, todavía sin publicar el vhost HTTPS.
-2. Antes del primer arranque público, crear el administrador desde loopback
-   según [DEPLOYMENT.md](../../docs/DEPLOYMENT.md), usando un túnel SSH y un
-   proceso temporal con `PUBLIC_ORIGIN` sin definir y el mismo `DATA_DIR`.
-   No ejecutar ese proceso mientras el servicio tenga ocupado el puerto 3210.
-   No reutilizar usuarios, sesiones ni contraseñas de una base local.
-3. Detener el proceso temporal, cargar el archivo privado final y comprobar
-   que contiene el origen HTTPS exacto. Con `PUBLIC_ORIGIN` activo el endpoint
-   de alta inicial queda bloqueado, aunque no exista todavía un administrador.
+2. Preparar en CTP PRE la RPC de identidad propia de la migración 159 y el
+   puente firmado. Configurar `CTP_AUTH_MODE=ctp`: **no crear administrador,
+   usuario ni contraseña independientes en Manager** y no importar cuentas o
+   sesiones del desarrollo local.
+3. Cargar el archivo privado final, comprobar sus tres orígenes PRE y el
+   origen público exacto. El staff entra con el mismo correo y contraseña de
+   CTP; solo se admiten los roles CTP `admin` y `referee`. El primer acceso
+   válido crea un espejo sin contraseña y la identidad de operador `ctp:<UUID>`.
+   Las altas locales quedan bloqueadas incluso con SQLite vacío.
 4. Instalar y verificar la unidad; arrancar primero de forma controlada:
 
 ```sh
@@ -120,8 +129,8 @@ el límite no constituye una prueba de capacidad. No añadir
 ## DNS y proxy Caddy
 
 Preparar un registro A de `manager.playctp.com` hacia la VPS. No habilitar el
-bloque público hasta que el DNS resuelva correctamente, el administrador esté
-creado y el servicio pase las comprobaciones locales. No cambiar el bloque
+bloque público hasta que el DNS resuelva correctamente, el acceso central
+esté configurado y el servicio pase las comprobaciones locales. No cambiar el bloque
 de `playctp.com`, que sigue siendo la landing de espera.
 
 Bloque de Caddy propuesto, para incorporar al archivo existente solo después
@@ -165,11 +174,18 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' \
   http://127.0.0.1:3210/api/auth/status
 ```
 
-La primera debe indicar `setup:true`, `authenticated:false`; la segunda debe
+La primera debe indicar `provider:"ctp"`, `setup:true`, `authenticated:false`
+y `web_origin:"https://pre.playctp.com"`; la segunda debe
 rechazarse con `403`. Después de habilitar DNS/TLS, probar desde el dominio
 real: acceso de administrador y staff, cookies seguras, rechazo de Host y
 Origin ajenos, usuario sin permisos, cierre de sesión y desactivación de una
-cuenta. Sincronizar con PRE y cortar la conexión para verificar que conserva
+cuenta. Comprobar que un jugador no entra, que no se crean cuentas locales y
+que una degradación o revocación CTP se aplica en la siguiente petición. Los
+tokens permanecen cifrados en SQLite y solo una cookie opaca llega al navegador;
+la clave se conserva en el respaldo privado. Un error de autenticación o una
+caída de CTP no permite recurrir a cuentas locales. Los administradores pueden
+asignar secciones internas, pero la autoridad CTP y la contraseña se gestionan
+en la web central. Sincronizar con PRE y cortar la conexión para verificar que conserva
 la última proyección válida. Las escrituras requieren una aceptación aparte.
 
 Revisar `journalctl -u ctp-manager-pre.service`, memoria, reinicios y permisos
@@ -189,3 +205,52 @@ Revisar compatibilidad de esquema antes de arrancar una versión anterior.
 Guardar el respaldo fuera de las releases y probar su restauración aislada.
 
 Esta reversión no modifica Supabase, Caddy, la web de jugadores ni la landing.
+
+## Copia diaria privada de Manager PRE
+
+El script `scripts/backup-vps.mjs` usa la API de backup online de SQLite de
+Node 24.15.0. Abre el origen de solo lectura e incluye las transacciones ya
+confirmadas en WAL sin detener Manager. Comprueba `PRAGMA integrity_check` y
+normaliza únicamente la copia a `journal_mode=DELETE`, para que el respaldo
+no dependa de archivos WAL o SHM adicionales.
+
+Cada generación privada bajo `/opt/ctp/backups/manager-pre` contiene:
+
+- `myredesmanager.db`: instantánea coherente del estado de Manager.
+- `configs.private.tar.gz`: `/etc/ctp-manager/pre.env`, la unidad del servicio
+  y el manifiesto de la release activa. **Incluye secretos y la clave que
+  permite descifrar las sesiones CTP.** No publicarlo ni adjuntarlo a GitHub.
+- `manifest.json`: commit, fecha, tamaños y SHA-256 de los dos archivos.
+
+El directorio y las generaciones son exclusivos de root (`0700`; archivos
+`0600`). El script rechaza enlaces o rutas inesperadas, comprueba que la
+configuración y la release no cambien durante la copia y publica una generación
+solo cuando está completa. El registro muestra únicamente su identificador,
+commit y resultado; nunca credenciales o cuerpos de sesión.
+
+Preparación, todavía **sin instalación ni activación automática**:
+
+```sh
+install -d -o root -g root -m 0700 /opt/ctp/backups/manager-pre
+install -o root -g root -m 0700 scripts/backup-vps.mjs /opt/ctp-manager/backup-vps.mjs
+install -o root -g root -m 0644 infra/vps/ctp-manager-pre-backup.service /etc/systemd/system/
+install -o root -g root -m 0644 infra/vps/ctp-manager-pre-backup.timer /etc/systemd/system/
+systemd-analyze verify /etc/systemd/system/ctp-manager-pre-backup.service /etc/systemd/system/ctp-manager-pre-backup.timer
+systemctl daemon-reload
+systemctl start ctp-manager-pre-backup.service
+```
+
+Verificar la generación y sus hashes, y ensayar su restauración en una copia
+aislada, antes de ejecutar `systemctl enable --now ctp-manager-pre-backup.timer`.
+El timer programa la copia a las **04:50–04:55, hora de Madrid**, después del
+backup de la base CTP PRE. `flock` evita dos copias simultáneas. El directorio
+privado debe existir antes de arrancar la unidad por sus restricciones de
+escritura. No se borran generaciones automáticamente: la retención es manual y
+hay que vigilar el espacio. El timer tampoco crea una copia fuera de la VPS.
+
+Para restaurar, detener únicamente Manager, preservar el estado actual y
+verificar primero los hashes de la generación elegida. Restaurar SQLite junto
+con la configuración y su clave de cifrado correspondientes, corregir
+propietario/permisos del estado y comprobar la compatibilidad de la release.
+No extraer el archivo privado directamente sobre `/` sin revisar su inventario.
+La restauración no escribe en Supabase, la web principal ni su landing.

@@ -92,7 +92,7 @@ function App() {
       </div>
     );
   }
-  if (!auth.authenticated) return <Login setup={!auth.setup} onDone={check} />;
+  if (!auth.authenticated) return <Login setup={!auth.setup && auth.provider !== 'ctp'} provider={auth.provider} onDone={check} />;
 
   const me = auth.user;
   const hasOperations = OP_SECTIONS.some((section) => canAccess(me, section));

@@ -4,23 +4,39 @@ Manager es el backoffice de staff, competición y arbitraje. La aplicación cons
 
 Las decisiones oficiales se preparan en Manager y se envían explícitamente al backend CTP, con identidad y permisos del operador. Esto no crea una segunda base competitiva ni permite acceso directo a Supabase desde el navegador. La [matriz funcional](OPERATIONS_IMPLEMENTATION.md) describe los siete bloques implementados, incluidos torneos, inscripciones, sorteo oficial, publicación, horarios e histórico. Requieren desplegar el puente y las migraciones compatibles; véase el [plan de PRE](PRE_RELEASE_2026-10-02.md).
 
-## Instalación local y administrador inicial
+## Acceso público con la misma cuenta CTP
+
+En la VPS se usa `CTP_AUTH_MODE=ctp`: el staff entra con **el mismo correo y contraseña de CTP**. No crear administradores ni contraseñas independientes en Manager. GoTrue verifica las credenciales en el servidor y la RPC `manager_link_own_identity` confirma que la cuenta mantiene un rol CTP admitido (`admin` o `referee`) y vincula exclusivamente su propia identidad estable `ctp:<UUID>`. Una cuenta de jugador o una vinculación desactivada no concede acceso.
+
+SQLite conserva un espejo de la identidad y las asignaciones internas, sin la contraseña CTP. Los tokens de sesión CTP se cifran con AES-256-GCM y una clave exclusiva del servidor; no se devuelven al navegador. Cada petición autenticada vuelve a verificar el staff en CTP, y las renovaciones concurrentes de una misma sesión se agrupan para evitar reutilizar tokens de refresco. Una caída de CTP bloquea las operaciones privadas; no activa un acceso local alternativo.
+
+En modo público, la identidad y contraseña se gestionan desde la web CTP. Un administrador CTP puede organizar las secciones locales del staff y desactivar su acceso a Manager, pero no crear cuentas, cambiar su identidad ni otorgar autoridad de administrador CTP. La retirada del rol oficial se aplica en la siguiente petición. Conservar la clave de cifrado en los respaldos privados; perderla exige iniciar sesión de nuevo.
+
+## Instalación local de desarrollo
 
 1. Usar Node 22.13 o posterior, `npm ci` y `npm run build`.
-2. Mantener `PUBLIC_ORIGIN` sin definir y arrancar con `npm run serve`.
-3. Crear el primer administrador desde `http://localhost:3210`. En una VPS, usar un túnel SSH local, por ejemplo `ssh -L 3210:127.0.0.1:3210 usuario@vps`, y abrir esa dirección en el ordenador del administrador.
-4. Detener el proceso, configurar el origen HTTPS y arrancarlo bajo el supervisor elegido. El alta inicial queda bloqueada cuando `PUBLIC_ORIGIN` está configurado. No publicar una instalación todavía sin administrador.
+2. Usar explícitamente `CTP_AUTH_MODE=local`, mantener `PUBLIC_ORIGIN` sin definir y arrancar con `npm run serve`.
+3. Solo en ese entorno de desarrollo se crea el primer administrador desde `http://localhost:3210`.
+4. No trasladar esa base, sus sesiones o sus contraseñas a la VPS. El despliegue público usa el acceso central CTP descrito arriba y bloquea el alta local aunque no exista ningún espejo todavía.
 
 La base de datos está en `DATA_DIR/myredesmanager.db`; proteger el directorio y `.env` con permisos exclusivos del usuario de servicio. Respaldar SQLite mediante su API de backup o con el servicio detenido; copiar solo el archivo principal durante escrituras WAL puede perder datos. Comprobar restauración antes de aplicar migraciones a una base real.
 
 ## Proxy HTTPS en la misma VPS
 
-Variables para el único dominio público admitido (su despliegue está pendiente):
+Variables para el único dominio público admitido, conectado a PRE:
 
 ```dotenv
 PORT=3210
-DATA_DIR=/var/lib/ctp-manager
+DATA_DIR=/var/lib/ctp-manager-pre
 PUBLIC_ORIGIN=https://manager.playctp.com
+CTP_AUTH_MODE=ctp
+CTP_AUTH_URL=https://pre.playctp.com
+CTP_AUTH_ANON_KEY=<JWT público anon vigente de PRE>
+CTP_AUTH_TOKEN_KEY=<32 bytes aleatorios en base64url canónico>
+CTP_WEB_ORIGIN=https://pre.playctp.com
+CTP_OPERATIONS_URL=https://pre.playctp.com/functions/v1/manager-operations
+CTP_OPERATIONS_TOKEN=<secreto dedicado del puente>
+CTP_SIGNING_SECRET=<otro secreto independiente del puente>
 CTP_ENABLE_WRITES=false
 CTP_SYNC_SECONDS=0
 ```
@@ -46,7 +62,7 @@ El proxy debe rechazar hosts no reconocidos en su servidor predeterminado. Con `
 El repositorio de CTP contiene la Edge Function `manager-operations` y su migración. Deben revisarse y desplegarse por separado antes de configurar una VPS. La conexión QA de este PC se describe en [LOCAL_CTP_CONNECTION.md](LOCAL_CTP_CONNECTION.md); no constituye un despliegue remoto ni habilita escrituras oficiales.
 
 ```dotenv
-CTP_OPERATIONS_URL=https://PROJECT.supabase.co/functions/v1/manager-operations
+CTP_OPERATIONS_URL=https://pre.playctp.com/functions/v1/manager-operations
 CTP_OPERATIONS_TOKEN=<token aleatorio de 32 caracteres o más>
 CTP_SIGNING_SECRET=<otro secreto aleatorio independiente de 32 caracteres o más>
 CTP_ENABLE_WRITES=false
@@ -69,7 +85,7 @@ El aviso `possibly_truncated` del puente se conserva para indicar que la lista p
 
 Para enviar una solicitud oficial, tras revisión y autorización de despliegue:
 
-1. En CTP, un administrador vincula el UUID estable de operador que muestra Manager a su cuenta CTP en `manager_operator_bindings` y concede los ámbitos necesarios. No usar el ID numérico de usuario: puede reciclarse al borrar una cuenta; el UUID estable cambia si se elimina y recrea el usuario. Un rol local no sustituye los permisos oficiales.
+1. Con la migración 159 aplicada, la cuenta CTP del propio staff obtiene su vinculación `ctp:<UUID>` y los ámbitos derivados de su rol al autenticarse. La RPC no admite elegir otra cuenta ni reactivar una vinculación desactivada manualmente. Los vínculos manuales de identidades locales antiguas corresponden únicamente al modo de desarrollo y no sustituyen este acceso central.
 2. En el dominio autorizado, activar deliberadamente `CTP_ENABLE_WRITES=true` y reiniciar Manager. Activar también `MANAGER_OPERATIONS_ENABLED=true` en CTP.
 3. Sincronizar para conocer las acciones admitidas por CTP. El administrador revisa la solicitud pendiente y pulsa Enviar. No existe envío automático de comandos.
 4. El adaptador comprueba que el autor original continúa activo y conserva el permiso local; CTP valida además su vinculación, permisos, versión y reglas de negocio.

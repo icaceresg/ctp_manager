@@ -63,7 +63,10 @@ export function AccountPage() {
         </div>
       </section>
 
-      <section className="card">
+      {me.auth_mode === 'ctp' ? <section className="card">
+        <div className="card-header"><h2>Cuenta CTP</h2></div>
+        <div className="card-body stack"><p>Tu identidad y contraseña se gestionan desde tu cuenta CTP.</p><div><a className="btn" href={me.account_url}>Gestionar mi cuenta CTP</a></div></div>
+      </section> : <section className="card">
         <div className="card-header">
           <h2>Cambiar contraseña</h2>
         </div>
@@ -83,9 +86,9 @@ export function AccountPage() {
             </button>
           </div>
         </form>
-      </section>
+      </section>}
 
-      {me.is_admin && (
+      {me.is_admin && me.auth_mode !== 'ctp' && (
         <div className="callout info">
           <Info size={18} />
           <span>

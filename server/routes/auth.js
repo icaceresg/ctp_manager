@@ -10,13 +10,17 @@ import {
   readSessionToken,
   requireAuth,
   setupAdmin,
+  CTP_AUTH_ENABLED,
+  AUTH_CONFIG,
+  loginCtp,
 } from '../auth.js';
 
 export const authRouter = Router();
 
-authRouter.get('/auth/status', (req, res) => {
-  const user = currentUser(req);
-  res.json({ setup: hasUsers(), authenticated: Boolean(user), user });
+authRouter.get('/auth/status', async (req, res) => {
+  const user = await currentUser(req);
+  res.json({ setup: CTP_AUTH_ENABLED || hasUsers(), authenticated: Boolean(user), user,
+    provider: CTP_AUTH_ENABLED ? 'ctp' : 'local', ...(CTP_AUTH_ENABLED ? { web_origin: AUTH_CONFIG.origin } : {}) });
 });
 
 // Primera vez: se crea la cuenta del administrador.
@@ -26,7 +30,8 @@ authRouter.post('/auth/setup', (req, res) => {
   res.json({ ok: true });
 });
 
-authRouter.post('/auth/login', (req, res) => {
+authRouter.post('/auth/login', async (req, res) => {
+  if (CTP_AUTH_ENABLED) return res.json({ ok: true, user: await loginCtp(req.body?.email ?? req.body?.username, req.body?.password, res) });
   const user = login(req.body?.username, req.body?.password);
   createSession(res, user.id);
   res.json({ ok: true, user: describeUser(user) });

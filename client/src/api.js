@@ -15,7 +15,7 @@ async function request(method, url, body) {
   try {
     res = await fetch(`/api${url}`, options);
   } catch {
-    throw new Error('No se puede contactar con el servidor. ¿Sigue abierta la ventana de MyRedesManager?');
+    throw new Error('No se puede contactar con el servidor de CTP Manager.');
   }
 
   const data = await res.json().catch(() => ({}));

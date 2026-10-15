@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { DEFAULT_ROLES } from '../shared/access.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 3300 + Math.floor(Math.random() * 500);
@@ -72,7 +73,7 @@ before(async () => {
 
   server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root,
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir },
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, CTP_OPERATIONS_URL: '', CTP_OPERATIONS_TOKEN: '', CTP_SIGNING_SECRET: '', CTP_ENABLE_WRITES: 'false', PUBLIC_ORIGIN: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', (d) => (output += d));
@@ -118,20 +119,34 @@ test('la contraseña de antes pasa a ser la del usuario "admin"', async () => {
   const { status, data } = await api('POST', '/auth/login', { username: 'ADMIN', password: 'contraseña-vieja' });
   assert.equal(status, 200);
   assert.equal(data.user.is_admin, true);
-  assert.deepEqual(data.user.sections, ['calendario', 'recursos', 'escaleta', 'disponibilidad', 'tablero']);
+  assert.deepEqual(data.user.sections, ['calendario', 'recursos', 'escaleta', 'disponibilidad', 'tablero', 'operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones']);
 });
 
 test('crea los roles de partida', async () => {
   const roles = (await api('GET', '/roles')).data;
   assert.deepEqual(
     roles.map((r) => [r.name, r.sections]),
-    [
-      ['ÁRBITROS', ['escaleta']],
-      ['CASTER', ['escaleta', 'disponibilidad']],
-      ['DIRECTIVOS', ['tablero']],
-      ['RRSS', ['calendario', 'recursos']],
-    ],
+    [...DEFAULT_ROLES].sort((a,b) => a.name.localeCompare(b.name,'es',{sensitivity:'base'})).map(r => [r.name,r.sections]),
   );
+});
+
+test('solo staff explícito entra y un rol de jugador no concede acceso aunque tenga secciones', async () => {
+  assert.equal((await api('POST','/roles',{name:'JUGADOR',staff_kind:'player',sections:['arbitraje']})).status,400);
+  const player=(await api('POST','/users',{username:'outsider',password:'outside-staff-only-123'})).data;
+  assert.equal((await makeClient()('POST','/auth/login',{username:'outsider',password:'outside-staff-only-123'})).status,403);
+  const fixture=new DatabaseSync(dbPath);
+  const legacy=Number(fixture.prepare("INSERT INTO roles(name,sections,created_at) VALUES('LEGACY PLAYER','[\"arbitraje\"]',?)").run(Date.now()).lastInsertRowid);
+  fixture.prepare('INSERT INTO user_roles(user_id,role_id) VALUES(?,?)').run(player.id,legacy);
+  fixture.close();
+  assert.equal((await makeClient()('POST','/auth/login',{username:'outsider',password:'outside-staff-only-123'})).status,403);
+  assert.equal((await api('PATCH',`/roles/${legacy}`,{name:'ARBITRO REVISADO',staff_kind:'referee'})).status,200);
+  const staff=await loginAs('outsider','outside-staff-only-123');
+  assert.equal((await staff('GET','/operations/bootstrap')).status,200);
+  assert.equal((await staff('GET','/users')).status,403);
+  assert.equal((await api('PATCH',`/users/${player.id}`,{role_ids:[]})).status,200);
+  assert.equal((await staff('GET','/operations/bootstrap')).status,401);
+  await api('DELETE',`/users/${player.id}`);
+  await api('DELETE',`/roles/${legacy}`);
 });
 
 let content;
@@ -336,7 +351,7 @@ test('el administrador crea usuarios y valida los datos', async () => {
 
 test('cada rol solo ve sus secciones', async () => {
   const lucia = await loginAs('lucia.rrss', 'clave-segura-1');
-  assert.deepEqual((await lucia('GET', '/me')).data.sections, ['calendario', 'recursos']);
+  assert.deepEqual((await lucia('GET', '/me')).data.sections, ['calendario', 'recursos', 'comunicaciones']);
   assert.equal((await lucia('GET', '/contents?from=2026-10-01&to=2026-11-01')).status, 200);
   assert.equal((await lucia('POST', '/contents', { title: 'De Lucía' })).status, 201);
   assert.equal((await lucia('GET', '/rundowns')).status, 403);
@@ -352,8 +367,8 @@ test('cada rol solo ve sus secciones', async () => {
 });
 
 test('un rol solo de Recursos marca recursos pero no edita tarjetas', async () => {
-  const diseno = (await api('POST', '/roles', { name: 'DISEÑO', sections: ['recursos'] })).data;
-  assert.equal((await api('POST', '/roles', { name: 'diseño' })).status, 409);
+  const diseno = (await api('POST', '/roles', { name: 'DISEÑO', staff_kind: 'communications', sections: ['recursos'] })).data;
+  assert.equal((await api('POST', '/roles', { name: 'diseño', staff_kind: 'communications' })).status, 409);
   await api('POST', '/users', { username: 'dani', password: 'clave-segura-3', role_ids: [diseno.id] });
   const card = (await api('POST', '/contents', { title: 'Con recursos', resources: [{ text: 'Miniatura' }] })).data;
 
@@ -373,14 +388,15 @@ test('los cambios de un rol se aplican al momento', async () => {
   await api('PATCH', `/roles/${caster.id}`, { sections: ['escaleta', 'calendario'] });
   assert.equal((await pablo('GET', '/contents?unscheduled=1')).status, 200);
   await api('DELETE', `/roles/${caster.id}`);
-  assert.equal((await pablo('GET', '/rundowns')).status, 403, 'al borrar el rol pierde el acceso');
-  assert.deepEqual((await pablo('GET', '/me')).data.sections, []);
+  assert.equal((await pablo('GET', '/rundowns')).status, 401, 'al borrar su último rol de staff pierde la sesión');
+  assert.equal((await pablo('GET', '/me')).status, 401);
 });
 
 test('desactivar o cambiar la contraseña de alguien cierra sus sesiones', async () => {
   const users = (await api('GET', '/users')).data;
   const lucia = users.find((u) => u.username === 'lucia.rrss');
   const pablo = users.find((u) => u.username === 'pablo');
+  await api('PATCH', `/users/${pablo.id}`, { role_ids: [(await role('PRODUCCIÓN')).id] });
   const luciaSession = await loginAs('lucia.rrss', 'clave-segura-1');
   const pabloSession = await loginAs('pablo', 'clave-segura-2');
 
@@ -405,8 +421,9 @@ test('nunca se queda la intranet sin administrador', async () => {
   const second = (await api('POST', '/users', { username: 'jefa', password: 'clave-segura-4', is_admin: true })).data;
   const jefa = await loginAs('jefa', 'clave-segura-4');
   assert.equal((await jefa('PATCH', `/users/${me.id}`, { is_admin: false })).status, 200);
-  assert.equal((await api('GET', '/users')).status, 403, 'el antiguo admin ya no gestiona usuarios');
+  assert.equal((await api('GET', '/users')).status, 401, 'el antiguo admin sin rol staff pierde la sesión');
   assert.equal((await jefa('PATCH', `/users/${me.id}`, { is_admin: true })).status, 200);
+  assert.equal((await api('POST', '/auth/login', { username: 'admin', password: 'contraseña-vieja' })).status, 200);
   assert.equal((await api('DELETE', `/users/${second.id}`)).status, 200);
 });
 
@@ -432,7 +449,7 @@ test('la disponibilidad se pide solo para los días de evento de la temporada', 
 });
 
 test('cada caster marca su disponibilidad y el admin ve y edita la de todos', async () => {
-  const locutor = (await api('POST', '/roles', { name: 'LOCUTOR', sections: ['disponibilidad'] })).data;
+  const locutor = (await api('POST', '/roles', { name: 'LOCUTOR', staff_kind: 'caster', sections: ['disponibilidad'] })).data;
   const ana = (await api('POST', '/users', { username: 'ana', name: 'Ana', password: 'clave-segura-5', role_ids: [locutor.id] })).data;
   const bea = (await api('POST', '/users', { username: 'bea', name: 'Bea', password: 'clave-segura-6', role_ids: [locutor.id] })).data;
   const anaS = await loginAs('ana', 'clave-segura-5');

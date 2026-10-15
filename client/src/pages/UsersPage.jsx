@@ -3,12 +3,13 @@ import { Check, Pencil, Plus, ShieldCheck, Trash2, UserPlus, Users } from 'lucid
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { EmptyState, Modal, Spinner } from '../components/ui.jsx';
-import { SECTIONS } from '../../../shared/access.js';
+import { SECTIONS, STAFF_KINDS, DEFAULT_ROLES } from '../../../shared/access.js';
 
 const dateTime = (ts) => (ts ? new Date(ts).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : 'Nunca');
 
 function UserModal({ user, roles, onClose, onSaved }) {
   const { me, toast, onMeChange } = useApp();
+  const ctp = me.auth_mode === 'ctp';
   const editing = Boolean(user);
   const self = user?.id === me.id;
   const [form, setForm] = useState({
@@ -28,7 +29,7 @@ function UserModal({ user, roles, onClose, onSaved }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const body = { ...form };
+      const body = ctp ? { role_ids: form.role_ids, active: form.active } : { ...form };
       if (editing && !body.password) delete body.password;
       if (editing) await api.patch(`/users/${user.id}`, body);
       else await api.post('/users', body);
@@ -60,6 +61,8 @@ function UserModal({ user, roles, onClose, onSaved }) {
     <Modal title={editing ? `Editar ${user.username}` : 'Nuevo usuario'} onClose={onClose}>
       <form onSubmit={save}>
         <div className="modal-body stack">
+          {ctp && <p className="muted">Cuenta de CTP. Aquí solo se asignan secciones y acceso a Manager; su identidad y autoridad se comprueban en CTP.</p>}
+          {!ctp && <>
           <div className="field">
             <label htmlFor="u-name">Nombre</label>
             <input id="u-name" className="input" value={form.name} maxLength={80} onChange={(e) => set('name')(e.target.value)} autoFocus />
@@ -92,17 +95,18 @@ function UserModal({ user, roles, onClose, onSaved }) {
               Mínimo 8 caracteres. Pásasela a la persona por un canal privado; podrá cambiarla en "Mi cuenta".
             </span>
           </div>
+          </>}
 
           <div className="field">
             <span className="label">Roles</span>
-            <label className="checkbox role-option admin">
+            {!ctp && <label className="checkbox role-option admin">
               <input type="checkbox" checked={form.is_admin} disabled={self} onChange={(e) => set('is_admin')(e.target.checked)} />
               <span>
                 <strong>Administrador</strong>
                 <span className="hint">Ve todas las secciones y gestiona usuarios y roles.</span>
               </span>
-            </label>
-            {roles.map((r) => (
+            </label>}
+            {roles.filter((r) => STAFF_KINDS.some((kind) => kind.id === r.staff_kind)).map((r) => (
               <label key={r.id} className="checkbox role-option">
                 <input type="checkbox" checked={form.role_ids.includes(r.id)} onChange={() => toggleRole(r.id)} />
                 <span>
@@ -127,7 +131,7 @@ function UserModal({ user, roles, onClose, onSaved }) {
           )}
         </div>
         <div className="modal-footer">
-          {editing && !self && (
+          {editing && !self && !ctp && (
             <button type="button" className="btn ghost danger" onClick={remove} disabled={busy}>
               <Trash2 size={15} /> Borrar
             </button>
@@ -152,9 +156,9 @@ function UsersTab({ users, roles, reload }) {
   return (
     <>
       <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn primary" onClick={() => setModal({})}>
+        {me.auth_mode === 'ctp' ? <p className="muted">El staff aparece al entrar con su cuenta CTP. La administración de cuentas se realiza en CTP.</p> : <button className="btn primary" onClick={() => setModal({})}>
           <UserPlus size={16} /> Nuevo usuario
-        </button>
+        </button>}
       </div>
       <div className="card table-card">
         <table className="data-table">
@@ -222,6 +226,7 @@ function RoleRow({ role, onChange, onDelete }) {
           aria-label="Nombre del rol"
         />
       </td>
+      <td><select aria-label={`Función de staff de ${role.name}`} value={role.staff_kind || ''} onChange={(e) => onChange(role, { staff_kind: e.target.value })}><option value="" disabled>Requiere revisión</option>{STAFF_KINDS.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}</select>{!role.staff_kind && <small className="muted">Sin acceso hasta clasificarlo.</small>}</td>
       {SECTIONS.map((s) => (
         <td key={s.id} className="center">
           <input
@@ -236,6 +241,7 @@ function RoleRow({ role, onChange, onDelete }) {
       <td className="center muted small">—</td>
       <td className="center muted small">{role.user_count}</td>
       <td style={{ textAlign: 'right' }}>
+        {DEFAULT_ROLES.some((r) => r.staff_kind === role.staff_kind) && <button className="btn ghost sm" title="Aplicar los permisos recomendados de esta función" onClick={() => { if (window.confirm('¿Aplicar los permisos recomendados a todas las personas de este rol?')) onChange(role, { sections: DEFAULT_ROLES.find((r) => r.staff_kind === role.staff_kind).sections }); }}>Permisos recomendados</button>}
         <button className="btn ghost icon sm danger" onClick={() => onDelete(role)} aria-label={`Borrar el rol ${role.name}`} title="Borrar rol">
           <Trash2 size={15} />
         </button>
@@ -247,6 +253,7 @@ function RoleRow({ role, onChange, onDelete }) {
 function RolesTab({ roles, reload }) {
   const { toast } = useApp();
   const [newName, setNewName] = useState('');
+  const [newKind, setNewKind] = useState('operations');
 
   async function run(fn, message) {
     try {
@@ -261,20 +268,21 @@ function RolesTab({ roles, reload }) {
   const add = (e) => {
     e.preventDefault();
     if (!newName.trim()) return;
-    run(() => api.post('/roles', { name: newName, sections: [] }), `Rol "${newName.trim()}" creado. Marca sus secciones.`);
+    run(() => api.post('/roles', { name: newName, staff_kind: newKind, sections: [] }), `Rol "${newName.trim()}" creado. Marca sus secciones.`);
     setNewName('');
   };
 
   return (
     <>
       <p className="muted">
-        Marca qué secciones desbloquea cada rol. Los cambios se aplican al momento a todos los usuarios con ese rol.
+        Solo el staff puede entrar en Manager. Clasifica cada rol y marca sus permisos. Los roles antiguos sin clasificar no conceden acceso; sus datos se conservan.
       </p>
       <div className="card table-card">
         <table className="data-table roles-table">
           <thead>
             <tr>
               <th>Rol</th>
+              <th>Función de staff</th>
               {SECTIONS.map((s) => (
                 <th key={s.id} className="center" title={s.description}>
                   {s.label}
@@ -292,6 +300,7 @@ function RolesTab({ roles, reload }) {
                   <ShieldCheck size={12} /> Administrador
                 </span>
               </td>
+              <td>Administración</td>
               {SECTIONS.map((s) => (
                 <td key={s.id} className="center">
                   <Check size={16} className="gold" />
@@ -318,6 +327,7 @@ function RolesTab({ roles, reload }) {
         </table>
       </div>
       <form className="input-group" style={{ maxWidth: 420 }} onSubmit={add}>
+        <select aria-label="Función del nuevo rol" value={newKind} onChange={(e) => setNewKind(e.target.value)}>{STAFF_KINDS.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}</select>
         <input className="input" placeholder="Nombre del nuevo rol (p. ej. DISEÑO)" value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} />
         <button className="btn" disabled={!newName.trim()}>
           <Plus size={15} /> Añadir rol
@@ -339,7 +349,7 @@ export function UsersPage() {
       <div className="page-header">
         <div>
           <h1>Usuarios y roles</h1>
-          <p>Crea las cuentas del equipo y decide qué secciones ve cada rol.</p>
+          <p>Acceso exclusivo del staff. Las cuentas de jugadores y clubes se gestionan en CTP.</p>
         </div>
       </div>
       <div className="tabs" role="tablist">

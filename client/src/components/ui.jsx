@@ -12,30 +12,45 @@ const modalStack = [];
 
 export function Modal({ title, onClose, children, footer, size, headerExtra }) {
   const id = useRef(Symbol('modal'));
+  const dialog = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
     const self = id.current;
+    const previouslyFocused = document.activeElement;
     modalStack.push(self);
-    const onKey = (e) => e.key === 'Escape' && modalStack.at(-1) === self && closeRef.current?.();
+    const focusable = () => [...(dialog.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]') || [])].filter((el) => el.getClientRects().length);
+    const onKey = (e) => {
+      if (modalStack.at(-1) !== self) return;
+      if (e.key === 'Escape') closeRef.current?.();
+      if (e.key === 'Tab') {
+        const elements = focusable();
+        const first = elements[0], last = elements.at(-1);
+        if (!first) { e.preventDefault(); dialog.current?.focus(); }
+        else if (e.shiftKey && (document.activeElement === first || !dialog.current?.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (document.activeElement === last || !dialog.current?.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+      }
+    };
     window.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    (dialog.current?.querySelector('input, textarea, select') || focusable()[0] || dialog.current)?.focus();
     return () => {
       modalStack.splice(modalStack.indexOf(self), 1);
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, []);
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className={`modal ${size || ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={dialog} tabIndex={-1} className={`modal ${size || ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-header">
           <h2>{title}</h2>
           {headerExtra}
           <span className="spacer" />
-          <button className="btn ghost icon sm" onClick={onClose} aria-label="Cerrar">
+          <button className="btn ghost icon sm" onClick={onClose} disabled={!onClose} aria-label="Cerrar">
             <X size={18} />
           </button>
         </div>

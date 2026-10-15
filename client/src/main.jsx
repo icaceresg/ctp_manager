@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
@@ -21,6 +21,8 @@ import { AccountPage } from './pages/AccountPage.jsx';
 import { UsersPage } from './pages/UsersPage.jsx';
 import { AvailabilityPage } from './pages/AvailabilityPage.jsx';
 import { BoardPage } from './pages/BoardPage.jsx';
+import { OperationsPage } from './operations/OperationsPage.jsx';
+import { OP_SECTIONS } from './operations/model.js';
 import { canAccess } from '../../shared/access.js';
 import { Lock } from 'lucide-react';
 import './styles.css';
@@ -43,6 +45,10 @@ function NoAccess() {
       </div>
     </div>
   );
+}
+
+function NotFound({ home }) {
+  return <div className="page"><EmptyState icon={Lock} title="Esta página no está disponible" action={<Link className="btn primary" to={home}>Volver a mi área de trabajo</Link>}>El enlace puede estar incompleto o haber cambiado. Puedes buscar la herramienta en «Ir a…».</EmptyState></div>;
 }
 
 function App() {
@@ -86,10 +92,11 @@ function App() {
       </div>
     );
   }
-  if (!auth.authenticated) return <Login setup={!auth.setup} onDone={check} />;
+  if (!auth.authenticated) return <Login setup={!auth.setup && auth.provider !== 'ctp'} provider={auth.provider} onDone={check} />;
 
   const me = auth.user;
-  const home = SECTION_ROUTES.find((r) => canAccess(me, r.section))?.path || '/sin-acceso';
+  const hasOperations = OP_SECTIONS.some((section) => canAccess(me, section));
+  const home = hasOperations ? '/operaciones/jornada' : SECTION_ROUTES.find((r) => canAccess(me, r.section))?.path || '/sin-acceso';
   const guard = (section, element) => (canAccess(me, section) ? element : <Navigate to={home} replace />);
 
   return (
@@ -97,6 +104,9 @@ function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Navigate to={home} replace />} />
+          <Route path="operaciones" element={<Navigate to="/operaciones/jornada" replace />} />
+          <Route path="operaciones/:view" element={hasOperations ? <OperationsPage /> : <Navigate to={home} replace />} />
+          <Route path="operaciones/partidos/:matchId" element={hasOperations ? <OperationsPage /> : <Navigate to={home} replace />} />
           <Route path="calendario" element={guard('calendario', <CalendarPage />)} />
           <Route path="escaleta" element={guard('escaleta', <RundownPage />)} />
           <Route path="escaleta/:id" element={guard('escaleta', <RundownPage />)} />
@@ -106,7 +116,7 @@ function App() {
           <Route path="usuarios" element={me.is_admin ? <UsersPage /> : <Navigate to={home} replace />} />
           <Route path="cuenta" element={<AccountPage />} />
           <Route path="sin-acceso" element={<NoAccess />} />
-          <Route path="*" element={<Navigate to={home} replace />} />
+          <Route path="*" element={<NotFound home={home} />} />
         </Route>
       </Routes>
     </AppProvider>

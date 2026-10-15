@@ -1,0 +1,42 @@
+name: Manager checks and package
+
+on:
+  pull_request:
+    branches: [pre, main]
+  push:
+    branches: [pre, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manager-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Package the verified runtime without private data
+        run: node scripts/package-vps.mjs --out output/ctp-manager.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: manager-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ctp-manager.tar.gz
+          if-no-files-found: error
+          retention-days: 14

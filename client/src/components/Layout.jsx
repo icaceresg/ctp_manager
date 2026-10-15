@@ -1,5 +1,8 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { CalendarCheck, CalendarDays, Clapperboard, ListChecks, LogOut, Plus, ShieldCheck, SquareKanban, UserRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Activity, CalendarCheck, CalendarDays, Clapperboard, ListChecks, LogOut, Menu, Plus, ShieldCheck, SquareKanban, Trophy, UserRound, Users, ChartNoAxesCombined, History, Radio, Settings2, MessageSquare, Gavel, BadgeCheck, FileText } from 'lucide-react';
+import { managerNavigation } from '../navigation.js';
+import { QuickNavigation } from './QuickNavigation.jsx';
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { dueWithin } from '../dates.js';
@@ -9,13 +12,7 @@ export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
 }
 
-const NAV = [
-  { to: '/calendario', label: 'Calendario', icon: CalendarDays, section: 'calendario' },
-  { to: '/escaleta', label: 'Escaleta', icon: Clapperboard, section: 'escaleta' },
-  { to: '/recursos', label: 'Recursos', icon: ListChecks, section: 'recursos' },
-  { to: '/disponibilidad', label: 'Disponibilidad', icon: CalendarCheck, section: 'disponibilidad' },
-  { to: '/tablero', label: 'Tablero', icon: SquareKanban, section: 'tablero' },
-];
+const ICONS = { jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, estadisticas: ChartNoAxesCombined, clubes: BadgeCheck, discord: MessageSquare, disciplina: Gavel, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban };
 
 function PendingBadge() {
   const { data: withResources } = useData(() => api.get('/contents?with_resources=1'));
@@ -33,10 +30,29 @@ function PendingBadge() {
 
 export function Layout() {
   const { me, can, openContent, editor, closeContent, onLogout } = useApp();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.getElementById('manager-content')?.focus({ preventScroll: true });
+    const title = managerNavigation(can, me.is_admin).find(item => item.to === location.pathname)?.title
+      || (location.pathname.startsWith('/operaciones/partidos/') ? 'Ficha de partido' : location.pathname === '/cuenta' ? 'Mi cuenta' : 'Área de trabajo');
+    document.title = `${title} · CTP Manager`;
+  }, [location.pathname]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = event => { if (event.key === 'Escape') { setMenuOpen(false); document.querySelector('.mobile-nav-toggle')?.focus(); } };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [menuOpen]);
+  const items = managerNavigation(can, me.is_admin);
+  const groups = [...new Set(items.map(item => item.group))];
   const roleNames = me.is_admin ? 'Administrador' : me.roles.map((r) => r.name).join(' · ') || 'Sin rol';
 
   return (
     <div className="app">
+      <a className="manager-skip" href="#manager-content">Ir al contenido</a>
       <aside className="sidebar">
         <div className="brand">
           <BrandMark />
@@ -44,26 +60,15 @@ export function Layout() {
             CTP <em>Manager</em>
           </span>
         </div>
-        {can('calendario') && (
-          <button className="btn primary block sidebar-new" onClick={() => openContent()}>
-            <Plus size={16} /> Nueva publicación
-          </button>
-        )}
-        <nav className="nav">
-          {NAV.filter((item) => can(item.section)).map(({ to, label, icon: Icon, section }) => (
-            <NavLink key={to} to={to}>
-              <Icon size={18} />
-              {label}
-              {section === 'recursos' && <PendingBadge />}
-            </NavLink>
-          ))}
-          {me.is_admin && (
-            <NavLink to="/usuarios">
-              <ShieldCheck size={18} />
-              Usuarios y roles
-            </NavLink>
-          )}
+        <QuickNavigation items={items} />
+        <button type="button" className="mobile-nav-toggle" aria-label={menuOpen ? 'Cerrar menú del Manager' : 'Abrir menú del Manager'} aria-controls="manager-main-nav" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><Menu size={20} /></button>
+        <nav id="manager-main-nav" className={`nav ${menuOpen ? 'is-open' : ''}`} aria-label="Navegación principal">
+          {groups.map(group => <details key={group} className="manager-nav-group" open={group === 'Trabajo diario' || items.some(item => item.group === group && location.pathname === item.to)}>
+            <summary>{group}</summary>
+            {items.filter(item => item.group === group).map(item => { const Icon = ICONS[item.id] || ListChecks; return <NavLink key={item.id} to={item.to}><Icon size={17} /><span>{item.title}</span>{item.id === 'recursos' && <PendingBadge />}</NavLink>; })}
+          </details>)}
         </nav>
+        {can('calendario') && <button className="btn block sidebar-new" onClick={() => openContent()}><Plus size={16} /> Nueva publicación</button>}
         <div className="sidebar-footer">
           <NavLink to="/cuenta" className="user-chip" title="Mi cuenta">
             <span className="user-avatar">
@@ -79,7 +84,7 @@ export function Layout() {
           </button>
         </div>
       </aside>
-      <main className="main">
+      <main id="manager-content" className="main" tabIndex={-1}>
         <Outlet />
       </main>
       {editor && (

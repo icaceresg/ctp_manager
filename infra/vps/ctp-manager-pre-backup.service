@@ -1,0 +1,34 @@
+[Unit]
+Description=Consistent private backup of CTP Manager PRE SQLite and configuration
+After=ctp-manager-pre.service
+ConditionPathExists=/var/lib/ctp-manager-pre/myredesmanager.db
+ConditionPathExists=/etc/ctp-manager/pre.env
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStartPre=/usr/bin/install -d -m 0700 -o root -g root /opt/ctp/backups/manager-pre
+ExecStart=/usr/bin/flock --nonblock /opt/ctp/backups/manager-pre/.backup.lock /opt/ctp-manager/runtime/bin/node --disable-warning=ExperimentalWarning /opt/ctp-manager/backup-vps.mjs
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/var/lib/ctp-manager-pre /etc/ctp-manager /srv/ctp-manager/pre /opt/ctp-manager/runtime /etc/systemd/system/ctp-manager-pre.service
+ReadWritePaths=/opt/ctp/backups/manager-pre
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX
+MemoryMax=256M
+TasksMax=32
+LimitCORE=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ctp-manager-pre-backup

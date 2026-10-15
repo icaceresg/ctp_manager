@@ -3,7 +3,8 @@ import { Lock } from 'lucide-react';
 import { api } from '../api.js';
 import { Spinner } from '../components/ui.jsx';
 
-export function Login({ setup, onDone }) {
+export function Login({ setup, provider, onDone }) {
+  const ctp = provider === 'ctp';
   const [form, setForm] = useState({ name: '', username: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,7 +20,7 @@ export function Login({ setup, onDone }) {
     setBusy(true);
     try {
       if (setup) await api.post('/auth/setup', { name: form.name, username: form.username, password: form.password });
-      else await api.post('/auth/login', { username: form.username, password: form.password });
+      else await api.post('/auth/login', { ...(ctp ? { email: form.username } : { username: form.username }), password: form.password });
       onDone();
     } catch (err) {
       setError(err.message);
@@ -31,10 +32,10 @@ export function Login({ setup, onDone }) {
   return (
     <div className="center-screen login-screen">
       <form className="card login-card" onSubmit={submit}>
-        <img className="login-logo" src="/brand/logo-ctp.svg" alt="Connect To Play" />
+        <img className="login-logo" src="/brand/logo-ctp.svg" alt="CTP" />
         <div className="stack" style={{ gap: 4 }}>
           <h1>CTP Manager</h1>
-          <p>{setup ? 'Crea la cuenta de administrador para empezar.' : 'Intranet del equipo de Connect To Play.'}</p>
+          <p>{ctp ? 'Misma cuenta y contraseña de CTP.' : setup ? 'Crea la cuenta de administrador para empezar.' : 'Intranet del equipo de CTP.'}</p>
         </div>
         {setup && (
           <div className="field">
@@ -43,10 +44,11 @@ export function Login({ setup, onDone }) {
           </div>
         )}
         <div className="field">
-          <label htmlFor="username">Usuario</label>
+          <label htmlFor="username">{ctp ? 'Correo CTP' : 'Usuario'}</label>
           <input
             id="username"
             className="input"
+            type={ctp ? 'email' : 'text'}
             autoFocus
             autoComplete="username"
             autoCapitalize="none"
@@ -73,12 +75,12 @@ export function Login({ setup, onDone }) {
             <input id="pw2" className="input" type="password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} />
           </div>
         )}
-        {error && <div className="form-error">{error}</div>}
+        {error && <div className="form-error" role="alert">{error}</div>}
         <button className="btn primary block" disabled={busy || !form.username || !form.password}>
           {busy && <Spinner size={15} />} {setup ? 'Crear cuenta y entrar' : 'Entrar'}
         </button>
         <p className="login-foot">
-          <Lock size={12} /> Acceso restringido. Las cuentas las crea un administrador.
+          <Lock size={12} /> {ctp ? 'Acceso restringido al staff de CTP. No necesitas otra cuenta.' : 'Acceso restringido. Las cuentas las crea un administrador.'}
         </p>
       </form>
     </div>

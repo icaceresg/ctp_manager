@@ -10,14 +10,49 @@ try {
   /* sin .env: se usan los valores por defecto */
 }
 
-export const PORT = Number(process.env.PORT) || 3210;
+export function deploymentConfig(env = process.env) {
+  const port = Number(env.PORT || 3210);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT debe ser un puerto válido.');
+  let origin = `http://localhost:${port}`;
+  const publicDeployment = Boolean(env.PUBLIC_ORIGIN);
+  if (publicDeployment) {
+    let parsed;
+    try { parsed = new URL(env.PUBLIC_ORIGIN); } catch { throw new Error('PUBLIC_ORIGIN debe ser un origen HTTPS válido.'); }
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash || parsed.origin !== env.PUBLIC_ORIGIN.replace(/\/$/, '')) {
+      throw new Error('PUBLIC_ORIGIN debe ser solo un origen HTTPS, sin ruta ni credenciales.');
+    }
+    if (parsed.origin !== 'https://manager.playctp.com') throw new Error('El único origen público de Manager es https://manager.playctp.com.');
+    origin = parsed.origin;
+  }
+  const origins = publicDeployment ? [origin] : [
+    ...[port, Number(env.DEV_WEB_PORT || 5173)].flatMap((p) => [`http://localhost:${p}`, `http://127.0.0.1:${p}`, `http://[::1]:${p}`]),
+  ];
+  const hosts = publicDeployment ? [new URL(origin).host] : [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`];
+  return { port, origin, host: new URL(origin).host, publicDeployment, secureCookies: publicDeployment, origins, hosts };
+}
+
+export const DEPLOYMENT = deploymentConfig();
+export const PORT = DEPLOYMENT.port;
 export const DATA_DIR = path.resolve(root, process.env.DATA_DIR || 'data');
 export const DIST_DIR = path.join(root, 'dist');
 
 // Las cookies de sesión van ligadas al nombre de host, así que la app se
 // sirve siempre en "localhost" y redirige ahí si entras por 127.0.0.1.
-export const APP_HOST = `localhost:${PORT}`;
-export const APP_ORIGIN = `http://${APP_HOST}`;
+export const APP_HOST = DEPLOYMENT.host;
+export const APP_ORIGIN = DEPLOYMENT.origin;
+export const SECURE_COOKIES = DEPLOYMENT.secureCookies;
+
+/** Exact host/origin allowlists; forwarded headers never grant access. */
+export function requestBoundary(req, config = DEPLOYMENT) {
+  if (!config.hosts.includes((req.get('host') || '').toLowerCase())) return 'Host no permitido.';
+  const origin = req.get('origin');
+  if (origin && !config.origins.includes(origin)) return 'Origen no permitido.';
+  const site = req.get('sec-fetch-site');
+  const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  if (site === 'cross-site' && (unsafe || req.path.startsWith('/api/'))) return 'Origen no permitido.';
+  if (unsafe && site === 'same-site' && !origin) return 'Origen no permitido.';
+  return null;
+}
 
 export const SESSION_COOKIE = 'mrm_session';
 export const SESSION_DAYS = 30;

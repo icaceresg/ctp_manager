@@ -31,10 +31,10 @@ export function Login({ setup, onDone }) {
   return (
     <div className="center-screen login-screen">
       <form className="card login-card" onSubmit={submit}>
-        <img className="login-logo" src="/brand/logo-ctp.svg" alt="Connect To Play" />
+        <img className="login-logo" src="/brand/logo-ctp.svg" alt="CTP" />
         <div className="stack" style={{ gap: 4 }}>
           <h1>CTP Manager</h1>
-          <p>{setup ? 'Crea la cuenta de administrador para empezar.' : 'Intranet del equipo de Connect To Play.'}</p>
+          <p>{setup ? 'Crea la cuenta de administrador para empezar.' : 'Intranet del equipo de CTP.'}</p>
         </div>
         {setup && (
           <div className="field">
@@ -73,7 +73,7 @@ export function Login({ setup, onDone }) {
             <input id="pw2" className="input" type="password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} />
           </div>
         )}
-        {error && <div className="form-error">{error}</div>}
+        {error && <div className="form-error" role="alert">{error}</div>}
         <button className="btn primary block" disabled={busy || !form.username || !form.password}>
           {busy && <Spinner size={15} />} {setup ? 'Crear cuenta y entrar' : 'Entrar'}
         </button>

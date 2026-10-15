@@ -1,0 +1,99 @@
+# CTP Manager: instalación y conexión privada
+
+Manager es el backoffice de staff, competición y arbitraje. La aplicación conserva SQLite para organización interna, comandos y proyecciones. El backend CTP compartido con la web de jugadores mantiene la fuente oficial de partidos, estadísticas, clubes y resoluciones; un comando pendiente en Manager no cambia el estado oficial. CTP Panel es una herramienta externa del PC de realización y controla la emisión; desplegar Manager no instala, abre ni conecta ese Panel.
+
+Las decisiones oficiales se preparan en Manager y se envían explícitamente al backend CTP, con identidad y permisos del operador. Esto no crea una segunda base competitiva ni permite acceso directo a Supabase desde el navegador. La [matriz funcional](OPERATIONS_IMPLEMENTATION.md) describe los siete bloques implementados, incluidos torneos, inscripciones, sorteo oficial, publicación, horarios e histórico. Requieren desplegar el puente y las migraciones compatibles; véase el [plan de PRE](PRE_RELEASE_2026-10-02.md).
+
+## Instalación local y administrador inicial
+
+1. Usar Node 22.13 o posterior, `npm ci` y `npm run build`.
+2. Mantener `PUBLIC_ORIGIN` sin definir y arrancar con `npm run serve`.
+3. Crear el primer administrador desde `http://localhost:3210`. En una VPS, usar un túnel SSH local, por ejemplo `ssh -L 3210:127.0.0.1:3210 usuario@vps`, y abrir esa dirección en el ordenador del administrador.
+4. Detener el proceso, configurar el origen HTTPS y arrancarlo bajo el supervisor elegido. El alta inicial queda bloqueada cuando `PUBLIC_ORIGIN` está configurado. No publicar una instalación todavía sin administrador.
+
+La base de datos está en `DATA_DIR/myredesmanager.db`; proteger el directorio y `.env` con permisos exclusivos del usuario de servicio. Respaldar SQLite mediante su API de backup o con el servicio detenido; copiar solo el archivo principal durante escrituras WAL puede perder datos. Comprobar restauración antes de aplicar migraciones a una base real.
+
+## Proxy HTTPS en la misma VPS
+
+Variables para el único dominio público admitido (su despliegue está pendiente):
+
+```dotenv
+PORT=3210
+DATA_DIR=/var/lib/ctp-manager
+PUBLIC_ORIGIN=https://manager.playctp.com
+CTP_ENABLE_WRITES=false
+CTP_SYNC_SECONDS=0
+```
+
+Express escucha únicamente en loopback. El proxy debe terminar HTTPS, conservar el `Host` público exacto y no reescribir `Origin`. No abrir el puerto 3210 en el cortafuegos ni activar `trust proxy` indiscriminadamente. Los encabezados `X-Forwarded-Host`/`X-Forwarded-Proto` no conceden acceso.
+
+Ejemplo del bloque de proxy dentro del servidor HTTPS de Nginx:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3210;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    client_max_body_size 1m;
+}
+```
+
+El proxy debe rechazar hosts no reconocidos en su servidor predeterminado. Con `PUBLIC_ORIGIN` las cookies llevan `Secure`, `HttpOnly` y `SameSite=Lax`. Host, Origin y Fetch Metadata se comprueban antes de procesar cualquier API. Solo acceden administradores y cuentas con roles clasificados como staff. Las sesiones se invalidan al retirar todas sus funciones de staff. Un rol desconocido antiguo no concede acceso hasta que un administrador lo clasifique; se conservan sus permisos anteriores sin ampliarlos automáticamente.
+
+## Puente de operaciones CTP
+
+El repositorio de CTP contiene la Edge Function `manager-operations` y su migración. Deben revisarse y desplegarse por separado antes de configurar una VPS. La conexión QA de este PC se describe en [LOCAL_CTP_CONNECTION.md](LOCAL_CTP_CONNECTION.md); no constituye un despliegue remoto ni habilita escrituras oficiales.
+
+```dotenv
+CTP_OPERATIONS_URL=https://PROJECT.supabase.co/functions/v1/manager-operations
+CTP_OPERATIONS_TOKEN=<token aleatorio de 32 caracteres o más>
+CTP_SIGNING_SECRET=<otro secreto aleatorio independiente de 32 caracteres o más>
+CTP_ENABLE_WRITES=false
+CTP_SYNC_SECONDS=0
+```
+
+El token se configura como `MANAGER_INTEGRATION_TOKEN` y la clave de firma como `MANAGER_SIGNING_SECRET` en CTP. Deben ser diferentes; no utilizar la `service_role` de Supabase como token del Manager. Nunca poner secretos en variables `VITE_`, código del cliente, enlaces o repositorios. La URL admite HTTPS y, para pruebas locales, HTTP solo con un host literal de loopback. No admite credenciales, parámetros ni redirecciones.
+
+Cada petición lleva HMAC-SHA256 del cuerpo exacto, método, ruta canónica, origen `https://manager.playctp.com`, timestamp y nonce. La función verifica ambos secretos, una ventana temporal de 120 segundos y un nonce de un solo uso guardado en PostgreSQL. CORS/Origin por sí solos no autentican un servidor ([OWASP REST Security](https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html)). La seguridad depende de mantener estas credenciales exclusivamente en el backend autorizado.
+
+Las escrituras remotas exigen `PUBLIC_ORIGIN=https://manager.playctp.com`. `CTP_ALLOW_LOCAL_WRITES=true` solo admite un puente HTTP de loopback para pruebas aisladas; no permite escribir en PRE desde localhost. Las lecturas remotas pueden probarse en local una vez desplegado el puente. La función debe usar `verify_jwt=false`: aplica su propia autenticación privada y no recibe JWT de jugadores.
+
+La instalación del puente y la retirada de las herramientas anteriores son pasos separados. La migración 079 deja `competition_cutover_enabled=false`: conserva los permisos de la gestión web existente. Cuando el Manager esté accesible en su dominio y el staff esté vinculado, el servicio de despliegue puede llamar a `manager_set_competition_cutover(true, motivo)`. La operación es privada, exige un motivo y queda auditada. `false` restaura las concesiones originales; cualquier desviación de permisos o cadena de concesiones que no pueda reconstruirse provoca un rollback completo. No hay botón para activar este cambio desde una sesión web. La pantalla Conexión muestra el estado confirmado por CTP y trata un valor ausente como desconocido.
+
+Este estado de transición no rebaja la autenticación del Manager: su firma, token, identidad y permisos se comprueban siempre. Antes de habilitar la exclusividad, probar el acceso real del staff y drenar operaciones pendientes de la web anterior. No activar el corte solo porque el puente responda.
+
+El botón Sincronizar usa `{action: "snapshot"}`. El intervalo opcional `CTP_SYNC_SECONDS` solo efectúa lecturas (0 lo desactiva, mínimo 30). Si falla la conexión se conserva la última proyección válida y se muestra el estado de sincronización; no se transforma una caída en listas vacías ni en resultados cero. Las respuestas tienen límite de 4 MiB y 10 segundos.
+
+El aviso `possibly_truncated` del puente se conserva para indicar que la lista puede ser parcial. El contexto privado de cada incidencia se carga aparte y paginado, solo a petición del staff de arbitraje: el identificador del operador procede de su sesión local y CTP comprueba su vínculo y permisos. Los mensajes no se copian a la caché de casters ni a la proyección general.
+
+Para enviar una solicitud oficial, tras revisión y autorización de despliegue:
+
+1. En CTP, un administrador vincula el UUID estable de operador que muestra Manager a su cuenta CTP en `manager_operator_bindings` y concede los ámbitos necesarios. No usar el ID numérico de usuario: puede reciclarse al borrar una cuenta; el UUID estable cambia si se elimina y recrea el usuario. Un rol local no sustituye los permisos oficiales.
+2. En el dominio autorizado, activar deliberadamente `CTP_ENABLE_WRITES=true` y reiniciar Manager. Activar también `MANAGER_OPERATIONS_ENABLED=true` en CTP.
+3. Sincronizar para conocer las acciones admitidas por CTP. El administrador revisa la solicitud pendiente y pulsa Enviar. No existe envío automático de comandos.
+4. El adaptador comprueba que el autor original continúa activo y conserva el permiso local; CTP valida además su vinculación, permisos, versión y reglas de negocio.
+
+El envío usa un identificador de idempotencia estable. Ante un timeout no se presupone éxito; un reintento usa el mismo identificador y CTP debe devolver el resultado guardado sin repetir el efecto. Solo un ACK `{applied:true}` con el mismo identificador, tipo y destino se convierte en confirmación local. Las acciones que el puente no anuncie como admitidas permanecen pendientes. Las sanciones oficiales requieren además la migración CTP 070 y sus permisos explícitos.
+
+Las rutas `/api/operations/integration` requieren sesión; sincronizar exige Operaciones o administrador y enviar exige administrador. Las respuestas de estado nunca incluyen URL de conexión privada, tokens o credenciales. El origen público `CTP_WEB_ORIGIN` sirve únicamente para enlaces a la web y es visible: HTTPS o HTTP exclusivamente de loopback para QA local.
+
+## Preparación y emisión con CTP Panel
+
+**Preparación** conserva partido, escaleta, notas, personal asignado y estados manuales de coordinación, manteniendo la ruta y el permiso `realizacion`. No envía órdenes a OBS ni consulta su estado. «En preparación», «Preparado», «En seguimiento», «Seguimiento en pausa» y «Cerrado» no son confirmaciones de OBS ni modifican resultados competitivos. Los códigos históricos `live` y `paused` permanecen en la base, pero se muestran con las nuevas etiquetas de seguimiento.
+
+El equipo describe CTP Panel como un dock HTML externo que emite el estado del overlay y maneja tarjetas, marcador, mapas, descansos, casters, cámaras y acceso OBS local. Su archivo HTML no está disponible en este workspace: esta documentación no certifica su comportamiento. Debe existir una sola instancia de Panel por emisión; no abrir otra desde Manager ni ejecutar un segundo controlador OBS.
+
+Mantener `OBS_ENABLE_CONTROL=false` y no iniciar `scripts/obs-agent.mjs`. El [backend y agente anteriores](OBS_AGENT.md) se conservan sin borrar tablas o historial, pero ya no forman parte del alta ni del despliegue recomendado de Manager. Sus variables no son necesarias para preparar una jornada.
+
+La lectura JSON desde el Panel es una integración futura pendiente de revisar el HTML y acordar el contrato. La propuesta es adaptar en servidor solo los datos aprobados y necesarios, con acceso de lectura limitado; no exponer la proyección privada completa, conversaciones, credenciales Supabase ni el secreto del puente. No se ha creado un endpoint, un formato de campos, una URL de Panel ni un mapeo automático. Las credenciales y el estado de emisión del Panel permanecen en el PC; el dato competitivo oficial se mantiene separado de la edición manual en pantalla.
+
+## Verificación antes de abrirlo al equipo
+
+- Probar dominio HTTPS, cookies y rechazo de Host/Origin ajenos; no depender de que funcione por localhost.
+- Comprobar cuentas con permisos distintos, desactivación de usuarios y ausencia de notas arbitrales en casters.
+- Sincronizar contra un entorno CTP de pruebas y comprobar un corte de red conservando los datos anteriores.
+- Probar una operación permitida y otra denegada, versión obsoleta y reintento del mismo comando sin duplicar efectos.
+- Probar copia y restauración de SQLite, registros sin secretos y el control de acceso al servicio.
+
+Las pruebas locales automatizadas usan bases y servidores temporales; no prueban credenciales, proxy, webhooks, notificaciones o despliegues reales.

@@ -1,8 +1,32 @@
 # CTP Manager
 
-Intranet privada del equipo de **Connect To Play** para organizar el contenido de **Instagram, X, TikTok y YouTube**, las escaletas, los recursos, la disponibilidad del equipo y las tareas de dirección. No publica nada en las redes: es el espacio de trabajo para planificar qué se sube, cuándo, quién lo prepara y qué hace falta.
+Backoffice privado de **CTP** para el staff, la gestión de competición y el arbitraje. Su objetivo es reunir el trabajo interno del equipo sin obligar a realizarlo desde la web de jugadores. Conserva también el calendario editorial, las escaletas, los recursos, la disponibilidad y el tablero de dirección.
+
+El [centro operativo](docs/OPERATIONS_IMPLEMENTATION.md) reúne la jornada, el equipo, los expedientes y la preparación de contenidos, con conexión privada a CTP. La [activación en VPS](docs/DEPLOYMENT.md) y las escrituras externas requieren configuración explícita. No publica automáticamente en redes.
+
+## Reparto entre las tres herramientas
+
+- **Web CTP general:** interfaz de jugadores y clubes para participar, consultar calendario y resultados, aportar evidencias, abrir disputas y recibir notificaciones. El backend CTP compartido mantiene los datos y las reglas oficiales que utilizan ambas interfaces.
+- **CTP Manager:** interfaz exclusiva de staff para competición, arbitraje, validaciones, resoluciones, sanciones y asignación de personas, además del trabajo editorial y de preparación. Incluye gestión local de torneos, inscripciones, formatos y calendario mediante comandos al backend compartido. Su uso oficial requiere que el entorno remoto anuncie las capacidades y confirme cada decisión. SQLite conserva trabajo interno y proyecciones, no una segunda base competitiva oficial.
+- **CTP Panel** es el dock HTML externo que controla la emisión en el PC de realización. Según la descripción facilitada por el equipo, gestiona tarjetas, marcador en emisión, mapas, descansos, casters y cámaras mediante OBS WebSocket y `BroadcastChannel`. Ese HTML no está disponible en este workspace y su funcionamiento no se ha verificado aquí.
+
+En Manager, **Dossier** reúne el contexto aprobado para casters y **Preparación** vincula partido, escaleta y notas del equipo. Sus estados son coordinación manual: «En preparación», «Preparado», «En seguimiento», «Seguimiento en pausa» y «Cerrado» no confirman ni cambian el estado de OBS.
+
+Debe mantenerse un único Panel por emisión. Manager no abre otra instancia del Panel ni emite estado de overlay ni configura OBS. El [agente OBS anterior](docs/OBS_AGENT.md) se conserva como código histórico desactivado, fuera del flujo de uso actual. La futura alimentación de datos al Panel requiere acordar y probar su contrato JSON; aún no hay un endpoint ni una conexión Panel implementados en Manager. La [matriz funcional](docs/OPERATIONS_IMPLEMENTATION.md#propiedad-funcional-y-alcance-real) distingue las funciones actuales del traslado pendiente de herramientas de staff.
 
 ## Qué puedes hacer
+
+### Competición y staff
+
+- **Mi jornada:** tareas según rol, turnos propios por confirmar, expedientes y cobertura del equipo.
+- **Planificador:** semana, búsqueda y filtros, candidatos disponibles y turnos. Coordinación puede sustituir o reprogramar con motivo; el servidor comprueba permisos, disponibilidad y solapamientos y pide nueva confirmación al asignado.
+- **Incidencias:** bandeja por responsable, prioridad y estado, búsqueda, notas privadas, conversación CTP y resoluciones.
+- **Torneos:** crear y editar, gestionar estados, revisar inscripción y roster, consultar puntos y seed oficiales, generar cruces con el motor CTP, publicar fases y reprogramar partidos. Los cambios quedan como propuestas hasta la confirmación remota.
+- **Estadísticas:** aprobar/rechazar y preparar correcciones justificadas de ocho jugadores, con historial por partido. La corrección crea otra revisión pendiente y exige un revisor distinto; conserva las cifras originales.
+- **Decisiones:** revisar propuestas junto a su expediente o desde la bandeja común. Solo administración envía a CTP; no se confunde una solicitud con un cambio aplicado.
+- **Histórico:** búsqueda remota por tipo y fechas, páginas y detalle, incluso fuera de los partidos de la jornada.
+
+Estos bloques están implementados y comprobados localmente. La activación del nuevo puente en **PRE sigue pendiente** según la inspección inicial de este bloque; no se presenta la base de QA como datos oficiales ni como una integración ya desplegada. Consulta el estado y los límites en [OPERATIONS_IMPLEMENTATION.md](docs/OPERATIONS_IMPLEMENTATION.md).
 
 ### Calendario de contenido
 - Vista **mensual** y **semanal**. Haz clic en un día para crear una publicación o arrastra una tarjeta para cambiarla de día.
@@ -42,15 +66,18 @@ Intranet privada del equipo de **Connect To Play** para organizar el contenido d
 ### Usuarios y roles
 - Cada persona entra con su **usuario y contraseña**. No hay registro abierto: las cuentas las crea un administrador.
 - El **Administrador** ve todas las secciones y gestiona usuarios y roles.
-- Los **roles** (de partida *RRSS*, *CASTER* y *ÁRBITROS*) desbloquean secciones. El administrador decide cuáles en *Usuarios y roles → Roles y permisos*, y puede crear roles nuevos. Una persona puede tener varios roles.
+- Los **roles** de staff desbloquean secciones y deben tener una categoría explícita de coordinación, arbitraje, producción, caster, comunicación, clubes o dirección. Los roles sin categoría de staff y las cuentas de jugadores no conceden acceso a Manager. El administrador decide secciones y categorías en *Usuarios y roles → Roles y permisos*.
 - Roles de partida:
 
   | Rol | Secciones |
   | --- | --- |
-  | RRSS | Calendario, Recursos |
-  | CASTER | Escaleta, Disponibilidad |
-  | ÁRBITROS | Escaleta |
-  | DIRECTIVOS | Tablero |
+  | RRSS | Calendario, Recursos, Comunicación, Disponibilidad |
+  | CASTER | Escaleta, Disponibilidad, Dossier |
+  | ÁRBITROS | Arbitraje, Disponibilidad |
+  | PRODUCCIÓN | Preparación, Escaleta, Disponibilidad |
+  | COORDINACIÓN | Operaciones, Disponibilidad, Tablero |
+  | CLUBES | Revisión de clubes |
+  | DIRECTIVOS | Tablero, Operaciones |
 
 - Quien solo tiene *Recursos* puede marcar recursos como listos, pero no crear ni editar tarjetas.
 - Si desactivas a alguien o le cambias la contraseña, sus sesiones abiertas se cierran al momento.
@@ -99,9 +126,9 @@ Volver a importar el mismo archivo no duplica nada: solo añade las piezas nueva
 
 ## Tus datos
 
-Todo se guarda en la carpeta `data/` del proyecto (una base de datos SQLite), solo en este ordenador. Para hacer una copia de seguridad, copia esa carpeta. Las contraseñas se guardan cifradas (scrypt) y no se pueden recuperar, solo cambiar.
+La organización interna se guarda en la carpeta `data/` del servidor Manager (SQLite). Cuando se configura el puente CTP, también se conserva una proyección de sus datos; CTP mantiene la fuente oficial. Para respaldar SQLite utiliza su API de backup o detén el servicio antes de copiar la carpeta, como explica [DEPLOYMENT.md](docs/DEPLOYMENT.md). Las contraseñas se almacenan mediante hash scrypt y no se pueden recuperar, solo cambiar.
 
-La app no hace ninguna petición a servicios externos (las tipografías van incluidas) y pide a los buscadores que no la indexen.
+Las tipografías van incluidas y se pide a los buscadores que no indexen la intranet. Sin configurar el puente no se realizan consultas a CTP. Cuando está configurado, el servidor Manager sincroniza datos y, solo con escrituras habilitadas y envío explícito autorizado, solicita acciones oficiales. Las credenciales del puente permanecen en el servidor.
 
 ## Configuración opcional
 

@@ -1,0 +1,65 @@
+[Unit]
+Description=CTP Manager staff backoffice connected to CTP PRE
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=ctp-manager-pre
+Group=ctp-manager-pre
+WorkingDirectory=/srv/ctp-manager/pre/current
+Environment=NODE_ENV=production
+Environment=PORT=3210
+Environment=DATA_DIR=/var/lib/ctp-manager-pre
+Environment=PUBLIC_ORIGIN=https://manager.playctp.com
+Environment=CTP_WEB_ORIGIN=https://pre.playctp.com
+Environment=CTP_ENABLE_WRITES=false
+Environment=CTP_SYNC_SECONDS=0
+Environment=OBS_ENABLE_CONTROL=false
+Environment=OPEN_BROWSER=0
+EnvironmentFile=/etc/ctp-manager/pre.env
+ExecStartPre=/usr/bin/test -r /srv/ctp-manager/pre/current/dist/index.html
+ExecStartPre=/usr/bin/test -r /srv/ctp-manager/pre/current/node_modules/express/package.json
+ExecStartPre=/usr/bin/test ! -e /srv/ctp-manager/pre/current/.env
+ExecStart=/opt/ctp-manager/runtime/bin/node --disable-warning=ExperimentalWarning /srv/ctp-manager/pre/current/server/index.js
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+StateDirectory=ctp-manager-pre
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/ctp-manager-pre
+ReadOnlyPaths=/opt/ctp-manager/runtime /srv/ctp-manager/pre
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+InaccessiblePaths=-/opt/ctp -/run/docker.sock
+MemoryMax=384M
+TasksMax=64
+LimitNOFILE=4096
+LimitCORE=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ctp-manager-pre
+
+[Install]
+WantedBy=multi-user.target

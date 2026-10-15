@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
-import { SESSION_COOKIE, SESSION_DAYS } from './config.js';
-import { SECTION_IDS } from '../shared/access.js';
+import { DEPLOYMENT, SECURE_COOKIES, SESSION_COOKIE, SESSION_DAYS } from './config.js';
+import { SECTION_IDS, STAFF_KINDS, isStaffUser } from '../shared/access.js';
 
 const SESSION_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
 const MIN_PASSWORD = 8;
@@ -33,7 +33,7 @@ function verifyPassword(password, stored) {
 const DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString('hex'));
 
 export function validatePassword(password) {
-  if (typeof password !== 'string' || password.length < MIN_PASSWORD) {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD || password.length > 1024) {
     throw new HttpError(400, `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.`);
   }
   return password;
@@ -54,17 +54,17 @@ export function hasUsers() {
 /** Datos del usuario que ve el navegador: roles y secciones a las que accede. */
 export function describeUser(user) {
   const roles = db
-    .prepare('SELECT r.id, r.name, r.sections FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.name')
+    .prepare('SELECT r.id, r.name, r.sections, r.staff_kind FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.name')
     .all(user.id);
   const sections = user.is_admin
     ? SECTION_IDS
-    : SECTION_IDS.filter((s) => roles.some((r) => JSON.parse(r.sections).includes(s)));
+    : SECTION_IDS.filter((s) => roles.some((r) => STAFF_KINDS.some((kind) => kind.id === r.staff_kind) && JSON.parse(r.sections).includes(s)));
   return {
     id: user.id,
     username: user.username,
     name: user.name || user.username,
     is_admin: Boolean(user.is_admin),
-    roles: roles.map((r) => ({ id: r.id, name: r.name })),
+    roles: roles.map((r) => ({ id: r.id, name: r.name, staff_kind: r.staff_kind })),
     sections,
   };
 }
@@ -72,6 +72,7 @@ export function describeUser(user) {
 /** Crea el primer usuario (administrador) en una instalación nueva. */
 export function setupAdmin({ username, name, password }) {
   if (hasUsers()) throw new HttpError(409, 'La cuenta de administrador ya existe.');
+  if (DEPLOYMENT.publicDeployment) throw new HttpError(403, 'Crea el administrador desde localhost antes de configurar PUBLIC_ORIGIN.');
   const { lastInsertRowid } = db
     .prepare('INSERT INTO users (username, name, password_hash, is_admin, created_at) VALUES (?, ?, ?, 1, ?)')
     .run(validateUsername(username), String(name || '').trim().slice(0, 80), hashPassword(validatePassword(password)), Date.now());
@@ -96,6 +97,7 @@ export function login(username, password) {
     throw new HttpError(401, user && ok && !user.active ? 'Este usuario está desactivado.' : 'Usuario o contraseña incorrectos.');
   }
   failures.delete(key);
+  if (!isStaffUser(describeUser(user))) throw new HttpError(403, 'Manager es exclusivo del staff. Un administrador debe asignarte un rol de staff.');
   db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(Date.now(), user.id);
   return user;
 }
@@ -115,7 +117,7 @@ export function createSession(res, userId) {
   const now = Date.now();
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(token, userId, now, now + SESSION_MS);
-  res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', maxAge: SESSION_MS, path: '/' });
+  res.cookie(SESSION_COOKIE, token, { httpOnly: true, secure: SECURE_COOKIES, sameSite: 'lax', maxAge: SESSION_MS, path: '/' });
   return token;
 }
 
@@ -123,7 +125,9 @@ export function readSessionToken(req) {
   const header = req.headers.cookie || '';
   for (const part of header.split(';')) {
     const [name, ...rest] = part.trim().split('=');
-    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join('='));
+    if (name === SESSION_COOKIE) {
+      try { return decodeURIComponent(rest.join('=')); } catch { return null; }
+    }
   }
   return null;
 }
@@ -138,13 +142,19 @@ export function currentUser(req) {
         WHERE s.token = ? AND s.expires_at > ? AND u.active = 1`,
     )
     .get(token, Date.now());
-  return user ? describeUser(user) : null;
+  if (!user) return null;
+  const described = describeUser(user);
+  if (!isStaffUser(described)) {
+    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+    return null;
+  }
+  return described;
 }
 
 export function destroySession(req, res) {
   const token = readSessionToken(req);
   if (token) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
-  res.clearCookie(SESSION_COOKIE, { path: '/' });
+  res.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, secure: SECURE_COOKIES, sameSite: 'lax' });
 }
 
 export function requireAuth(req, res, next) {

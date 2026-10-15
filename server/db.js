@@ -212,13 +212,28 @@ if (legacyPassword) {
 }
 
 // Roles de partida (solo la primera vez: luego el administrador los gestiona).
+if (!db.prepare('PRAGMA table_info(roles)').all().some((column) => column.name === 'staff_kind')) {
+  db.exec("ALTER TABLE roles ADD COLUMN staff_kind TEXT NOT NULL DEFAULT ''");
+  // Preserve permissions. Only known historical staff roles are classified automatically.
+  const classify = db.prepare("UPDATE roles SET staff_kind = ? WHERE upper(name) = ?");
+  for (const role of DEFAULT_ROLES) classify.run(role.staff_kind, role.name);
+  classify.run('referee', 'ARBITROS');
+  classify.run('production', 'PRODUCCION');
+}
 if (!db.prepare("SELECT 1 FROM settings WHERE key = 'roles_seeded'").get()) {
-  const insert = db.prepare('INSERT OR IGNORE INTO roles (name, sections, created_at) VALUES (?, ?, ?)');
-  for (const role of DEFAULT_ROLES) insert.run(role.name, JSON.stringify(role.sections), Date.now());
+  const insert = db.prepare('INSERT OR IGNORE INTO roles (name, sections, staff_kind, created_at) VALUES (?, ?, ?, ?)');
+  for (const role of DEFAULT_ROLES) insert.run(role.name, JSON.stringify(role.sections), role.staff_kind, Date.now());
   db.prepare("INSERT INTO settings (key, value) VALUES ('roles_seeded', '1')").run();
 }
 
 // La sección Disponibilidad llegó después: se añade una vez al rol CASTER existente.
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'staff_templates_v1'").get()) {
+  const insert = db.prepare('INSERT OR IGNORE INTO roles (name, sections, staff_kind, created_at) VALUES (?, ?, ?, ?)');
+  for (const role of DEFAULT_ROLES) insert.run(role.name, JSON.stringify(role.sections), role.staff_kind, Date.now());
+  db.prepare("INSERT INTO settings (key, value) VALUES ('staff_templates_v1', '1')").run();
+}
+
+// Existing role permissions are preserved; administrators can apply reviewed templates.
 if (!db.prepare("SELECT 1 FROM settings WHERE key = 'availability_seeded'").get()) {
   const caster = db.prepare("SELECT id, sections FROM roles WHERE name = 'CASTER'").get();
   if (caster) {
@@ -239,7 +254,7 @@ if (!db.prepare("SELECT 1 FROM settings WHERE key = 'event_days_seeded'").get())
 
 // Tablero para Directivos: rol, listas y etiquetas de partida (una sola vez).
 if (!db.prepare("SELECT 1 FROM settings WHERE key = 'board_seeded'").get()) {
-  db.prepare("INSERT OR IGNORE INTO roles (name, sections, created_at) VALUES ('DIRECTIVOS', '[\"tablero\"]', ?)").run(Date.now());
+  db.prepare("INSERT OR IGNORE INTO roles (name, sections, staff_kind, created_at) VALUES ('DIRECTIVOS', '[\"tablero\"]', 'executive', ?)").run(Date.now());
   if (!db.prepare('SELECT COUNT(*) AS n FROM board_lists').get().n) {
     const insertList = db.prepare('INSERT INTO board_lists (title, position, created_at) VALUES (?, ?, ?)');
     ['Por hacer', 'En curso', 'En revisión', 'Hecho'].forEach((title, i) => insertList.run(title, i, Date.now()));

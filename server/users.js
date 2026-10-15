@@ -2,7 +2,7 @@
 import { db, tx } from './db.js';
 import { HttpError, describeUser, hashPassword, validatePassword, validateUsername } from './auth.js';
 import * as v from './validate.js';
-import { SECTION_IDS } from '../shared/access.js';
+import { SECTION_IDS, STAFF_KINDS } from '../shared/access.js';
 
 // ---------- Usuarios ----------
 
@@ -46,7 +46,8 @@ function cleanRoleIds(ids) {
   if (!Array.isArray(ids)) throw new HttpError(400, 'Lista de roles no válida.');
   const unique = [...new Set(ids.map(Number))];
   for (const id of unique) {
-    if (!db.prepare('SELECT 1 FROM roles WHERE id = ?').get(id)) throw new HttpError(400, 'Hay un rol que no existe.');
+    const role = db.prepare('SELECT staff_kind FROM roles WHERE id = ?').get(id);
+    if (!role || !STAFF_KINDS.some((kind) => kind.id === role.staff_kind)) throw new HttpError(400, 'Solo puedes asignar roles de staff clasificados.');
   }
   return unique;
 }
@@ -131,6 +132,7 @@ function serializeRole(r) {
   return {
     id: r.id,
     name: r.name,
+    staff_kind: r.staff_kind,
     sections: JSON.parse(r.sections),
     user_count: db.prepare('SELECT COUNT(*) AS n FROM user_roles WHERE role_id = ?').get(r.id).n,
   };
@@ -146,7 +148,9 @@ function cleanRole(body, existing = {}) {
   if (!Array.isArray(sections) || sections.some((s) => !SECTION_IDS.includes(s))) {
     throw new HttpError(400, 'Hay una sección que no existe.');
   }
-  return { name, sections: SECTION_IDS.filter((s) => sections.includes(s)) };
+  const staff_kind = body.staff_kind ?? existing.staff_kind;
+  if (!STAFF_KINDS.some((kind) => kind.id === staff_kind)) throw new HttpError(400, 'Selecciona una función de staff válida.');
+  return { name, staff_kind, sections: SECTION_IDS.filter((s) => sections.includes(s)) };
 }
 
 // Sin distinguir mayúsculas, también en letras con tilde o ñ ("DISEÑO" = "diseño").
@@ -161,8 +165,8 @@ export function createRole(body = {}) {
   const r = cleanRole(body);
   if (roleNameTaken(r.name)) throw new HttpError(409, `Ya existe el rol "${r.name}".`);
   const { lastInsertRowid } = db
-    .prepare('INSERT INTO roles (name, sections, created_at) VALUES (?, ?, ?)')
-    .run(r.name, JSON.stringify(r.sections), Date.now());
+    .prepare('INSERT INTO roles (name, sections, staff_kind, created_at) VALUES (?, ?, ?, ?)')
+    .run(r.name, JSON.stringify(r.sections), r.staff_kind, Date.now());
   return serializeRole(db.prepare('SELECT * FROM roles WHERE id = ?').get(Number(lastInsertRowid)));
 }
 
@@ -171,7 +175,7 @@ export function updateRole(id, body = {}) {
   if (!existing) throw new HttpError(404, 'Rol no encontrado.');
   const r = cleanRole(body, existing);
   if (roleNameTaken(r.name, existing.id)) throw new HttpError(409, `Ya existe el rol "${r.name}".`);
-  db.prepare('UPDATE roles SET name = ?, sections = ? WHERE id = ?').run(r.name, JSON.stringify(r.sections), existing.id);
+  db.prepare('UPDATE roles SET name = ?, sections = ?, staff_kind = ? WHERE id = ?').run(r.name, JSON.stringify(r.sections), r.staff_kind, existing.id);
   return serializeRole(db.prepare('SELECT * FROM roles WHERE id = ?').get(existing.id));
 }
 

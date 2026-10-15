@@ -3,38 +3,43 @@ import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import express from 'express';
-import { APP_HOST, APP_ORIGIN, DIST_DIR, PORT } from './config.js';
+import { APP_HOST, APP_ORIGIN, DIST_DIR, PORT, DEPLOYMENT, requestBoundary } from './config.js';
 import { db } from './db.js';
 import { HttpError } from './auth.js';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
 import { apiRouter } from './routes/api.js';
 import { boardRouter } from './routes/board.js';
+import { operationsRouter } from './routes/operations.js';
+import { integrationRouter } from './routes/integration.js';
+import { startOperationsSync } from './integration.js';
+import { obsRouter } from './routes/obs.js';
 
 const app = express();
 app.disable('x-powered-by');
 
-// Solo responde a peticiones de este ordenador: se rechazan otros nombres de
-// host (protección contra DNS rebinding) y cambios enviados desde otras webs.
-const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+// Se mantiene la escucha en loopback. En VPS el proxy conserva Host y termina TLS.
 app.use((req, res, next) => {
   // Intranet privada: que ningún buscador la indexe.
   res.set('X-Robots-Tag', 'noindex, nofollow');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'same-origin');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+  if (req.path.startsWith('/api/')) res.set('Cache-Control', 'no-store');
+  if (DEPLOYMENT.publicDeployment) res.set('Strict-Transport-Security', 'max-age=31536000');
   const host = req.get('host') || '';
-  if (!LOCAL_HOST.test(host)) return res.status(403).send('Solo accesible desde este ordenador.');
-  const origin = req.get('origin');
-  if (req.method !== 'GET' && origin && !LOCAL_HOST.test(origin.replace(/^https?:\/\//, ''))) {
-    return res.status(403).json({ error: 'Origen no permitido.' });
-  }
+  const rejected = requestBoundary(req);
+  if (rejected) return res.status(403).json({ error: rejected });
   // Las cookies de sesión van ligadas al nombre de host: usamos siempre "localhost".
-  if (req.method === 'GET' && !req.path.startsWith('/api/') && host !== APP_HOST && host.endsWith(`:${PORT}`)) {
+  if (!DEPLOYMENT.publicDeployment && req.method === 'GET' && !req.path.startsWith('/api/') && host !== APP_HOST) {
     return res.redirect(`${APP_ORIGIN}${req.originalUrl}`);
   }
   next();
 });
 
 app.use(express.json({ limit: '1mb' }));
-app.use('/api', authRouter, adminRouter, boardRouter, apiRouter);
+app.use('/api', authRouter, obsRouter, integrationRouter, operationsRouter, adminRouter, boardRouter, apiRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
 
 // Interfaz web ya compilada (npm run build).
@@ -54,8 +59,10 @@ app.use((req, res, next) => {
 app.use((err, req, res, next) => {
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON no válido.' });
-  console.error('[servidor]', err);
-  res.status(500).json({ error: 'Error interno del servidor. Mira la consola para más detalles.' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'La solicitud supera el tamaño permitido.' });
+  // No imprimir errores de transporte: pueden contener URL, cuerpos o credenciales.
+  console.error('[servidor] Error no controlado en', req.method, req.path);
+  res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
 function openBrowser(url) {
@@ -87,6 +94,7 @@ if (v4Error && v6Error) {
 
 // Limpieza periódica de sesiones caducadas.
 setInterval(() => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()), 60 * 60 * 1000).unref();
+startOperationsSync();
 
 console.log(`\n  CTP Manager funcionando en ${APP_ORIGIN}`);
 console.log('  Para cerrar la app, cierra esta ventana.\n');

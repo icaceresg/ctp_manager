@@ -59,16 +59,22 @@ try{
  const revoke=await prepare('guard.exempt',{user_id:sessions[0].user_id,approve:false,reason:'QA: se corrige la plataforma y se exige Guard.'});await send(revoke.command);
  await pulseAll();assert.equal((await state()).players.find(p=>p.user_id===sessions[0].user_id).state,'ready');
  pass('consolas verificadas y revocadas con rastro de auditoría');
- const start=await prepare('guard.start');await ok(pulse(sessions[0],{controllerConnected:false,reason:'controller_disconnected'}));
+ let start=await prepare('guard.start');await ok(pulse(sessions[0],{controllerConnected:false,reason:'controller_disconnected'}));
  const denied=await referee('POST',`/operations/guard/commands/${start.command.id}/send`,{});assert.equal(denied.status,502);
  assert.equal(sql(`SELECT count(*) FROM public.guard_match_starts WHERE match_id='${mid}';`),'0');
- await pulseAll();await send(start.command);s=await state();assert.ok(s.started_at);
+ // A certified first-attempt denial cannot be replayed as a different decision.
+ // Recover through the same explicit discard and fresh proposal shown in the UI.
+ const rejected=(await state()).commands.find(command=>command.id===start.command.id);
+ assert.equal(rejected.status,'rejected');assert.equal(rejected.result.rejected_confirmed,true);
+ await ok(referee('POST',`/operations/guard/commands/${start.command.id}/send`,{}),409);
+ await ok(referee('POST',`/operations/commands/${rejected.id}/cancel`,{expected_updated_at:rejected.updated_at}));
+ await pulseAll();start=await prepare('guard.start');await pulseAll();await send(start.command);s=await state();assert.ok(s.started_at);
  await ok(referee('POST',`/operations/guard/commands/${start.command.id}/send`,{}),409);
  assert.equal(sql(`SELECT count(*) FROM public.guard_match_starts WHERE match_id='${mid}';`),'1');
  // The durable receipt survives a lost Manager ACK, even after the official version advanced.
  const replay=JSON.parse(sql(`BEGIN; SET LOCAL ROLE service_role; SELECT set_config('request.jwt.claim.role','service_role',true); SELECT public.manager_guard_command('${actor}','${start.command.id}','guard.start','${mid}',${start.command.expected_version},'{}'); COMMIT;`));assert.equal(replay.command_id,start.command.id);
- pass('desconexión entre preparación y envío bloquea en servidor; reintento idempotente registra un solo inicio');
+ pass('desconexión bloquea en servidor; rechazo descartado explícitamente y propuesta nueva registran un solo inicio idempotente');
  await ok(referee('POST',`/operations/matches/${mid}/guard/commands`,{type:'guard.exempt',target_id:mid,expected_version:s.match_version,payload:{user_id:sessions[1].user_id,approve:true,reason:'QA cambio posterior al inicio prohibido.'}}),409);
  pass('no se alteran exenciones después de empezar');
  const result={date:new Date().toISOString(),database:meta.database,checks,passed:true,physical_device_tested:false,pre_changed:false};fs.writeFileSync('output/guard-manager-flow.json',JSON.stringify(result,null,2));
-}catch(e){console.error(e);process.exitCode=1;}
+}catch(e){fs.writeFileSync('output/guard-manager-flow.json',JSON.stringify({date:new Date().toISOString(),database:meta.database,checks,passed:false,error:e.message,physical_device_tested:false,pre_changed:false},null,2));console.error(e);process.exitCode=1;}

@@ -36,6 +36,10 @@ test('map and mode edits have explicit fields, bounded order and safe image URLs
   for(const image_url of ['javascript:alert(1)','http://example.test/x','https://user:secret@example.test/x'])assert.throws(()=>administrationPayload('admin.map.update',{image_url}),error=>error.status===400);
   assert.deepEqual(administrationPayload('admin.map.update',{image_url:''}),{image_url:''});
 });
+test('Circuit Pass grants four-season access without a season, tournament or verification field',()=>{
+  assert.deepEqual(administrationPayload('admin.entitlement.grant',{team_id:id,kind:'circuit_pass',amount_cents:60000}),{team_id:id,kind:'circuit_pass',amount_cents:60000});
+  for(const extra of [{season:1},{tournament_id:id},{verified:true},{role:'admin'}])assert.throws(()=>administrationPayload('admin.entitlement.grant',{team_id:id,kind:'circuit_pass',...extra}),error=>error.status===400);
+});
 
 test('campaigns require every locale and an internal destination, with separate queue confirmation',()=>{
   assert.deepEqual(administrationPayload('admin.campaign.create',{content,link:'/tournaments'}),{content,link:'/tournaments'});

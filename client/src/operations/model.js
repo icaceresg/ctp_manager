@@ -3,6 +3,7 @@ export const OP_TABS = [
   { id: 'jornada', title: 'Mi jornada', sections: OP_SECTIONS },
   { id: 'torneos', title: 'Torneos', sections: ['operaciones'] },
   { id: 'incidencias', title: 'Incidencias', sections: ['arbitraje'] },
+  { id: 'arbitraje', title: 'Partidos y actas', sections: ['arbitraje'] },
   { id: 'turnos', title: 'Planificador', sections: ['operaciones', 'casters', 'arbitraje', 'realizacion'] },
   { id: 'casters', title: 'Dossier', sections: ['casters', 'operaciones', 'realizacion'] },
   { id: 'realizacion', title: 'Preparación', sections: ['realizacion'] },

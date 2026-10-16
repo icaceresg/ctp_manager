@@ -20,7 +20,7 @@ export function DecisionPanel({data,resourceType,resourceId,reload,onChanged}) {
     setBusy(command.id);setError('');
     try{
       const result=await api.post(action==='send'?`/operations/integration/commands/${encodeURIComponent(command.id)}/send`:`/operations/commands/${encodeURIComponent(command.id)}/cancel`,action==='send'?{}:{expected_updated_at:command.updated_at});
-      await reload?.();await onChanged?.();
+      await reload?.();await onChanged?.(command,action);
       toast(action==='send'?'CTP ha confirmado la decisión.':'Propuesta descartada.');
       if(result.sync_pending)setError('CTP ha confirmado la decisión. La lectura de la nueva revisión está pendiente; sincroniza para actualizar las cifras.');
     }catch(err){setError(err.message);}finally{setBusy(null);}

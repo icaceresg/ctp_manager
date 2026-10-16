@@ -92,6 +92,16 @@ test('participant-facing notes have durable pending delivery instead of claiming
   assert.equal(operations.incidentDetail(referee,incident.id).notes[0].delivery_status,'delivered');
 });
 
+test('rejected official tickets block legacy editing, participant replies and duplicate resolutions',()=>{
+  operations.ingestSnapshot({incidents:[{id:'incident-rejected',kind:'tournament',match_id:'match-a',title:'Ticket rechazado',reason:'Revisión completada',status:'rechazado',version:9}]});
+  const incident=operations.incidentDetail(referee,'incident-rejected').incident;
+  assert.equal(incident.status,'rejected');
+  assert.throws(()=>operations.updateIncident(referee,incident.id,{expected_version:incident.version,status:'open'}),{status:409});
+  assert.throws(()=>operations.addIncidentNote(referee,incident.id,{expected_version:incident.version,text:'Mensaje que no debe salir',visibility:'participants'}),{status:409});
+  assert.throws(()=>operations.resolveIncident(referee,incident.id,{expected_version:incident.version,decision:'close',resolution:'Segunda resolución improcedente'}),{status:409});
+  assert.equal(operations.incidentDetail(referee,incident.id).notes.length,0);
+});
+
 test('assignments require explicit availability and role, reject overlap, and only assignee confirms', () => {
   const input={match_id:'match-a',user_id:caster.id,role:'caster',starts_at:'2026-10-01T17:00:00Z',ends_at:'2026-10-01T19:00:00Z'};
   assert.throws(()=>operations.createAssignment(admin,input),{status:409});

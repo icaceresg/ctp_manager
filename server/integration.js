@@ -5,17 +5,25 @@ import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './co
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
+import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
+import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
   incidentDetail,
+  matchDossier,
   getOperatorIdentity,
   rememberCompetitionData,
   rememberGuardState,
   rememberRankedState,
+  rememberAdministrationData,
+  rememberCaseData,
 } from './operations.js';
 
 const ACTION_SECTIONS = Object.freeze({
+  ...Object.fromEntries(CASE_ACTIONS.map(type => [type,'arbitraje'])),
+  ...Object.fromEntries(ADMIN_ACTIONS.map(type => [type, '__admin__'])),
+  ...Object.fromEntries(COMPETITION_ACTIONS.map((type) => [type, 'operaciones'])),
   ...Object.fromEntries(GUARD_ACTIONS.map(type=>[type,'arbitraje'])),
   ...Object.fromEntries(RANKED_ACTIONS.map(type=>[type,'operaciones'])),
   ...Object.fromEntries(CLUB_ACTIONS.map(type=>[type,'clubes'])),
@@ -29,7 +37,8 @@ const ACTION_SECTIONS = Object.freeze({
   'sanction.appeal': 'arbitraje',
   'sanction.review': 'arbitraje',
   'stats.correct': 'arbitraje',
-  ...Object.fromEntries(COMPETITION_ACTIONS.map((type) => [type, 'operaciones'])),
+  'match.resolve': 'arbitraje', 'match.revert': 'arbitraje',
+  'veto.prepare': 'arbitraje', 'veto.reset': 'arbitraje', 'veto.start': 'arbitraje', 'veto.staff_gate': 'arbitraje',
 });
 const ACTIONS = Object.keys(ACTION_SECTIONS);
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -72,6 +81,36 @@ function supportedActions(value) {
 
 function integrationError(status, message) { return new HttpError(status, message); }
 
+// Only these semantic provider codes may become user-facing copy. Never relay
+// an upstream message, OAuth response or credentials to the browser.
+async function ownerServiceFailure(body, response) {
+  if (body.action !== 'admin_service' || body.service !== 'twitch' || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  try {
+    const chunks = []; let bytes = 0;
+    for (;;) {
+      const part = await reader.read(); if (part.done) break;
+      bytes += part.value.byteLength;
+      if (bytes > 8192) return null;
+      chunks.push(Buffer.from(part.value));
+    }
+    const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (error?.code !== 'provider_error') return null;
+    const messages = {
+      configPending: 'La conexión de Twitch está pendiente de configurar en el servidor.',
+      stateExpired: 'La autorización ha caducado o ya se ha usado. Vuelve a conectar Twitch.',
+      wrongChannel: 'Autoriza con la cuenta de Twitch de playctp. La cuenta seleccionada no pertenece al canal.',
+      authorizationRejected: 'Twitch no ha confirmado la autorización. Vuelve a conectar el canal.',
+      tooManyAttempts: 'Se han realizado demasiados intentos. Espera antes de volver a conectar Twitch.',
+      invalidCallback: 'La respuesta de Twitch no es válida. Vuelve a iniciar la conexión.',
+    };
+    const key = typeof error.provider_error === 'string' && error.provider_error.startsWith('integrations.twitch.') ? error.provider_error.slice('integrations.twitch.'.length) : '';
+    return messages[key] ? integrationError(response.status === 409 ? 409 : response.status === 429 ? 429 : response.status >= 500 ? 502 : 400, messages[key]) : null;
+  } catch { return null; }
+  finally { await reader.cancel().catch(() => {}); }
+}
+
 /** Bounded JSON transport. Remote bodies and URLs are never used as error messages. */
 export function createOperationsTransport(config, fetchImpl = fetch) {
   return async function request(body) {
@@ -80,17 +119,19 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
     try {
       const serialized = JSON.stringify(body);
       response = await fetchImpl(config.url, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
+        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(body.action === 'admin_service' ? 25_000 : 10_000),
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.token}`, ...signManagerRequest(serialized, config.signingSecret) },
         body: serialized,
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        const ownerFailure = await ownerServiceFailure(body, response);
+        if (ownerFailure) throw ownerFailure;
+        await response.body?.cancel().catch(() => {});
         if ([401, 403].includes(response.status)) {
           // An explicit authentication/authorization denial cannot apply the
           // command. A first-attempt denial can therefore be discarded safely;
           // an earlier ambiguous attempt must still retain its command ID.
-          const error = integrationError(502, 'CTP ha rechazado las credenciales o los permisos del operador.');
+          const error = integrationError(body.action === 'command' ? 502 : 403, 'CTP ha rechazado las credenciales o los permisos del operador.');
           error.remoteRejected = true;
           throw error;
         }
@@ -143,6 +184,8 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
 }
 
 export function officialPayload(type, payload = {}) {
+  if (CASE_ACTIONS.includes(type)) return casePayload(type,payload);
+  if (ADMIN_ACTIONS.includes(type)) return administrationPayload(type, payload);
   if (GUARD_ACTIONS.includes(type)) return guardPayload(type,payload);
   if (RANKED_ACTIONS.includes(type)) return rankedPayload(type,payload);
   if (CLUB_ACTIONS.includes(type)) return manualClubPayload(type,payload);
@@ -257,9 +300,9 @@ export async function sendOperationCommand(id) {
       payload,
     });
     if (result.applied !== true || result.command_id !== commandId || result.type !== type || result.target_id !== targetId) throw integrationError(502, 'CTP no ha confirmado la aplicación de esta solicitud.');
-    acknowledgeCommand(command.id, { confirmed: true, external_id: result.command_id, source_version: result.source_version ?? result.version, revision_id: result.revision_id });
+    acknowledgeCommand(command.id, { confirmed: true, external_id: result.external_id || result.command_id, source_version: result.source_version ?? result.version, revision_id: result.revision_id });
     let sync_pending = false;
-    if (type === 'stats.correct') {
+    if (['stats.correct','incident.status','match.resolve','match.revert'].includes(type)) {
       try { await syncOperations(); } catch { sync_pending = true; }
     }
     return { ok: true, confirmed: true, command_id: command.id, sync_pending };
@@ -292,7 +335,7 @@ export async function getClubCandidates(user, query) {
 }
 export async function getIncidentContext(user, id, cursor) {
   // This local permission/resource check runs before any network request.
-  const { incident } = incidentDetail(user, id);
+  const { incident } = await getOfficialIncident(user, id);
   if (incident.source !== 'ctp') throw integrationError(422, 'Este expediente es interno y no tiene conversación en CTP.');
   if (cursor !== undefined && cursor !== null && (typeof cursor !== 'string' || cursor.length > 160)) throw integrationError(400, 'Cursor no válido.');
   const result = await request({ action: 'case_context', actor_id: getOperatorIdentity(user.id), target_id: id, cursor: cursor || null });
@@ -314,8 +357,8 @@ export async function getIncidentContext(user, id, cursor) {
 /** Read official competition data using the caller's bound staff identity. */
 export async function getCompetitionData(user, query = {}) {
   const resource = query.resource || 'tournaments';
-  if (!['tournaments', 'tournament', 'history', 'statistics'].includes(resource)) throw integrationError(400, 'Consulta de competición no válida.');
-  const allowed = resource === 'statistics' ? ['arbitraje'] : resource === 'history' ? ['operaciones', 'arbitraje'] : ['operaciones'];
+  if (!['tournaments', 'tournament', 'history', 'statistics', 'match', 'referee_queue'].includes(resource)) throw integrationError(400, 'Consulta de competición no válida.');
+  const allowed = ['statistics', 'match', 'referee_queue'].includes(resource) ? ['arbitraje'] : resource === 'history' ? ['operaciones', 'arbitraje'] : ['operaciones'];
   if (!user?.is_admin && !allowed.some((section) => user?.sections?.includes(section))) throw integrationError(403, 'No tienes permiso para esta consulta.');
   const filters = {};
   for (const key of ['query', 'status', 'kind', 'tournament_id', 'date_from', 'date_to', 'cursor']) {
@@ -331,11 +374,14 @@ export async function getCompetitionData(user, query = {}) {
   filters.limit = limit;
   const target_id = query.target_id || null;
   if (target_id !== null && (typeof target_id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,159}$/i.test(target_id))) throw integrationError(400, 'Identificador no válido.');
-  if (['tournament', 'statistics'].includes(resource) && !target_id) throw integrationError(400, 'Selecciona un recurso.');
+  if (['tournament', 'statistics', 'match'].includes(resource) && !target_id) throw integrationError(400, 'Selecciona un recurso.');
   const result = await request({ action: 'competition', actor_id: getOperatorIdentity(user.id), resource, target_id, filters });
   const list = (value, max) => Array.isArray(value) && value.length <= max && value.every((row) => row && typeof row === 'object' && !Array.isArray(row));
   if (resource === 'tournament') {
     if (!result.tournament || result.tournament.id !== target_id || !list(result.participants, 256) || !list(result.matches, 2000) || !list(result.games, 1000)) throw integrationError(502, 'CTP ha devuelto un torneo incompleto.');
+  } else if (resource === 'match') {
+    if (result.match?.id !== target_id || !Number.isInteger(result.match?.manager_version) || !['steps', 'pool', 'messages', 'reports'].every(key => list(result[key], 1000))) throw integrationError(502, 'CTP ha devuelto un partido incompleto.');
+    if(result.dossier&&(result.dossier.id!==target_id||result.dossier.version!==result.match.manager_version||!list(result.dossier.roster,100)||!list(result.dossier.statistics,100)||!list(result.dossier.maps,30)))throw integrationError(502,'CTP ha devuelto un dossier incoherente.');
   } else if (!list(result.items, resource === 'statistics' ? 100 : limit) || (result.next_cursor != null && (typeof result.next_cursor !== 'string' || result.next_cursor.length > 512))) {
     throw integrationError(502, 'CTP ha devuelto una página no válida.');
   }
@@ -344,6 +390,54 @@ export async function getCompetitionData(user, query = {}) {
 }
 
 export const getOperationHistory = (user, query = {}) => getCompetitionData(user, { ...query, resource: 'history' });
+
+/** Historic dossiers are read on demand by referees, never added to the caster feed. */
+export async function getOfficialMatchDossier(user,id) {
+  try{return matchDossier(user,id);}catch(error){if(error.status!==404||(!user?.is_admin&&!user?.sections?.includes('arbitraje')))throw error;}
+  const result=await getCompetitionData(user,{resource:'match',target_id:id});
+  if(!result.dossier)throw integrationError(502,'CTP no ha devuelto el dossier histórico. Actualiza la conexión.');
+  return matchDossier(user,id,{historical:true});
+}
+
+export async function getCaseData(user, query = {}) {
+  if(!user?.is_admin&&!user?.sections?.includes('arbitraje'))throw integrationError(403,'Necesitas acceso de arbitraje.');
+  const parsed=caseQueryParameters(query);
+  const result=await request({action:'case_query',actor_id:getOperatorIdentity(user.id),...parsed});
+  if(!Array.isArray(result.messages)||result.messages.length>50||result.messages.some(row=>!row||typeof row!=='object')
+    ||(result.next_cursor!=null&&(typeof result.next_cursor!=='string'||result.next_cursor.length>160)))throw integrationError(502,'CTP ha devuelto una conversación no válida.');
+  const item=parsed.resource==='incident'?result.incident:result.match;
+  if(item?.id!==parsed.target_id||!Number.isSafeInteger(item.manager_version)||item.manager_version<1)throw integrationError(502,'CTP ha devuelto una versión de expediente no válida.');
+  return rememberCaseData(parsed.resource,result);
+}
+export async function getOfficialIncident(user,id) {
+  try{return incidentDetail(user,id);}catch(error){if(error.status!==404)throw error;}
+  await getCaseData(user,{resource:'incident',target_id:id});
+  return incidentDetail(user,id);
+}
+
+/** Administrative data stays server-to-server and is never a general SQL proxy. */
+export async function getAdministrationData(user, query = {}) {
+  if (!user?.is_admin) throw integrationError(403, 'Esta sección requiere administración CTP.');
+  const body = administrationQuery(query);
+  const result = await request({ ...body, actor_id: getOperatorIdentity(user.id) });
+  if (result.resource !== body.resource || !Array.isArray(result.items) || result.items.length > body.filters.limit
+    || result.items.some(item => !item || typeof item !== 'object' || Array.isArray(item))
+    || !Number.isSafeInteger(result.total) || result.total < 0 || typeof result.has_more !== 'boolean') throw integrationError(502, 'CTP ha devuelto una página administrativa no válida.');
+  const privateKeys = new Set(['password', 'password_hash', 'encrypted_password', 'access_token', 'refresh_token', 'service_role_key', 'client_secret', 'private_key', 'ctp_tokens']);
+  const safe = value => {
+    if (Array.isArray(value)) return value.every(safe);
+    return !value || typeof value !== 'object' || Object.entries(value).every(([key, child]) => !privateKeys.has(key.toLowerCase()) && safe(child));
+  };
+  if (!safe(result)) throw integrationError(502, 'CTP ha devuelto campos privados no admitidos.');
+  return rememberAdministrationData(result);
+}
+
+export async function getAdministrationService(user, service, payload) {
+  if (!user?.is_admin) throw integrationError(403, 'Esta sección requiere administración CTP.');
+  if (!['twitch','push','image'].includes(service)) throw integrationError(400, 'Servicio no admitido.');
+  if (service !== 'push' && payload?.action !== 'status' && !config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  return request({action:'admin_service',actor_id:getOperatorIdentity(user.id),service,payload});
+}
 
 /** Optional read polling only; writes always require a deliberate authenticated request. */
 export function startOperationsSync() {

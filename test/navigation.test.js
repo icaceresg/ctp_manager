@@ -23,7 +23,7 @@ test('admin tools occur once and navigation targets remain unique', () => {
 test('tool search matches accents and multiple words only within allowed tools', () => {
   const items = managerNavigation(value => value === 'arbitraje', false);
   assert.deepEqual(navigationSearch(items, 'ESTADISTICAS').map(item => item.id), ['estadisticas']);
-  assert.deepEqual(navigationSearch(items, 'competicion arbitraje').map(item => item.id), ['incidencias']);
+  assert.deepEqual(navigationSearch(items, 'competicion arbitraje').map(item => item.id), ['incidencias','arbitraje']);
   assert.deepEqual(navigationSearch(items, 'usuarios'), []);
 });
 test('match return links preserve filters but reject external or unknown targets', () => {

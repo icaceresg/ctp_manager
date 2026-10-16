@@ -31,8 +31,8 @@ authRouter.post('/auth/setup', (req, res) => {
 });
 
 authRouter.post('/auth/login', async (req, res) => {
-  if (CTP_AUTH_ENABLED) return res.json({ ok: true, user: await loginCtp(req.body?.email ?? req.body?.username, req.body?.password, res) });
-  const user = login(req.body?.username, req.body?.password);
+  if (CTP_AUTH_ENABLED) return res.json({ ok: true, user: await loginCtp(req.body?.email ?? req.body?.username, req.body?.password, res, req.socket.remoteAddress) });
+  const user = login(req.body?.username, req.body?.password, req.socket.remoteAddress);
   createSession(res, user.id);
   res.json({ ok: true, user: describeUser(user) });
 });

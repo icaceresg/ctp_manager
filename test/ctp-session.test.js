@@ -15,12 +15,13 @@ Object.assign(process.env, { DATA_DIR: temporary, DB_PATH: path.join(temporary, 
   CTP_OPERATIONS_URL: 'https://pre.playctp.com/functions/v1/manager-operations' });
 const roles = new Map([[admin, 'admin'], [referee, 'referee'], [player, 'player']]);
 const sessions = new Map();
-let unavailable = false, refreshed = 0;
+let unavailable = false, refreshed = 0, heldLogin = null, heldLoginRequests = 0;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   if (unavailable) return Response.json({}, { status: 503 });
   const body = JSON.parse(init.body);
   if (url.includes('grant_type=password')) {
+    if (heldLogin) { heldLoginRequests++; await heldLogin; return Response.json({}, { status: 401 }); }
     if (body.password !== 'central-test-password') return Response.json({}, { status: 401 });
     const id = body.email.startsWith('admin') ? admin : body.email.startsWith('ref') ? referee : player;
     const access = `access-${crypto.randomUUID()}`; sessions.set(access, id);
@@ -129,4 +130,31 @@ test('tampered encrypted sessions are revoked and cannot be replayed across cook
   const pieces = encrypted.split('.'); pieces[2] = (pieces[2][0] === 'A' ? 'B' : 'A') + pieces[2].slice(1);
   db.prepare('UPDATE sessions SET ctp_tokens=? WHERE token=?').run(pieces.join('.'), first.token);
   assert.equal(await auth.currentUser(first.request()), null);
+});
+
+test('parallel login attempts are reserved before the first CTP password response', async () => {
+  let release;
+  heldLogin = new Promise(resolve => { release = resolve; });
+  heldLoginRequests = 0;
+  let first;
+  try {
+    first = auth.loginCtp('parallel@example.invalid', 'bad-password', { cookie() { assert.fail('must not create session'); } });
+    // Attach the rejection handler before releasing the deliberately held fetch.
+    const firstRejected = assert.rejects(first, { status: 401 });
+    const denied = await Promise.allSettled(Array.from({ length: 8 }, () => auth.loginCtp('PARALLEL@example.invalid', 'bad-password', {})));
+    assert.ok(denied.every(result => result.status === 'rejected' && result.reason.status === 429));
+    assert.equal(heldLoginRequests, 1, 'the burst must not reach the CTP password endpoint');
+    release(); await firstRejected;
+  } finally { release(); await first?.catch(() => {}); heldLogin = null; }
+});
+
+test('session parsing rejects duplicate, malformed and oversized token values before lookup', async () => {
+  const signed = await signIn();
+  const cookie = `mrm_session=${signed.token}`;
+  assert.equal(auth.readSessionToken({ headers: { cookie } }), signed.token);
+  for (const value of [`${cookie}; ${cookie}`, `${cookie}; mrm_session=bad`, 'mrm_session=%E0%A4%A', `mrm_session=${'a'.repeat(1000)}`, 'mrm_session=']) {
+    assert.equal(auth.readSessionToken({ headers: { cookie: value } }), null);
+    assert.equal(await auth.currentUser({ headers: { cookie: value } }), null);
+  }
+  assert.ok(db.prepare('SELECT 1 FROM sessions WHERE token=?').get(signed.token), 'invalid cookies must not delete a legitimate session');
 });

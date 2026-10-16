@@ -3,6 +3,7 @@ import { db, tx } from './db.js';
 import { DEPLOYMENT, SECURE_COOKIES, SESSION_COOKIE, SESSION_DAYS } from './config.js';
 import { SECTION_IDS, STAFF_KINDS, isStaffUser } from '../shared/access.js';
 import { ctpAuthConfig, createCtpAuthClient, CtpAuthError, encryptTokens, decryptTokens } from './ctp-auth.js';
+import { createLoginLimiter, LoginLimitError } from './login-limiter.js';
 
 export const AUTH_CONFIG = ctpAuthConfig();
 export const CTP_AUTH_ENABLED = AUTH_CONFIG.mode === 'ctp';
@@ -89,28 +90,33 @@ export function setupAdmin({ username, name, password }) {
   return Number(lastInsertRowid);
 }
 
-// Frena la fuerza bruta: tras 5 fallos seguidos con un usuario, 1 minuto de espera.
-const failures = new Map();
+const loginLimiter = createLoginLimiter();
+function reserveLogin(account, peer) {
+  try { return loginLimiter.begin(account, peer); }
+  catch (error) {
+    if (!(error instanceof LoginLimitError)) throw error;
+    throw Object.assign(new HttpError(429, error.message), { retryAfterSeconds: error.retryAfterSeconds });
+  }
+}
 
-export function login(username, password) {
+export function login(username, password, peer) {
   if (CTP_AUTH_ENABLED) throw new HttpError(403, 'Accede con el correo y la contraseña de tu cuenta CTP.');
-  const key = String(username || '').trim().toLowerCase();
-  const state = failures.get(key);
-  if (state?.lockedUntil > Date.now()) {
-    const secs = Math.ceil((state.lockedUntil - Date.now()) / 1000);
-    throw new HttpError(429, `Demasiados intentos. Espera ${secs} s.`);
+  if (typeof username !== 'string' || !USERNAME_RE.test(username.trim()) || typeof password !== 'string' || !password || password.length > 1024) {
+    throw new HttpError(401, 'Usuario o contraseña incorrectos.');
   }
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(key);
-  const ok = verifyPassword(String(password || ''), user?.password_hash || DUMMY_HASH);
-  if (!user || !ok || !user.active) {
-    const count = (state?.count || 0) + 1;
-    failures.set(key, count >= 5 ? { count: 0, lockedUntil: Date.now() + 60_000 } : { count });
-    throw new HttpError(401, user && ok && !user.active ? 'Este usuario está desactivado.' : 'Usuario o contraseña incorrectos.');
+  const key = username.trim().toLowerCase(), attempt = reserveLogin(key, peer);
+  let success = false;
+  try {
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(key);
+    const ok = verifyPassword(password, user?.password_hash || DUMMY_HASH);
+    if (!user || !ok || !user.active) throw new HttpError(401, user && ok && !user.active ? 'Este usuario está desactivado.' : 'Usuario o contraseña incorrectos.');
+    if (!isStaffUser(describeUser(user))) throw new HttpError(403, 'Manager es exclusivo del staff. Un administrador debe asignarte un rol de staff.');
+    db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(Date.now(), user.id);
+    success = true;
+    return user;
+  } finally {
+    attempt.finish({ success, credentialFailure: !success });
   }
-  failures.delete(key);
-  if (!isStaffUser(describeUser(user))) throw new HttpError(403, 'Manager es exclusivo del staff. Un administrador debe asignarte un rol de staff.');
-  db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(Date.now(), user.id);
-  return user;
 }
 
 export function changeOwnPassword(userId, current, next, keepToken) {
@@ -135,13 +141,18 @@ export function createSession(res, userId) {
 
 export function readSessionToken(req) {
   const header = req.headers.cookie || '';
+  let token = null;
   for (const part of header.split(';')) {
     const [name, ...rest] = part.trim().split('=');
     if (name === SESSION_COOKIE) {
-      try { return decodeURIComponent(rest.join('=')); } catch { return null; }
+      // Duplicate cookies have ambiguous path/domain precedence. Never choose
+      // the first value supplied by an attacker or accept an arbitrary DB key.
+      if (token !== null) return null;
+      try { token = decodeURIComponent(rest.join('=')); } catch { return null; }
+      if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     }
   }
-  return null;
+  return token;
 }
 
 /** Usuario de la sesión actual (activo y con sesión sin caducar) o null. */
@@ -218,11 +229,12 @@ function mirrorCtpIdentity(identity) {
   });
 }
 
-export async function loginCtp(email, password, res) {
+export async function loginCtp(email, password, res, peer) {
   if (!CTP_AUTH_ENABLED) throw new HttpError(403, 'El acceso con cuenta CTP no está habilitado.');
   if (typeof email !== 'string' || email.length > 254 || typeof password !== 'string' || password.length > 1024) throw new HttpError(401, 'Correo o contraseña incorrectos.');
   const key = String(email || '').trim().toLowerCase();
-  if (failures.get(key)?.lockedUntil > Date.now()) throw new HttpError(429, 'Demasiados intentos. Espera un minuto.');
+  const attempt = reserveLogin(key, peer);
+  let success = false, credentialFailure = false;
   try {
     const tokens = await ctp.login(email, password);
     const identity = await ctp.identity(tokens);
@@ -233,16 +245,14 @@ export async function loginCtp(email, password, res) {
     db.prepare("INSERT INTO sessions(token,user_id,created_at,expires_at,auth_mode,ctp_tokens) VALUES(?,?,?,?,'ctp',?)")
       .run(opaque, user.id, now, now + SESSION_MS, encrypted);
     res.cookie(SESSION_COOKIE, opaque, { httpOnly: true, secure: SECURE_COOKIES, sameSite: 'lax', maxAge: SESSION_MS, path: '/' });
-    failures.delete(key);
+    success = true;
     return describeUser(user);
   } catch (error) {
-    if (error instanceof CtpAuthError && [401, 403].includes(error.status)) {
-      const count = (failures.get(key)?.count || 0) + 1;
-      if (!failures.has(key) && failures.size >= 10000) failures.delete(failures.keys().next().value);
-      failures.set(key, count >= 5 ? { count: 0, lockedUntil: Date.now() + 60000 } : { count });
-    }
+    credentialFailure = (error instanceof CtpAuthError || error instanceof HttpError) && [401, 403].includes(error.status);
     if (error instanceof HttpError) throw error;
     throw ctpError(error);
+  } finally {
+    attempt.finish({ success, credentialFailure });
   }
 }
 

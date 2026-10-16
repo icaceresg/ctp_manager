@@ -59,7 +59,10 @@ app.use((req, res, next) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+  if (err instanceof HttpError) {
+    if (err.status === 429 && Number.isSafeInteger(err.retryAfterSeconds) && err.retryAfterSeconds > 0) res.set('Retry-After', String(err.retryAfterSeconds));
+    return res.status(err.status).json({ error: err.message });
+  }
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON no válido.' });
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'La solicitud supera el tamaño permitido.' });
   // No imprimir errores de transporte: pueden contener URL, cuerpos o credenciales.

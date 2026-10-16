@@ -6,6 +6,9 @@ import { isStaffUser } from '../shared/access.js';
 import { GUARD_ACTIONS, guardPayload } from './guard-contract.js';
 import { rankedPayload } from './ranked-contract.js';
 import { manualClubPayload } from './manual-club-contract.js';
+import { date as calendarDate } from './validate.js';
+import { ADMIN_ACTIONS, ADMIN_CREATE_ACTIONS, administrationPayload } from './administration-contract.js';
+import { CASE_ACTIONS,CASE_RESOURCE_TYPES,casePayload } from './case-contract.js';
 
 export const OPERATION_SECTIONS = ['operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones'];
 const READ_MATCH = ['operaciones', 'arbitraje', 'casters', 'realizacion', 'comunicaciones'];
@@ -17,7 +20,11 @@ function requireSection(user, ...sections) { if (!user?.id) throw new HttpError(
 function text(value, label, max = 4000, optional = false) { if (optional && (value == null || value === '')) return ''; if (typeof value !== 'string' || !value.trim() || value.length > max) throw new HttpError(400, `${label} no válido.`); return value.trim(); }
 function id(value) { return text(value, 'Identificador', 160); }
 function choice(value, values, label) { if (!values.includes(value)) throw new HttpError(400, `${label} no válido.`); return value; }
-function dateTime(value) { if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value) || !Number.isFinite(Date.parse(value))) throw new HttpError(400, 'Fecha y hora no válidas.'); return new Date(value).toISOString(); }
+function dateTime(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d/.test(value) || !Number.isFinite(Date.parse(value))) throw new HttpError(400, 'Fecha y hora no válidas.');
+  calendarDate(value.slice(0,10));
+  return new Date(value).toISOString();
+}
 function version(value, actual) { if (!Number.isInteger(value) || value < 0) throw new HttpError(400, 'Debes indicar expected_version.'); if (value !== actual) throw new HttpError(409, 'Otra persona ha actualizado este registro. Recarga antes de guardar.'); }
 function safePath(value) { return typeof value === 'string' && /^\/(?!\/)[A-Za-z0-9/_?=&%.-]*$/.test(value) ? value : null; }
 function numeric(value) { return Number.isFinite(value) && value >= 0 ? value : null; }
@@ -129,7 +136,7 @@ function normalize(kind, input) {
       mode:label(m.mode,100),status:label(m.status,60),score_a:numeric(m.score_a),score_b:numeric(m.score_b),
     }):[],
   };
-  if (kind === 'incident') return {...base,match_id:input.match_id?id(input.match_id):null,kind:label(input.kind||'support',30),title:label(input.title,300),status:({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed'})[input.status]||label(input.status || 'open',80),source_status:label(input.status,80),reason:label(input.reason,8000),created_at:input.created_at || now(),priority:input.priority==='urgent'?'urgent':'normal',resolution:label(input.resolution,8000),web_path:safePath(input.web_path)};
+  if (kind === 'incident') return {...base,match_id:input.match_id?id(input.match_id):null,kind:label(input.kind||'support',30),title:label(input.title,300),status:({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[input.status]||label(input.status || 'open',80),source_status:label(input.status,80),reason:label(input.reason,8000),created_at:input.created_at || now(),priority:input.priority==='urgent'?'urgent':'normal',resolution:label(input.resolution,8000),web_path:safePath(input.web_path)};
   if (kind === 'stat') return {...base,match_id:id(input.match_id),status:label(input.status,60),revision:numeric(input.revision),corrected_from_id:label(input.corrected_from_id,160),correction_reason:label(input.correction_reason,500),review_note:label(input.review_note,500),created_at:input.created_at||null,reviewed_at:input.reviewed_at||null,map_number:numeric(input.map_number),map_name:label(input.map_name,100),mode:label(input.mode,100),objective_label:label(input.objective_label,100),players:Array.isArray(input.players)?input.players.slice(0,100).map(normalizePlayer):[]};
   if (kind === 'club') return {...base,name:label(input.name,160),verified:input.verified===true,pass_active:input.pass_active===true,status:label(input.status,80)};
   if (kind === 'delivery') return {...base,status:label(input.status,60),kind:label(input.kind,100),error:label(input.error,1000),match_id:input.match_id?id(input.match_id):null};
@@ -197,7 +204,7 @@ export function markCommandSending(commandId) {
 export function cancelCommand(user,commandId,input) {
   return tx(()=>{
     const command=getCommand(commandId);
-    const section={'guard.configure':'arbitraje','guard.exempt':'arbitraje','guard.start':'arbitraje','incident.resolve':'arbitraje','incident.reply':'arbitraje','stats.review':'arbitraje','stats.correct':'arbitraje','club.verify':'clubes','discord.retry':'comunicaciones','sanction.create':'arbitraje','sanction.appeal':'arbitraje','sanction.review':'arbitraje','sanction.revoke':'arbitraje'}[command.type];
+    const section={'incident.status':'arbitraje','match.reply':'arbitraje','match.resolve':'arbitraje','match.revert':'arbitraje','veto.prepare':'arbitraje','veto.reset':'arbitraje','veto.start':'arbitraje','veto.staff_gate':'arbitraje','guard.configure':'arbitraje','guard.exempt':'arbitraje','guard.start':'arbitraje','incident.resolve':'arbitraje','incident.reply':'arbitraje','stats.review':'arbitraje','stats.correct':'arbitraje','club.verify':'clubes','discord.retry':'comunicaciones','sanction.create':'arbitraje','sanction.appeal':'arbitraje','sanction.review':'arbitraje','sanction.revoke':'arbitraje'}[command.type];
     requireSection(user,section||'operaciones');
     if(!user.is_admin&&command.actor_id!==user.id)throw new HttpError(403,'Solo el autor o un administrador puede descartar esta solicitud.');
     if(!Number.isInteger(input.expected_updated_at)||input.expected_updated_at!==command.updated_at)throw new HttpError(409,'La solicitud ha cambiado. Recarga antes de descartarla.');
@@ -210,7 +217,7 @@ export function cancelCommand(user,commandId,input) {
     const patch={...item};
     if(patch.pending_command_id===command.id){
       patch.pending_command_id=null;
-      if(command.type==='incident.resolve')patch.status=({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed'})[item.source_status]||item.source_status||'open';
+      if(command.type==='incident.resolve')patch.status=({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[item.source_status]||item.source_status||'open';
       save(command.resource_type,patch,item.source);
     }
     if(command.type==='incident.reply')db.prepare("UPDATE operation_notes SET delivery_status='cancelled' WHERE id=?").run(command.payload.note_id);
@@ -273,15 +280,15 @@ export function failCommand(commandId,error) {
 export function bootstrap(user) {
   requireSection(user,...OPERATION_SECTIONS);
   const staff=can(user,'operaciones','arbitraje','casters','realizacion')?db.prepare('SELECT * FROM users WHERE active=1 ORDER BY name,username').all().filter(u=>isStaffUser(describeUser(u))).map((u)=>{const described=describeUser(u);return{id:u.id,name:described.name,username:u.username,sections:described.sections,...(user.is_admin?{integration_actor_id:getOperatorIdentity(u.id)}:{}),availability:can(user,'operaciones')?db.prepare('SELECT date,status,note FROM availability WHERE user_id=? ORDER BY date').all(u.id):u.id===user.id?db.prepare('SELECT date,status,note FROM availability WHERE user_id=? ORDER BY date').all(u.id):[]};}):[];
-  const allowedKinds=new Set();if(can(user,'arbitraje')){allowedKinds.add('guard_match');allowedKinds.add('guard_tournament');}if(can(user,...READ_MATCH))allowedKinds.add('match');if(can(user,'operaciones')){allowedKinds.add('tournament');allowedKinds.add('registration');allowedKinds.add('fixture');}if(can(user,'arbitraje')){allowedKinds.add('incident');allowedKinds.add('stat');allowedKinds.add('sanction');}if(can(user,'clubes'))allowedKinds.add('club');if(can(user,'comunicaciones'))allowedKinds.add('delivery');
-  if (user.is_admin) { allowedKinds.add('ranked_season'); allowedKinds.add('club_create'); }
+  const allowedKinds=new Set();if(can(user,'arbitraje')){allowedKinds.add('guard_match');allowedKinds.add('guard_tournament');allowedKinds.add('fixture');}if(can(user,...READ_MATCH))allowedKinds.add('match');if(can(user,'operaciones')){allowedKinds.add('tournament');allowedKinds.add('registration');allowedKinds.add('fixture');}if(can(user,'arbitraje')){allowedKinds.add('incident');allowedKinds.add('stat');allowedKinds.add('sanction');allowedKinds.add('case_incident');allowedKinds.add('case_match');}if(can(user,'clubes'))allowedKinds.add('club');if(can(user,'comunicaciones'))allowedKinds.add('delivery');
+  if (user.is_admin) { allowedKinds.add('ranked_season'); allowedKinds.add('club_create'); allowedKinds.add('administration'); allowedKinds.add('administration_create'); }
   const commandRows=db.prepare('SELECT * FROM operation_commands ORDER BY created_at DESC LIMIT 300').all().filter(c=>allowedKinds.has(c.resource_type)).map(c=>getCommand(c.id));
   return {matches:can(user,...READ_MATCH)?rows('match'):[],incidents:can(user,'arbitraje')?rows('incident').map(i=>({...i,notes:notes('incident',i.id,true)})):[],assignments:can(user,'operaciones','arbitraje','casters','realizacion')?db.prepare('SELECT a.*,u.name user_name,u.username FROM operation_assignments a JOIN users u ON u.id=a.user_id ORDER BY starts_at').all():[],staff,stats:can(user,'arbitraje')?rows('stat').map(statisticsWithRoster):[],clubs:can(user,'clubes')?rows('club'):[],deliveries:can(user,'comunicaciones')?rows('delivery'):[],sanctions:can(user,'arbitraje')?rows('sanction').map(effectiveSanction):[],production:can(user,'operaciones','casters','realizacion')?db.prepare('SELECT * FROM operation_production ORDER BY updated_at DESC').all():[],audit:db.prepare('SELECT a.*,u.name actor_name,u.username actor_username FROM operation_audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 200').all().filter(a=>allowedKinds.has(a.resource_type)).map(a=>({...a,details:parse(a.details,{})})),connection:getIntegrationStatus(),commands:commandRows,rundowns:can(user,'realizacion','casters')?db.prepare('SELECT id,title,date,time FROM rundowns ORDER BY date DESC,id DESC').all():[]};
 }
-export function matchDossier(user,matchId) {requireSection(user,...READ_MATCH);const match=record('match',matchId);return{match,incidents:can(user,'arbitraje')?rows('incident').filter(i=>i.match_id===match.id):[],assignments:db.prepare('SELECT a.*,u.name user_name,u.username FROM operation_assignments a JOIN users u ON u.id=a.user_id WHERE match_id=? ORDER BY starts_at').all(match.id),statistics:[...new Map([...(match.statistics||[]),...rows('stat').filter(s=>s.match_id===match.id&&(s.status==='approved'||can(user,'arbitraje'))).map(statisticsWithRoster)].map(s=>[s.id,s])).values()],notes:can(user,'casters','realizacion')?notes('match',match.id,true):[],production:db.prepare('SELECT * FROM operation_production WHERE match_id=?').get(match.id)||null,audit:can(user,'operaciones','arbitraje')?history('match',match.id):[]};}
+export function matchDossier(user,matchId,{historical=false}={}) {requireSection(user,...READ_MATCH);if(historical)requireSection(user,'arbitraje');const match=record('match',matchId,historical);if(historical&&(!match.queried_at||now()-match.queried_at>60_000))throw new HttpError(404,'Vuelve a consultar el partido oficial.');return{match,incidents:can(user,'arbitraje')?rows('incident').filter(i=>i.match_id===match.id):[],assignments:db.prepare('SELECT a.*,u.name user_name,u.username FROM operation_assignments a JOIN users u ON u.id=a.user_id WHERE match_id=? ORDER BY starts_at').all(match.id),statistics:[...new Map([...(match.statistics||[]),...rows('stat').filter(s=>s.match_id===match.id&&(s.status==='approved'||can(user,'arbitraje'))).map(statisticsWithRoster)].map(s=>[s.id,s])).values()],notes:can(user,'casters','realizacion')?notes('match',match.id,true):[],production:db.prepare('SELECT * FROM operation_production WHERE match_id=?').get(match.id)||null,audit:can(user,'operaciones','arbitraje')?history('match',match.id):[]};}
 export function incidentDetail(user,incidentId) {requireSection(user,'arbitraje');return{incident:record('incident',incidentId),notes:notes('incident',incidentId,true),audit:history('incident',incidentId)};}
 export function createIncident(user,input) {requireSection(user,'arbitraje');return tx(()=>{const match=record('match',input.match_id);const item=save('incident',{id:randomUUID(),match_id:match.id,kind:match.kind,title:text(input.title,'Título',300),reason:text(input.reason,'Motivo',8000),priority:choice(input.priority||'normal',['normal','urgent'],'Prioridad'),status:'open',assignee_id:null,created_at:now()});audit('incident',item.id,'incident.created',user,{match_id:match.id});return item;});}
-export function updateIncident(user,key,input) {requireSection(user,'arbitraje');return tx(()=>{const item=record('incident',key);version(input.expected_version,item.version);if(['resolved','closed','closed_internal','resolution_pending'].includes(item.status))throw new HttpError(409,'El expediente ya está resuelto o tiene una resolución pendiente.');const patch={...item};if(input.status!==undefined)patch.status=choice(input.status,['open','investigating','waiting'],'Estado');if(input.priority!==undefined)patch.priority=choice(input.priority,['normal','urgent'],'Prioridad');if(input.assignee_id!==undefined){if(input.assignee_id!==null){if(!Number.isInteger(input.assignee_id)||input.assignee_id<1)throw new HttpError(400,'Responsable no válido.');const staff=db.prepare('SELECT * FROM users WHERE id=? AND active=1').get(input.assignee_id);if(!staff||!can(describeUser(staff),'arbitraje'))throw new HttpError(400,'El responsable debe ser un árbitro activo.');}patch.assignee_id=input.assignee_id;}const result=save('incident',patch,item.source);audit('incident',key,'incident.updated',user,{status:result.status,assignee_id:result.assignee_id});return result;});}
+export function updateIncident(user,key,input) {requireSection(user,'arbitraje');return tx(()=>{const item=record('incident',key);version(input.expected_version,item.version);if(['resolved','rejected','closed','closed_internal','resolution_pending'].includes(item.status))throw new HttpError(409,'El expediente ya está resuelto o tiene una resolución pendiente.');const patch={...item};if(input.status!==undefined)patch.status=choice(input.status,['open','investigating','waiting'],'Estado');if(input.priority!==undefined)patch.priority=choice(input.priority,['normal','urgent'],'Prioridad');if(input.assignee_id!==undefined){if(input.assignee_id!==null){if(!Number.isInteger(input.assignee_id)||input.assignee_id<1)throw new HttpError(400,'Responsable no válido.');const staff=db.prepare('SELECT * FROM users WHERE id=? AND active=1').get(input.assignee_id);if(!staff||!can(describeUser(staff),'arbitraje'))throw new HttpError(400,'El responsable debe ser un árbitro activo.');}patch.assignee_id=input.assignee_id;}const result=save('incident',patch,item.source);audit('incident',key,'incident.updated',user,{status:result.status,assignee_id:result.assignee_id});return result;});}
 export function addIncidentNote(user,key,input) {
   requireSection(user,'arbitraje');
   return tx(()=>{
@@ -289,7 +296,7 @@ export function addIncidentNote(user,key,input) {
     version(input.expected_version,item.version);
     const visibility=choice(input.visibility,['internal','participants'],'Visibilidad');
     if(visibility==='participants'&&item.source==='manager')throw new HttpError(422,'Un expediente interno no tiene un hilo CTP al que enviar respuestas.');
-    if(visibility==='participants'&&['resolved','closed','closed_internal'].includes(item.status))throw new HttpError(409,'El expediente está cerrado; no admite otra respuesta.');
+    if(visibility==='participants'&&['resolved','rejected','closed','closed_internal'].includes(item.status))throw new HttpError(409,'El expediente está cerrado; no admite otra respuesta.');
     const max=visibility==='internal'?8000:item.kind==='ranked'?800:2000;
     const note={id:randomUUID(),text:text(input.text,'Nota',max),visibility};
     db.prepare('INSERT INTO operation_notes(id,resource_type,resource_id,text,visibility,actor_id,delivery_status,created_at) VALUES(?,?,?,?,?,?,?,?)').run(note.id,'incident',key,note.text,note.visibility,user.id,note.visibility==='participants'?'pending':'local',now());
@@ -304,7 +311,7 @@ export function resolveIncident(user,key,input) {
   return tx(()=>{
     const item=record('incident',key);
     version(input.expected_version,item.version);
-    if(['resolved','closed','closed_internal','resolution_pending'].includes(item.status))throw new HttpError(409,'Este expediente no admite otra resolución.');
+    if(['resolved','rejected','closed','closed_internal','resolution_pending'].includes(item.status))throw new HttpError(409,'Este expediente no admite otra resolución.');
     const decision=choice(input.decision,['close','award','cancel'],'Decisión');
     const resolution=text(input.resolution,'Resolución',2000);
     if(resolution.length<8)throw new HttpError(400,'La resolución debe explicar el motivo con al menos 8 caracteres.');
@@ -435,8 +442,15 @@ export function rememberCompetitionData(resource,result) {
     });
     return {...result,items};
   });
-  const collections=resource==='tournaments'?[['tournament',result.items]]:resource==='tournament'?[['tournament',[result.tournament]],['registration',result.participants],['fixture',result.matches]]:[];
+  const collections=resource==='tournaments'?[['tournament',result.items]]:resource==='tournament'?[['tournament',[result.tournament]],['registration',result.participants],['fixture',result.matches]]:resource==='match'?[['fixture',[result.match]]]:resource==='referee_queue'?[['fixture',result.items]]:[];
   return tx(()=>{
+    if(resource==='match'&&result.dossier){
+      const normalized=normalize('match',result.dossier);
+      if(normalized.id!==result.match?.id||normalized.source_version!==result.match?.manager_version)throw new HttpError(502,'CTP ha devuelto un dossier incoherente.');
+      let old=null;try{old=record('match',normalized.id,true);}catch{}
+      if(old&&old.source_version>normalized.source_version)throw new HttpError(409,'El dossier recibido está obsoleto. Actualiza el partido.');
+      save('match',{...old,...normalized,in_feed:old?.in_feed===true,queried_at:now(),pending_command_id:old?.pending_command_id||null},'ctp');
+    }
     for(const [kind,items]of collections){
       if(!Array.isArray(items)||items.length>2000)throw new HttpError(502,'CTP ha devuelto una colección de competición no válida.');
       for(const item of items){
@@ -527,12 +541,12 @@ export function prepareManualClubCommand(user, input) {
   });
 }
 export function prepareCompetitionCommand(user,input) {
-  requireSection(user,'operaciones');
   const type=choice(input.type,COMPETITION_ACTIONS,'Acción');
+  requireSection(user,type.startsWith('match.')||type.startsWith('veto.')?'arbitraje':'operaciones');
   if(!getIntegrationStatus().supported_actions?.includes(type))throw new HttpError(422,'El backend CTP no anuncia esta capacidad. Sincroniza la conexión.');
   const payload=competitionPayload(type,input.payload);
   return tx(()=>{
-    const kind=type==='tournament.registration'?'registration':type==='tournament.schedule'?'fixture':'tournament';
+    const kind=['tournament.registration','tournament.withdraw'].includes(type)?'registration':type==='tournament.schedule'||type.startsWith('match.')||type.startsWith('veto.')?'fixture':'tournament';
     let item;
     if(type==='tournament.create'){
       if(input.expected_version!==0)throw new HttpError(400,'Un torneo nuevo requiere la versión cero.');
@@ -545,6 +559,69 @@ export function prepareCompetitionCommand(user,input) {
     const command=queue(type,kind,item,payload,user);
     return {command,resource:save(kind,{...item,pending_command_id:command.id},item.source)};
   });
+}
+
+export function rememberAdministrationData(result) {
+  return tx(() => {
+    if (typeof result.sync_target_id === 'string' && /^[a-f0-9-]{36}$/i.test(result.sync_target_id) && Number.isSafeInteger(result.sync_version)) {
+      let old; try { old = record('administration', result.sync_target_id, true); } catch { /* First bounded sync target. */ }
+      if (!old || old.source_version <= result.sync_version) save('administration', { id:result.sync_target_id,source_version:result.sync_version,in_feed:true,pending_command_id:old?.pending_command_id||null },'ctp');
+    }
+    for (const item of result.items) {
+      const key = item.manager_target_id || item.id;
+      if (typeof key !== 'string' || !/^[a-f0-9-]{36}$/i.test(key) || !Number.isSafeInteger(item.manager_version) || item.manager_version < 0) continue;
+      let old; try { old = record('administration', key, true); } catch { /* First authenticated projection. */ }
+      if (old && old.source_version > item.manager_version) continue;
+      save('administration', { ...item, id: key, source_version: item.manager_version, in_feed: true, pending_command_id: old?.pending_command_id || null }, 'ctp');
+    }
+    return result;
+  });
+}
+
+export function prepareAdministrationCommand(user, input = {}) {
+  if (!user?.is_admin) throw new HttpError(403, 'Esta sección requiere administración CTP.');
+  const type = choice(input.type, ADMIN_ACTIONS, 'Acción');
+  const payload = administrationPayload(type, input.payload);
+  if (!getIntegrationStatus().supported_actions?.includes(type)) throw new HttpError(422, 'El backend CTP no anuncia esta capacidad administrativa.');
+  return tx(() => {
+    const creation = ADMIN_CREATE_ACTIONS.includes(type);
+    let item;
+    if (creation) {
+      if (input.expected_version !== 0) throw new HttpError(400, 'Un registro nuevo requiere la versión cero.');
+      const key = input.target_id || randomUUID();
+      if (typeof key !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(key)) throw new HttpError(400, 'Identificador no válido.');
+      try { item = record('administration_create', key); } catch { /* No prior proposal. */ }
+      if (item && item.source_version !== 0) throw new HttpError(409, 'Este registro ya existe.');
+      item ||= save('administration_create', { id: key, source_version: 0, in_feed: true, name: payload.name || payload.kind || 'Nuevo registro' }, 'manager');
+    } else {
+      item = record('administration', input.target_id);
+      version(input.expected_version, item.source_version);
+    }
+    const kind = creation ? 'administration_create' : 'administration';
+    const command = queue(type, kind, item, payload, user);
+    return { command, resource: save(kind, { ...item, pending_command_id: command.id }, item.source) };
+  });
+}
+
+export function rememberCaseData(resource,result) {
+  return tx(()=>{
+    const raw=resource==='incident'?result.incident:result.match,kind=resource==='incident'?'case_incident':'case_match';
+    let old;try{old=record(kind,raw.id,true);}catch{/* First official lookup. */}
+    if(!old||old.source_version<=raw.manager_version)save(kind,{...raw,source_version:raw.manager_version,in_feed:true,pending_command_id:old?.pending_command_id||null},'ctp');
+    if(resource==='incident'){
+      let previous;try{previous=record('incident',raw.id,true);}catch{/* Archived ticket outside the feed. */}
+      const normalized=normalize('incident',{...raw,version:raw.manager_version});
+      if(!previous||previous.source_version<=raw.manager_version)save('incident',{...previous,...normalized,pending_command_id:previous?.pending_command_id||null,in_feed:true},'ctp');
+    }
+    return result;
+  });
+}
+export function prepareCaseCommand(user,input={}) {
+  requireSection(user,'arbitraje');
+  const type=choice(input.type,CASE_ACTIONS,'Acción');
+  if(!getIntegrationStatus().supported_actions?.includes(type))throw new HttpError(422,'CTP aún no admite esta acción de arbitraje.');
+  const payload=casePayload(type,input.payload),kind=CASE_RESOURCE_TYPES[type];
+  return tx(()=>{const item=record(kind,input.target_id);version(input.expected_version,item.source_version);const command=queue(type,kind,item,payload,user);return{command,resource:save(kind,{...item,pending_command_id:command.id},'ctp')};});
 }
 export function reviewClub(user,key,input) {
   requireSection(user,'clubes');

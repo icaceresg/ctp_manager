@@ -2,7 +2,7 @@ import { OP_TABS } from './operations/model.js';
 
 const groups = {
   jornada: 'Trabajo diario', turnos: 'Trabajo diario',
-  torneos: 'Competición', incidencias: 'Competición', estadisticas: 'Competición', disciplina: 'Competición', clubes: 'Competición',
+  torneos: 'Competición', arbitraje: 'Competición', incidencias: 'Competición', estadisticas: 'Competición', disciplina: 'Competición', clubes: 'Competición',
   casters: 'Emisión y comunidad', realizacion: 'Emisión y comunidad', discord: 'Emisión y comunidad', contenido: 'Emisión y comunidad',
   historico: 'Seguimiento', decisiones: 'Seguimiento',
 };
@@ -22,6 +22,7 @@ export function managerNavigation(can, isAdmin) {
   if (can('disponibilidad')) items.splice(Math.min(2, items.length), 0, { id: 'disponibilidad', to: '/disponibilidad', title: 'Mi disponibilidad', group: 'Trabajo diario', keywords: 'agenda días horarios' });
   items.push(...editorial.filter(item => can(item.section)).map(item => ({ ...item, id: item.section, group: 'Contenido editorial' })));
   if (isAdmin) items.push(
+    { id: 'administracion', to: '/administracion/resumen', title: 'Administración CTP', group: 'Administración', keywords: 'jugadores clubes accesos pases mapas campañas ranked integraciones auditoría' },
     { id: 'usuarios', to: '/usuarios', title: 'Usuarios y roles', group: 'Administración', keywords: 'permisos staff cuentas' },
     { id: 'integracion', to: '/operaciones/integracion', title: 'Conexión CTP', group: 'Administración', keywords: 'api sincronización integración' },
   );

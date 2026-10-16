@@ -1,3 +1,4 @@
+import { OfficialIncidentStatus } from './CaseControls.jsx';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileCheck2, Info, LockKeyhole, Plus, ShieldCheck } from 'lucide-react';
@@ -29,7 +30,7 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
   }, [selected, data]);
   const choose = (id) => { const next = new URLSearchParams(params); id ? next.set('case', id) : next.delete('case'); setParams(next); };
   const update = (body, base = incident) => mutate('patch', `/incidents/${encodeURIComponent(base.id)}`, { expected_version: base.version, ...body });
-  const closed = ['resolved', 'closed', 'closed_internal', 'resolution_pending'].includes(incident?.status);
+  const closed = ['resolved', 'closed', 'closed_internal', 'rejected', 'resolution_pending'].includes(incident?.status);
   return <>
     <div className="op-section-title"><div><h2>Incidencias y arbitraje</h2><p>Un expediente por problema, con responsable, contexto y seguimiento.</p></div><button className="btn primary" onClick={() => setDialog('new')} disabled={!data.matches.length}><Plus size={16} /> Abrir expediente</button></div>
     {selected ? <>
@@ -42,6 +43,7 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
         {incident.status === 'resolution_pending' && <p className="op-notice">Resolución preparada. Falta la confirmación de CTP para cerrar el expediente oficial.</p>}
         {!closed && <div className="op-case-actions">{incident.assignee_id !== me.id && <ActionButton run={() => update({ status: 'investigating', assignee_id: me.id })}>Asumir caso</ActionButton>}<button className="btn primary" onClick={() => openDialog('resolve')}><FileCheck2 size={15} /> Preparar resolución</button><details className="op-case-more"><summary>Más acciones</summary><div><button className="btn" onClick={() => openDialog('manage')}>Cambiar seguimiento</button><button className="btn" onClick={() => openDialog('note')}><LockKeyhole size={14} /> Añadir nota</button></div></details></div>}
         <DecisionPanel data={data} reload={reload} resourceType="incident" resourceId={incident.id} />
+        <OfficialIncidentStatus incident={incident} data={data} reload={reload} mutate={mutate} />
         {incident.resolution && <details className="op-case-panel"><summary>Resolución registrada</summary><blockquote className="op-quote">{incident.resolution}</blockquote></details>}
         {incident.source === 'ctp' && <details className="op-case-panel"><summary>Conversación con jugadores</summary><CaseConversation key={incident.id} incident={incident} configured={data.connection?.configured} /></details>}
         <details className="op-case-panel"><summary>Notas del expediente · {(detail?.notes || incident.notes || []).length}</summary>

@@ -1,3 +1,4 @@
+import { MatchConversation } from './CaseControls.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Activity, ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, Clock3, Info, Radio, RefreshCw, Settings2, ShieldCheck, Users } from 'lucide-react';
@@ -9,10 +10,12 @@ import { AuditList, Badge, DataTable, Empty, Field, FormDialog, MatchLink, Stats
 import { IncidentsPanel, StatisticsPanel, DisciplinePanel } from './ReviewPanels.jsx';
 import { AssignmentsPanel, ProductionPanel, ClubsPanel, DiscordPanel, ContentPanel, IntegrationPanel } from './WorkPanels.jsx';
 import { StaffDesk } from './StaffDesk.jsx';
+import { CLOSED_INCIDENTS } from './staffModel.js';
 import { CompetitionPanel } from './CompetitionPanels.jsx';
 import { HistoryPanel } from './HistoryPanel.jsx';
 import { DecisionPanel } from './DecisionPanel.jsx';
 import { GuardPanel } from './GuardPanel.jsx';
+import { MatchControlPanel, RefereeMatchQueue } from './MatchControlPanel.jsx';
 import { RankedSeasonPanel } from './RankedSeasonPanel.jsx';
 import { matchReturnPath } from '../navigation.js';
 import './operations.css';
@@ -85,6 +88,7 @@ export function OperationsPage() {
       {view === 'historico' && <HistoryPanel {...props} />}
       {view === 'decisiones' && <DecisionPanel {...props} />}
       {view === 'incidencias' && <IncidentsPanel {...props} />}
+      {view === 'arbitraje' && <RefereeMatchQueue {...props} />}
       {view === 'turnos' && <AssignmentsPanel {...props} />}
       {view === 'casters' && <CasterIndex {...props} />}
       {view === 'realizacion' && <ProductionPanel {...props} />}
@@ -100,7 +104,7 @@ export function OperationsPage() {
 
 function MatchCard({ match: m, data }) {
   const location = useLocation();
-  const issues = (data.incidents || []).filter((i) => i.match_id === m.id && !['resolved', 'closed', 'closed_internal'].includes(i.status));
+  const issues = (data.incidents || []).filter((i) => i.match_id === m.id && !CLOSED_INCIDENTS.includes(i.status));
   const assigned = (data.assignments || []).filter((a) => a.match_id === m.id && a.status === 'confirmed');
   return <Link state={{ returnTo: location.pathname + location.search }} to={`/operaciones/partidos/${encodeURIComponent(m.id)}`} className="op-match-card">
     <div className="op-match-meta"><span>{label(m.kind)}</span><Badge value={m.status} /></div>
@@ -116,7 +120,7 @@ function CasterIndex({ data }) {
   const matches = data.matches.filter(match => [matchName(match), match.title].filter(Boolean).join(' ').toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')));
   return <><div className="op-section-title"><div><h2>Preparar la narración</h2><p>Roster, mapas y estadísticas aprobadas.</p></div><div className="op-filters"><input aria-label="Buscar dossier de partido" placeholder="Equipo o torneo…" value={query} onChange={event => { setParams(event.target.value ? { q: event.target.value } : {}, { replace: true }); setLimit(24); }} />{query && <button className="btn" onClick={() => setParams({}, { replace: true })}>Limpiar búsqueda</button>}</div></div><div className="op-match-grid">{matches.slice(0, limit).map(match => <MatchCard key={match.id} match={match} data={data} />)}</div>{matches.length > limit && <button className="btn" onClick={() => setLimit(value => value + 24)}>Ver más partidos</button>}{!matches.length && <Empty title={query ? 'No hay partidos con esa búsqueda' : 'Sin partidos sincronizados'}>{query ? 'Prueba otro equipo o borra la búsqueda.' : 'Cada partido tendrá aquí su dossier para casters.'}</Empty>}</>;
 }
-function MatchDossier({ id, data, mutate, can }) {
+function MatchDossier({ id, data, mutate, can, reload }) {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const section = ['stats', 'maps', 'notes', ...(can('arbitraje') ? ['incidents'] : [])].includes(params.get('tab')) ? params.get('tab') : 'summary';
@@ -148,6 +152,8 @@ function MatchDossier({ id, data, mutate, can }) {
     {section === 'summary' && <>
     {can('arbitraje') && <div className="op-actions"><Link className="btn" to={`/operaciones/estadisticas?match=${encodeURIComponent(id)}`}>Revisar estadísticas de este partido <ArrowUpRight size={14} /></Link><button className="btn" onClick={() => changeSection('incidents')}>Ver incidencias{detail.incidents?.length ? ` · ${detail.incidents.length}` : ''}</button></div>}
     {can('arbitraje') && m.kind === 'tournament' && <GuardPanel key={id} id={id} />}
+    {can('arbitraje') && m.kind === 'tournament' && <MatchControlPanel id={id} data={data} reload={reload} mutate={mutate} />}
+    {can('arbitraje') && m.kind === 'challenge' && <MatchConversation kind={m.kind} id={id} data={data} reload={reload} mutate={mutate} />}
     <div className="op-two-columns"><section className="op-card"><details className="op-roster-details"><summary>Roster del encuentro · {rosterRows(m.roster).length} jugadores</summary><DataTable rows={rosterRows(m.roster)} columns={[{ key: 'name', title: 'Jugador', render: (p) => p.username || p.gamertag || p.name || 'Sin identificar' }, { key: 'side', title: 'Equipo', render: (p) => p.team_name || (['a', 'A', 'team_a'].includes(p.side) ? teamName(m.team_a) : ['b', 'B', 'team_b'].includes(p.side) ? teamName(m.team_b) : 'Sin asignar') }]} empty="Roster no disponible" /></details></section>
       <section className="op-card"><h2>Equipo asignado</h2><DataTable rows={detail.assignments || []} columns={[{ key: 'user_name', title: 'Persona', render: (a) => a.user_name || data.staff?.find((s) => s.id === a.user_id)?.name || 'Usuario' }, { key: 'role', title: 'Función', render: (a) => label(a.role) }, { key: 'status', title: 'Estado', render: (a) => <Badge value={a.status} /> }]} empty="Sin personal asignado" />{can('operaciones') && <Link className="btn" to={`/operaciones/turnos?match=${encodeURIComponent(id)}`}>Asignar equipo <ArrowUpRight size={14} /></Link>}</section></div>
     </>}

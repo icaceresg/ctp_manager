@@ -22,6 +22,7 @@ import { UsersPage } from './pages/UsersPage.jsx';
 import { AvailabilityPage } from './pages/AvailabilityPage.jsx';
 import { BoardPage } from './pages/BoardPage.jsx';
 import { OperationsPage } from './operations/OperationsPage.jsx';
+import AdministrationPage from './pages/AdministrationPage.jsx';
 import { OP_SECTIONS } from './operations/model.js';
 import { canAccess } from '../../shared/access.js';
 import { Lock } from 'lucide-react';
@@ -114,6 +115,8 @@ function App() {
           <Route path="disponibilidad" element={guard('disponibilidad', <AvailabilityPage />)} />
           <Route path="tablero" element={guard('tablero', <BoardPage />)} />
           <Route path="usuarios" element={me.is_admin ? <UsersPage /> : <Navigate to={home} replace />} />
+          <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
+          <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />
           <Route path="cuenta" element={<AccountPage />} />
           <Route path="sin-acceso" element={<NoAccess />} />
           <Route path="*" element={<NotFound home={home} />} />

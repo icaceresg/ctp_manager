@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
-import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getGuardState, getRankedState, getClubCandidates } from '../integration.js';
+import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getClubCandidates } from '../integration.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand } from '../operations.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
 import { HttpError } from '../auth.js';
+import { getCaseData,getOfficialIncident } from '../integration.js';
+import { prepareCaseCommand } from '../operations.js';
 
 export const integrationRouter = Router();
+integrationRouter.get('/operations/matches/:id',requireAuth,allow('operaciones','arbitraje','casters','realizacion'),async(req,res)=>res.json(await getOfficialMatchDossier(req.user,req.params.id)));
+integrationRouter.get('/operations/cases',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getCaseData(req.user,req.query)));
+integrationRouter.get('/operations/incidents/:id',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getOfficialIncident(req.user,req.params.id)));
+integrationRouter.post('/operations/cases/commands',requireAuth,allow('arbitraje'),(req,res)=>res.json(prepareCaseCommand(req.user,req.body||{})));
 integrationRouter.use('/operations/integration', requireAuth);
 integrationRouter.get('/operations/integration', allow('operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones'), (req, res) => res.json(integrationStatus()));
 integrationRouter.post('/operations/integration/sync', allow('operaciones'), async (req, res) => res.json(await syncOperations()));

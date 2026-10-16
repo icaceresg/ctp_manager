@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, Check, Clapperboard, FilePlus2, Plus, RefreshCw, Send, ShieldCheck, Users } from 'lucide-react';
 import { api } from '../api.js';
@@ -43,10 +43,19 @@ export function ProductionPanel({ data, mutate, can }) {
 }
 
 export function ClubsPanel({ data, mutate, me, reload }) {
+  const [params,setParams]=useSearchParams();
+  const focusedClub=params.get('club');
+  const openedClub=useRef(null);
   const [selected, setSelected] = useState(null);
   const [query, setQuery] = useState('');
-  const rows = data.clubs.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()));
+  useEffect(()=>{
+    if(!focusedClub){openedClub.current=null;return;}
+    const club=data.clubs.find(item=>item.id===focusedClub);
+    if(club&&openedClub.current!==focusedClub){openedClub.current=focusedClub;setSelected(club);setQuery('');}
+  },[focusedClub,data.clubs]);
+  const rows = data.clubs.filter((c) => (!focusedClub||c.id===focusedClub)&&c.name.toLowerCase().includes(query.toLowerCase()));
   return <><ManualClubCreatePanel data={data} mutate={mutate} me={me} reload={reload} /><div className="op-section-title"><div><h2>Identidad y verificación</h2><p>Revisión CTP y acceso al circuito.</p></div><input aria-label="Buscar club" placeholder="Buscar club…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+    {focusedClub&&<div className="op-actions"><button className="btn" onClick={()=>{setSelected(null);setParams(previous=>{const next=new URLSearchParams(previous);next.delete('club');return next;},{replace:true});}}>Ver todos los clubes</button><Link className="btn" to="/administracion/clubes">Volver a administración de clubes</Link></div>}
     <div className="op-inline-note"><ShieldCheck size={18} /><p>Los pagos se gestionan fuera de la web. CTP revisa y aprueba manualmente los 16 clubes del circuito. Crear el club no concede acceso.</p></div>
     <DataTable rows={rows} empty="Sin clubes sincronizados" columns={[
       { key: 'name', title: 'Club' },

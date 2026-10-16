@@ -1,7 +1,7 @@
 import { matchName } from './model.js';
 
 export const ACTIVE_ASSIGNMENTS = ['pending', 'assigned', 'confirmed'];
-export const CLOSED_INCIDENTS = ['resolved', 'closed', 'closed_internal'];
+export const CLOSED_INCIDENTS = ['resolved', 'closed', 'closed_internal', 'rejected'];
 export const ROLE_SECTIONS = { referee: 'arbitraje', caster: 'casters', producer: 'realizacion' };
 export const madridDay = (value = Date.now()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
 export function shiftDay(day, amount) { return new Date(Date.parse(`${day}T12:00:00Z`) + amount * 86400000).toISOString().slice(0, 10); }

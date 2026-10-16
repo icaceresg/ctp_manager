@@ -77,6 +77,16 @@ test('solo club_candidates acepta arrays y mantiene el contrato de respuesta de 
   }
 });
 
+test('Twitch service failures use bounded known copy and never forward provider details', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
+  const body = { action: 'admin_service', service: 'twitch', payload: { action: 'complete' } };
+  const invoke = payload => createOperationsTransport(config, async () => Response.json(payload, { status: 409 }))(body);
+  await assert.rejects(invoke({ code: 'provider_error', provider_error: 'integrations.twitch.wrongChannel', secret: token }), error => error.status === 409 && error.message.includes('playctp') && !error.message.includes(token));
+  for (const provider_error of [token, 'integrations.twitch.' + token, 'x'.repeat(9000)]) {
+    await assert.rejects(invoke({ code: 'provider_error', provider_error }), error => error.status === 409 && !error.message.includes(token) && error.message.length < 200);
+  }
+});
+
 test('un rechazo HTTP de autorización es definitivo y una caída mantiene la incertidumbre', async () => {
   const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
   for (const status of [401, 403]) {
@@ -89,6 +99,16 @@ test('un rechazo HTTP de autorización es definitivo y una caída mantiene la in
   }
   const unavailable = createOperationsTransport(config, async () => { throw new TypeError('connection lost'); });
   await assert.rejects(unavailable({ action: 'command' }), error => error.remoteRejected !== true);
+});
+
+test('read permission revocation reaches the UI as forbidden so earlier private data can be cleared', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
+  for (const status of [401,403]) {
+    for (const action of ['admin_query','competition','case_query','admin_service']) {
+      const invoke = createOperationsTransport(config, async () => Response.json({ error: token }, { status }));
+      await assert.rejects(invoke({ action }), error => error.status === 403 && !error.message.includes(token));
+    }
+  }
 });
 
 let port, remote, child, mode = 'ok', observed = [], snapshot = {

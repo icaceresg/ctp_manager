@@ -58,6 +58,18 @@ test('remote competition cache preserves pending links, handles old versions and
   assert.throws(()=>operations.rememberCompetitionData('tournaments',{items:[{...tournament,manager_version:7},{id:'broken'}]}),{status:502});
   assert.equal(operations.getCommand(command.id).source_version_current,6);
 });
+
+test('referees see and can discard their match proposals while casters cannot see staff decisions',()=>{
+  const match={id:randomUUID(),manager_version:4,tournament_id:tournament.id};
+  operations.rememberCompetitionData('match',{match,steps:[],pool:[],messages:[],reports:[]});
+  const prepared=operations.prepareCompetitionCommand(referee,{type:'match.resolve',target_id:match.id,expected_version:4,payload:{maps_a:2,maps_b:0,reason:'Resultado contrastado por el árbitro asignado'}});
+  assert.equal(operations.bootstrap(referee).commands.some(command=>command.id===prepared.command.id),true);
+  assert.equal(operations.bootstrap(admin).commands.some(command=>command.id===prepared.command.id),true);
+  assert.equal(operations.bootstrap(caster).commands.some(command=>command.id===prepared.command.id),false);
+  assert.throws(()=>operations.cancelCommand(caster,prepared.command.id,{expected_updated_at:prepared.command.updated_at}),{status:403});
+  operations.cancelCommand(referee,prepared.command.id,{expected_updated_at:prepared.command.updated_at});
+  assert.equal(operations.getCommand(prepared.command.id).status,'cancelled');
+});
 test('new tournament UUID is distinct and waits for official confirmation',()=>{
   const result=operations.prepareCompetitionCommand(admin,{type:'tournament.create',expected_version:0,payload:tournament});
   assert.match(result.resource.id,/^[a-f0-9-]{36}$/);assert.notEqual(result.resource.id,tournament.id);

@@ -55,14 +55,14 @@ export function administrationPayload(type,input={}) {
     out.role=input.role;
   } else if(type==='admin.entitlement.grant'){
     out.team_id=uuid(input.team_id,'Club');
-    if(!['team_pass','season_pass','tournament_ticket'].includes(input.kind))fail('Tipo de acceso no válido.');
+    if(!['circuit_pass','team_pass','season_pass','tournament_ticket'].includes(input.kind))fail('Tipo de acceso no válido.');
     out.kind=input.kind;
     if(input.season_label!==undefined)out.season_label=text(input.season_label,'Temporada del circuito',100);
     if(input.season!==undefined)out.season=number(input.season,1,4,'Season');
     if(input.tournament_id!==undefined)out.tournament_id=uuid(input.tournament_id,'Torneo');
     if(input.kind==='season_pass'&&!out.season)fail('El pase de season necesita una season.');
     if(input.kind==='tournament_ticket'&&!out.tournament_id)fail('La entrada necesita un torneo.');
-    if(input.kind==='team_pass'&&(out.season!==undefined||out.tournament_id!==undefined)||input.kind==='season_pass'&&out.tournament_id!==undefined||input.kind==='tournament_ticket'&&out.season!==undefined)fail('El alcance no coincide con el tipo de acceso.');
+    if(['team_pass','circuit_pass'].includes(input.kind)&&(out.season!==undefined||out.tournament_id!==undefined)||input.kind==='season_pass'&&out.tournament_id!==undefined||input.kind==='tournament_ticket'&&out.season!==undefined)fail('El alcance no coincide con el tipo de acceso.');
     if(input.payment_ref!==undefined)out.payment_ref=text(input.payment_ref,'Referencia',200);
     if(input.amount_cents!==undefined)out.amount_cents=number(input.amount_cents,0,100000000,'Importe en céntimos');
   } else if(type.startsWith('admin.mode.')||type.startsWith('admin.map.')){

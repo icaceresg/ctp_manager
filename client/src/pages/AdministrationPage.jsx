@@ -12,7 +12,7 @@ import '../operations/operations.css';
 
 const SECTIONS=[['resumen','Resumen','summary'],['usuarios','Usuarios CTP','users'],['clubes','Clubes','teams'],['accesos','Accesos al circuito','entitlements'],['mapas','Mapas y modos','maps'],['campanas','Campañas','campaigns'],['ranked','Ranked','ranked_queues'],['integraciones','Integraciones','features'],['auditoria','Auditoría','audit']];
 const ROLE={admin:'Administrador',referee:'Árbitro',player:'Jugador'};
-const ACCESS={team_pass:'Team Pass',season_pass:'Pase de season',tournament_ticket:'Entrada de torneo'};
+const ACCESS={circuit_pass:'Circuit Pass · cuatro seasons',team_pass:'Team Pass',season_pass:'Pase de season',tournament_ticket:'Entrada de torneo'};
 const LOCALES=[['es','Español'],['en','Inglés'],['it','Italiano'],['fr','Francés'],['pt','Portugués'],['de','Alemán']];
 const createActions=new Set(['admin.entitlement.grant','admin.mode.create','admin.map.create','admin.campaign.create']);
 const name=row=>row.name||row.username||row.title||row.content?.es?.title||row.id;
@@ -98,7 +98,7 @@ function AdministrationDialog({action,data,onClose,prepare}){
   const {type,row,extra={}}=action;
   const [content,setContent]=useState(Object.fromEntries(LOCALES.map(([locale])=>[locale,{title:'',body:''}])));
   const [locale,setLocale]=useState('es');
-  const [kind,setKind]=useState('team_pass');
+  const [kind,setKind]=useState('circuit_pass');
   const [chosenGame,setChosenGame]=useState(row?.game_id||data.games?.[0]?.id||'');
   const modeQuery=useData(()=>type==='admin.map.create'&&chosenGame?api.get(`/administration?${new URLSearchParams({resource:'modes',game_id:chosenGame,limit:'100'})}`):Promise.resolve({items:[]}),[type,chosenGame]);
   const modeOptions=(modeQuery.data?.items||[]).filter(mode=>mode.game_id===chosenGame);

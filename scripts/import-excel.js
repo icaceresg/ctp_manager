@@ -11,6 +11,7 @@
 // importar el mismo archivo no crea duplicados.
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { DATA_DIR } from '../server/config.js';
 import { db } from '../server/db.js';
@@ -263,7 +264,7 @@ if (!dryRun && toWrite.length) {
   fs.mkdirSync(backupDir, { recursive: true });
   const now = new Date();
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  const backup = path.join(backupDir, `antes-de-importar-${stamp}.db`);
+  const backup = path.join(backupDir, `antes-de-importar-${stamp}-${randomUUID()}.db`);
   db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
   console.log(`Copia de seguridad: ${backup}`);
 }

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import ExcelJS from 'exceljs';
 
@@ -14,12 +14,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mrm-import-'));
 const xlsx = path.join(dir, 'Calendario_Prueba.xlsx');
 const dataDir = path.join(dir, 'data');
+const fixedClock = path.join(dir, 'fixed-clock.mjs');
+fs.writeFileSync(fixedClock, `const NativeDate=Date;globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:['2026-10-16T12:00:00Z']));}static now(){return NativeDate.parse('2026-10-16T12:00:00Z');}};`);
 
 const utc = (y, m, d, h = 0, min = 0) => new Date(Date.UTC(y, m - 1, d, h, min));
 const excelTime = (h, min) => utc(1899, 12, 30, h, min);
 
 function runImport(...flags) {
-  return execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/import-excel.js', xlsx, ...flags], {
+  return execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', pathToFileURL(fixedClock).href, 'scripts/import-excel.js', xlsx, ...flags], {
     cwd: root,
     env: { ...process.env, DATA_DIR: dataDir },
     encoding: 'utf8',
@@ -125,4 +127,11 @@ test('volver a importar no duplica y --actualizar respeta lo marcado en la app',
   assert.equal(card.title, 'ANUNCIO · CUP #01', 'el Excel manda en los datos de la pieza');
   const plantilla = query("SELECT done FROM resources WHERE content_id = ? AND text LIKE 'Plantilla%'", id);
   assert.equal(plantilla[0].done, 1, 'pero no desmarca lo que ya estaba listo');
+  const backups = fs.readdirSync(path.join(dataDir, 'copias'));
+  assert.equal(backups.length, 2, 'dos importaciones en el mismo instante conservan copias diferentes');
+  for (const filename of backups) {
+    const copy = new DatabaseSync(path.join(dataDir, 'copias', filename), { readOnly: true });
+    try { assert.equal(copy.prepare('PRAGMA integrity_check').get().integrity_check, 'ok'); }
+    finally { copy.close(); }
+  }
 });

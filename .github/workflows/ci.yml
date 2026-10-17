@@ -30,6 +30,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Reject known high-severity dependency vulnerabilities
+        run: npm audit --audit-level=high
       - run: npm test
       - run: npm run build
       - name: Package the verified runtime without private data

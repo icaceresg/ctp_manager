@@ -89,13 +89,14 @@ export function getOperatorIdentity(userId) {
 
 function unpack(row) { return row ? { ...parse(row.data, {}), id: row.id, source: row.source, version: row.version, updated_at: row.updated_at } : null; }
 function record(kind, key, includeRetired = false) { const item = unpack(db.prepare('SELECT * FROM operation_records WHERE kind=? AND id=?').get(kind, id(key))); if (!item || (!includeRetired&&item.in_feed===false)) throw new HttpError(404, 'Registro no encontrado.'); return item; }
-function rows(kind) { return db.prepare('SELECT * FROM operation_records WHERE kind=? ORDER BY updated_at DESC,id').all(kind).map(unpack).filter(item=>item.in_feed!==false); }
+function rows(kind, matchId) { return db.prepare(`SELECT id,data,version,source,updated_at FROM operation_records WHERE kind=? AND COALESCE(json_extract(data,'$.in_feed'),1)!=0 ${matchId===undefined?'':"AND json_extract(data,'$.match_id')=?"} ORDER BY updated_at DESC,id`).all(...(matchId===undefined?[kind]:[kind,matchId])).map(unpack); }
 function save(kind, item, source = item.source || 'manager') { const old = db.prepare('SELECT version FROM operation_records WHERE kind=? AND id=?').get(kind, item.id); const data = { ...item }; delete data.version; delete data.source; delete data.updated_at; db.prepare(`INSERT INTO operation_records(kind,id,data,version,source,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data,version=excluded.version,source=excluded.source,updated_at=excluded.updated_at`).run(kind, item.id, json(data), (old?.version || 0) + 1, source, now()); return record(kind, item.id, true); }
 function audit(kind, key, action, actor, details = {}) { db.prepare('INSERT INTO operation_audit(resource_type,resource_id,action,actor_id,details,created_at) VALUES(?,?,?,?,?,?)').run(kind, key, action, actor?.id || null, json(details), now()); }
 function history(kind, key) { return db.prepare(`SELECT a.*,u.name actor_name,u.username actor_username FROM operation_audit a LEFT JOIN users u ON u.id=a.actor_id WHERE a.resource_type=? AND a.resource_id=? ORDER BY a.id DESC LIMIT 100`).all(kind, key).map((a) => ({ ...a, details: parse(a.details, {}) })); }
 function notes(kind, key, internal = false) { return db.prepare(`SELECT n.*,u.name actor_name,u.username actor_username FROM operation_notes n LEFT JOIN users u ON u.id=n.actor_id WHERE resource_type=? AND resource_id=? ORDER BY n.created_at,n.id`).all(kind, key).filter((n) => internal || (n.visibility !== 'internal' && (n.visibility !== 'participants' || n.delivery_status === 'delivered'))); }
-function statisticsWithRoster(item) {
-  const match=unpack(db.prepare("SELECT * FROM operation_records WHERE kind='match' AND id=?").get(item.match_id));
+function statisticsWithRoster(item, knownMatch) {
+  if(typeof knownMatch!=='object')knownMatch=undefined;
+  const match=knownMatch===undefined?unpack(db.prepare("SELECT id,data,version,source,updated_at FROM operation_records WHERE kind='match' AND id=?").get(item.match_id)):knownMatch;
   const players=new Map((match?.in_feed!==false?match?.roster||[]:[]).map(player=>[player.id,player]));
   return {...item,players:item.players.map(player=>{
     const roster=players.get(player.id);
@@ -160,8 +161,18 @@ export function ingestSnapshot(snapshot) {
   const prepared = groups.flatMap(([key,kind])=>{if(snapshot[key]===undefined)return[];if(!Array.isArray(snapshot[key])||snapshot[key].length>20000)throw new HttpError(400,`Colección ${key} no válida.`); const seen=new Set();return snapshot[key].map(input=>{const value=normalize(kind,input);if(seen.has(value.id))throw new HttpError(400,'Identificador CTP duplicado.');seen.add(value.id);return[kind,value];});});
   return tx(()=>{
     let changed=0;
+    const previousById=new Map();
+    const incomingByKind=new Map();
+    for(const [kind,value]of prepared){if(!incomingByKind.has(kind))incomingByKind.set(kind,[]);incomingByKind.get(kind).push(value.id);}
+    // Fetch only incoming IDs in bounded batches. An unchanged 20k-record feed
+    // no longer creates 20k individual SELECT statements on every poll.
+    for(const [kind,ids]of incomingByKind)for(let start=0;start<ids.length;start+=500){
+      const batch=ids.slice(start,start+500);
+      const existing=db.prepare(`SELECT kind,id,data,version,source,updated_at FROM operation_records WHERE kind=? AND id IN(${batch.map(()=>'?').join(',')})`).all(kind,...batch);
+      for(const row of existing)previousById.set(`${row.kind}:${row.id}`,row);
+    }
     for(const [kind,value]of prepared){
-      const old=db.prepare('SELECT * FROM operation_records WHERE kind=? AND id=?').get(kind,value.id);
+      const old=previousById.get(`${kind}:${value.id}`);
       const previous=old?parse(old.data,{}):{};
       if(old?.source==='manager'){
         const linked=kind==='sanction'&&value.official&&previous.subject_id===value.subject_id&&previous.incident_id===value.incident_id&&
@@ -285,7 +296,16 @@ export function bootstrap(user) {
   const commandRows=db.prepare('SELECT * FROM operation_commands ORDER BY created_at DESC LIMIT 300').all().filter(c=>allowedKinds.has(c.resource_type)).map(c=>getCommand(c.id));
   return {matches:can(user,...READ_MATCH)?rows('match'):[],incidents:can(user,'arbitraje')?rows('incident').map(i=>({...i,notes:notes('incident',i.id,true)})):[],assignments:can(user,'operaciones','arbitraje','casters','realizacion')?db.prepare('SELECT a.*,u.name user_name,u.username FROM operation_assignments a JOIN users u ON u.id=a.user_id ORDER BY starts_at').all():[],staff,stats:can(user,'arbitraje')?rows('stat').map(statisticsWithRoster):[],clubs:can(user,'clubes')?rows('club'):[],deliveries:can(user,'comunicaciones')?rows('delivery'):[],sanctions:can(user,'arbitraje')?rows('sanction').map(effectiveSanction):[],production:can(user,'operaciones','casters','realizacion')?db.prepare('SELECT * FROM operation_production ORDER BY updated_at DESC').all():[],audit:db.prepare('SELECT a.*,u.name actor_name,u.username actor_username FROM operation_audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 200').all().filter(a=>allowedKinds.has(a.resource_type)).map(a=>({...a,details:parse(a.details,{})})),connection:getIntegrationStatus(),commands:commandRows,rundowns:can(user,'realizacion','casters')?db.prepare('SELECT id,title,date,time FROM rundowns ORDER BY date DESC,id DESC').all():[]};
 }
-export function matchDossier(user,matchId,{historical=false}={}) {requireSection(user,...READ_MATCH);if(historical)requireSection(user,'arbitraje');const match=record('match',matchId,historical);if(historical&&(!match.queried_at||now()-match.queried_at>60_000))throw new HttpError(404,'Vuelve a consultar el partido oficial.');return{match,incidents:can(user,'arbitraje')?rows('incident').filter(i=>i.match_id===match.id):[],assignments:db.prepare('SELECT a.*,u.name user_name,u.username FROM operation_assignments a JOIN users u ON u.id=a.user_id WHERE match_id=? ORDER BY starts_at').all(match.id),statistics:[...new Map([...(match.statistics||[]),...rows('stat').filter(s=>s.match_id===match.id&&(s.status==='approved'||can(user,'arbitraje'))).map(statisticsWithRoster)].map(s=>[s.id,s])).values()],notes:can(user,'casters','realizacion')?notes('match',match.id,true):[],production:db.prepare('SELECT * FROM operation_production WHERE match_id=?').get(match.id)||null,audit:can(user,'operaciones','arbitraje')?history('match',match.id):[]};}
+export function matchDossier(user,matchId,{historical=false}={}) {
+  requireSection(user,...READ_MATCH);if(historical)requireSection(user,'arbitraje');
+  const match=record('match',matchId,historical);
+  if(historical&&(!match.queried_at||now()-match.queried_at>60_000))throw new HttpError(404,'Vuelve a consultar el partido oficial.');
+  return{match,incidents:can(user,'arbitraje')?rows('incident',match.id):[],
+    assignments:db.prepare('SELECT a.id,a.match_id,a.user_id,a.role,a.starts_at,a.ends_at,a.status,a.version,a.created_by,a.created_at,a.updated_at,u.name user_name,u.username FROM operation_assignments a JOIN users u ON u.id=a.user_id WHERE match_id=? ORDER BY starts_at').all(match.id),
+    statistics:[...new Map([...(match.statistics||[]),...rows('stat',match.id).filter(s=>s.status==='approved'||can(user,'arbitraje')).map(stat=>statisticsWithRoster(stat,match))].map(s=>[s.id,s])).values()],
+    notes:can(user,'casters','realizacion')?notes('match',match.id,true):[],production:db.prepare('SELECT match_id,rundown_id,state,scene,note,version,updated_by,updated_at FROM operation_production WHERE match_id=?').get(match.id)||null,
+    audit:can(user,'operaciones','arbitraje')?history('match',match.id):[]};
+}
 export function incidentDetail(user,incidentId) {requireSection(user,'arbitraje');return{incident:record('incident',incidentId),notes:notes('incident',incidentId,true),audit:history('incident',incidentId)};}
 export function createIncident(user,input) {requireSection(user,'arbitraje');return tx(()=>{const match=record('match',input.match_id);const item=save('incident',{id:randomUUID(),match_id:match.id,kind:match.kind,title:text(input.title,'Título',300),reason:text(input.reason,'Motivo',8000),priority:choice(input.priority||'normal',['normal','urgent'],'Prioridad'),status:'open',assignee_id:null,created_at:now()});audit('incident',item.id,'incident.created',user,{match_id:match.id});return item;});}
 export function updateIncident(user,key,input) {requireSection(user,'arbitraje');return tx(()=>{const item=record('incident',key);version(input.expected_version,item.version);if(['resolved','rejected','closed','closed_internal','resolution_pending'].includes(item.status))throw new HttpError(409,'El expediente ya está resuelto o tiene una resolución pendiente.');const patch={...item};if(input.status!==undefined)patch.status=choice(input.status,['open','investigating','waiting'],'Estado');if(input.priority!==undefined)patch.priority=choice(input.priority,['normal','urgent'],'Prioridad');if(input.assignee_id!==undefined){if(input.assignee_id!==null){if(!Number.isInteger(input.assignee_id)||input.assignee_id<1)throw new HttpError(400,'Responsable no válido.');const staff=db.prepare('SELECT * FROM users WHERE id=? AND active=1').get(input.assignee_id);if(!staff||!can(describeUser(staff),'arbitraje'))throw new HttpError(400,'El responsable debe ser un árbitro activo.');}patch.assignee_id=input.assignee_id;}const result=save('incident',patch,item.source);audit('incident',key,'incident.updated',user,{status:result.status,assignee_id:result.assignee_id});return result;});}

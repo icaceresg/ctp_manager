@@ -54,5 +54,7 @@ export function requestBoundary(req, config = DEPLOYMENT) {
   return null;
 }
 
-export const SESSION_COOKIE = 'mrm_session';
+// The browser forbids Domain/path overrides for __Host- cookies. A sibling CTP
+// host cannot replace the public Manager session with its own domain cookie.
+export const SESSION_COOKIE = SECURE_COOKIES ? '__Host-ctp_manager_session' : 'mrm_session';
 export const SESSION_DAYS = 30;

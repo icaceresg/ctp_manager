@@ -23,9 +23,18 @@ export function StatisticsReviewPanel({data,mutate,reload}) {
   const [remoteStats,setRemoteStats]=useState(null);
   const [remoteError,setRemoteError]=useState('');
   const [reading,setReading]=useState(false);
+  const [expanded,setExpanded]=useState(null);
+  const [expansionError,setExpansionError]=useState('');
+  const [expandRetry,setExpandRetry]=useState(0);
+  const reviewId=params.get('review');
   const pending=['pending','review','pending_review','submitted'];
   const rows=(matchId?(remoteStats||[]):data.stats).filter(s=>filter==='all'||(filter==='pending'?pending.includes(s.status):s.status===filter));
   const corrections=data.connection?.supported_actions?.includes('stats.correct');
+  useEffect(()=>{
+    let active=true;setExpanded(null);setExpansionError('');
+    if(reviewId&&!remoteStats?.find(row=>row.id===reviewId)?.players)api.get(`/operations/stats/${encodeURIComponent(reviewId)}`).then(value=>{if(active)setExpanded(value.statistic);}).catch(error=>{if(active)setExpansionError(error.message);});
+    return()=>{active=false;};
+  },[reviewId,data,remoteStats,expandRetry]);
   useEffect(()=>{
     let active=true;
     if(!matchId){setRemoteStats(null);setRemoteError('');return;}
@@ -43,9 +52,10 @@ export function StatisticsReviewPanel({data,mutate,reload}) {
     <Field label="Consulta por partido"><select value={matchId} disabled={!data.connection?.configured} onChange={event=>{setRemoteStats(null);setParams(event.target.value?{match:event.target.value}:{});setHistoryId(null);}}><option value="">Bandeja pendiente de la jornada</option>{matchId&&!data.matches.some(match=>match.id===matchId)&&<option value={matchId}>Partido del histórico · {matchId.slice(0,8)}</option>}{data.matches.filter(match=>match.kind==='tournament').map(match=><option key={match.id} value={match.id}>{matchName(match)} · {dateTime(match.scheduled_at)}</option>)}</select></Field>
     {reading&&<p role="status">Consultando revisiones oficiales…</p>}{remoteError&&<p className="op-error" role="alert">{remoteError}{remoteStats?' Se conserva la última consulta; puede estar desactualizada.':''}</p>}
     {!reading&&!rows.length&&<Empty title="Sin estadísticas en esta vista">Las estadísticas recibidas de CTP aparecerán con su estado y procedencia.</Empty>}
-    {rows.map(row=><section className="op-card" key={row.id}><div className="op-section-title"><div><h3>{row.map_name||'Mapa por identificar'} · {row.mode||'Modo sin indicar'}{row.revision?` · revisión ${row.revision}`:''}</h3>{data.matches.some(m=>m.id===row.match_id)?<MatchLink id={row.match_id} match={data.matches.find(m=>m.id===row.match_id)}/>:<span className="muted">Partido del histórico · {row.match_id.slice(0,8)}</span>}</div><Badge value={row.status}/></div>
-      <div className="op-actions"><button type="button" className="btn" aria-expanded={params.get('review') === row.id} aria-controls={`stats-review-${row.id}`} onClick={() => toggleReview(row.id)}>{params.get('review') === row.id ? 'Cerrar cifras' : 'Ver cifras y revisar'}</button><small className="muted">{(row.players || []).length} jugadores · {dateTime(row.created_at)}</small></div>
-      {params.get('review') === row.id && <div className="op-review-detail" id={`stats-review-${row.id}`}>
+    {rows.map(summary=>{const row=summary.id===expanded?.id?expanded:summary;return <section className="op-card" key={row.id}><div className="op-section-title"><div><h3>{row.map_name||'Mapa por identificar'} · {row.mode||'Modo sin indicar'}{row.revision?` · revisión ${row.revision}`:''}</h3>{data.matches.some(m=>m.id===row.match_id)?<MatchLink id={row.match_id} match={data.matches.find(m=>m.id===row.match_id)}/>:<span className="muted">Partido del histórico · {row.match_id.slice(0,8)}</span>}</div><Badge value={row.status}/></div>
+      <div className="op-actions"><button type="button" className="btn" aria-expanded={params.get('review') === row.id} aria-controls={`stats-review-${row.id}`} onClick={() => toggleReview(row.id)}>{params.get('review') === row.id ? 'Cerrar cifras' : 'Ver cifras y revisar'}</button><small className="muted">{row.player_count??(row.players || []).length} jugadores · {dateTime(row.created_at)}</small></div>
+      {params.get('review') === row.id&&!row.players&&<div role={expansionError?'alert':'status'} className={expansionError?'op-error':'muted'}>{expansionError||'Consultando las cifras de este mapa…'}{expansionError&&<button className="btn" onClick={()=>setExpandRetry(value=>value+1)}>Reintentar cifras</button>}</div>}
+      {params.get('review') === row.id&&row.players && <div className="op-review-detail" id={`stats-review-${row.id}`}>
       {row.correction_reason&&<p><strong>Corrección:</strong> {row.correction_reason}</p>}{row.review_note&&<p><strong>Revisión:</strong> {row.review_note}</p>}{row.reviewed_at&&<p className="muted">Revisada: {dateTime(row.reviewed_at)}</p>}{row.correction_revision_id&&<p className="op-notice">CTP ha creado otra revisión a partir de esta. Consulta la nueva versión antes de continuar.</p>}
       <StatsTable players={row.players||[]} objectiveLabel={row.objective_label}/>
       <div className="op-actions">{pending.includes(row.status)&&<><button className="btn primary" disabled={Boolean(row.pending_command_id||row.correction_revision_id)} onClick={()=>setSelected({row,decision:'approve'})}>Preparar aprobación</button><button className="btn" disabled={Boolean(row.pending_command_id||row.correction_revision_id)} onClick={()=>setSelected({row,decision:'reject'})}>Pedir corrección / rechazar</button></>}{[...pending,'rejected','approved'].includes(row.status)&&<button className="btn" disabled={!corrections||Boolean(row.pending_command_id||row.correction_revision_id)} onClick={()=>setSelected({row,decision:'correct'})}>Corregir cifras</button>}<button className="btn" onClick={()=>setHistoryId(historyId===row.id?null:row.id)}>{historyId===row.id?'Cerrar historial':'Historial de revisión'}</button></div>
@@ -53,7 +63,7 @@ export function StatisticsReviewPanel({data,mutate,reload}) {
       {historyId===row.id&&<div className="op-details"><h4>Historial de trabajo en Manager</h4>{error?<p className="op-error">{error}</p>:!detail?<p>Cargando historial…</p>:detail.audit?.length?<ol className="op-timeline">{detail.audit.map(event=><li key={event.id}><strong>{event.actor_name||'CTP'} · {actionLabel(event.action)}</strong><small>{dateTime(event.created_at)}</small>{event.details?.reason&&<p>{event.details.reason}</p>}{event.details?.corrections&&<details><summary>Cifras anteriores y corrección propuesta</summary><StatsTable players={event.details.before||[]}/><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(event.details.corrections,null,2)}</pre></details>}</li>)}</ol>:<p className="muted">Todavía no hay revisiones registradas en Manager para este envío.</p>}</div>}
       <DecisionPanel data={data} resourceType="stat" resourceId={row.id} reload={reload}/>
       </div>}
-    </section>)}
+    </section>;})}
     {selected?.decision==='correct'?<CorrectionDialog row={selected.row} onClose={()=>setSelected(null)} mutate={mutate}/>:selected&&<FormDialog title={selected.decision==='approve'?'Aprobar estadísticas':'Rechazar estadísticas'} onClose={()=>setSelected(null)} submit={body=>mutate('post',`/stats/${encodeURIComponent(selected.row.id)}/review`,{...body,decision:selected.decision,expected_version:selected.row.version,...(Number.isInteger(selected.row.source_version)?{expected_source_version:selected.row.source_version}:{})},'Revisión preparada para CTP.')} submitLabel="Preparar revisión" help="CTP valida la versión y que el revisor no sea el autor del envío."><Field label="Motivo de la revisión"><textarea name="reason" required minLength={12} maxLength={500} rows={4}/></Field></FormDialog>}
   </>;
 }

@@ -11,7 +11,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-obs-'));
 process.env.DATA_DIR = temp; process.env.DB_PATH = ''; process.env.PUBLIC_ORIGIN = '';
 process.env.OBS_AGENT_TOKEN = 'obs-test-private-token-01234567890123456789'; process.env.OBS_ENABLE_CONTROL = 'true';
 const { db } = await import('../server/db.js');
-const { setupAdmin } = await import('../server/auth.js');
+const { setupAdmin, describeUser } = await import('../server/auth.js');
 const { ingestSnapshot } = await import('../server/operations.js');
 const { queueObsCommand, claimObsCommand, acknowledgeObsCommand, obsStatus, requireObsAgent } = await import('../server/obs.js');
 const adminId = setupAdmin({ username: 'producer', password: 'production-test-password' });
@@ -72,6 +72,18 @@ test('credencial del agente no depende de cookies y revocar al operador bloquea 
   assert.equal(claimObsCommand().command, null);
   assert.equal(obsStatus(admin).commands.find((c) => c.id === command.id).status, 'failed');
   db.prepare('UPDATE users SET active=1 WHERE id=?').run(adminId);
+});
+
+test('retirar la clasificación staff del rol invalida una orden OBS aún pendiente', () => {
+  const roleId = Number(db.prepare("INSERT INTO roles(name,sections,staff_kind,created_at) VALUES('TEST OBS SECURITY','[\"realizacion\"]','production',?)").run(Date.now()).lastInsertRowid);
+  const userId = Number(db.prepare("INSERT INTO users(username,name,password_hash,is_admin,active,created_at) VALUES('test-obs-security','Producer','unused',0,1,?)").run(Date.now()).lastInsertRowid);
+  db.prepare('INSERT INTO user_roles(user_id,role_id) VALUES(?,?)').run(userId, roleId);
+  const user = describeUser(db.prepare('SELECT * FROM users WHERE id=?').get(userId));
+  const command = queueObsCommand(user, { match_id: 'obs-match', scene: 'next' });
+  db.prepare("UPDATE roles SET staff_kind='' WHERE id=?").run(roleId);
+  assert.equal(describeUser(db.prepare('SELECT * FROM users WHERE id=?').get(userId)).sections.includes('realizacion'), false);
+  assert.equal(claimObsCommand().command, null);
+  assert.equal(db.prepare('SELECT status,error FROM obs_commands WHERE id=?').get(command.id).status, 'failed');
 });
 
 test('agente mantiene credenciales locales, origen HTTPS y mapeo cerrado de escenas', () => {

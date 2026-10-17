@@ -19,33 +19,46 @@ import { MatchControlPanel, RefereeMatchQueue } from './MatchControlPanel.jsx';
 import { RankedSeasonPanel } from './RankedSeasonPanel.jsx';
 import { matchReturnPath } from '../navigation.js';
 import './operations.css';
+import { workspaceRequest, workspacePageParams, workspaceFirstPageParams } from './workspaceQuery.js';
+import { useWorkspaceSearch } from './useWorkspaceSearch.js';
 
-function useOperations() {
+function useOperations(url) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
   const requestId = useRef(0);
+  const viewKey=new URLSearchParams(url.split('?')[1]).get('view');
+  const previousView=useRef(viewKey);
   const reload = useCallback(async () => {
     const id = ++requestId.current;
     try {
-      const next = await api.get('/operations/bootstrap');
+      const next = await api.get(url);
       if (mounted.current && id === requestId.current) { setData(next); setError(''); }
     } catch (err) { if (mounted.current && id === requestId.current) { setError(err.message); if ([401, 403].includes(err.status)) setData(null); } }
     finally { if (mounted.current && id === requestId.current) setLoading(false); }
-  }, []);
+  }, [url]);
   useEffect(() => {
-    mounted.current = true; reload();
+    mounted.current = true;
+    if(previousView.current!==viewKey){previousView.current=viewKey;setLoading(true);setData(null);}
+    setError('');
+    // Search is sent to SQLite; debounce keystrokes before creating network work.
+    const initial=setTimeout(reload,200);
     const interval = setInterval(() => { if (!document.hidden) reload(); }, 20000);
-    return () => { mounted.current = false; clearInterval(interval); };
+    return () => { mounted.current = false;requestId.current++;clearTimeout(initial); clearInterval(interval); };
   }, [reload]);
   return { data, error, loading, reload };
 }
 
 export function OperationsPage() {
   const { view = 'jornada', matchId } = useParams();
+  const [params,setParams]=useSearchParams();
   const { can, me, toast } = useApp();
-  const { data, error, loading, reload } = useOperations();
+  const request=workspaceRequest(view,matchId,params);
+  const filterKey=request.replace(/&(?:page|match_page|revision)=[^&]*/g,'');
+  const previousFilter=useRef(filterKey);
+  useEffect(()=>{if(previousFilter.current!==filterKey){previousFilter.current=filterKey;if(params.has('op_page')||params.has('op_match_page'))setParams(workspaceFirstPageParams,{replace:true});}},[filterKey,params,setParams]);
+  const { data, error, loading, reload } = useOperations(request);
   const [busy, setBusy] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const tabs = OP_TABS.filter((t) => t.sections.some(can));
@@ -81,7 +94,7 @@ export function OperationsPage() {
     {connectionOpen && <Modal title="Estado de CTP" onClose={() => setConnectionOpen(false)}><div className="op-connection-detail"><p><strong>Última lectura:</strong> {lastSync ? dateTime(lastSync) : 'Aún sin sincronizar'}</p><p><strong>Estado:</strong> {!connection.configured ? 'Conexión pendiente' : connection.last_error ? `Error: ${connection.last_error}` : stale ? 'Datos desactualizados' : 'Datos actualizados'}</p><p><strong>Cambios oficiales:</strong> {connection.write_enabled ? 'Envío manual habilitado' : 'Envío desactivado'}</p>{connection.local_test_mode && <p><strong>Entorno:</strong> QA local. Esta instancia no está conectada a Supabase PRE.</p>}{me.is_admin && <Link className="btn" onClick={() => setConnectionOpen(false)} to="/operaciones/integracion"><Settings2 size={16} /> Configurar conexión</Link>}</div></Modal>}
     {connection.possibly_truncated && <p className="op-notice">CTP ha devuelto una consulta parcial. Puede haber más registros fuera de esta selección; los totales corresponden solo a los datos recibidos.</p>}
 
-    {error && <div className="op-error" role="alert"><CircleAlert size={18} /><span>{error}{data ? ' Se conserva la última consulta.' : ''}</span><button className="btn" onClick={reload}>Reintentar</button></div>}
+    {error && <div className="op-error" role="alert"><CircleAlert size={18} /><span>{error}{data ? ' Se conserva la última consulta.' : ''}</span><button className="btn" onClick={()=>params.has('op_page')||params.has('op_match_page')?setParams(workspaceFirstPageParams,{replace:true}):reload()}>{params.has('op_page')||params.has('op_match_page')?'Volver a la primera página':'Reintentar'}</button></div>}
     {loading ? <div className="op-loading"><Spinner size={24} /> Cargando operaciones…</div> : !data ? <Empty title="No se han podido cargar las operaciones">Comprueba la conexión con el Manager y vuelve a intentarlo.</Empty> : matchId ? <MatchDossier key={matchId} id={matchId} {...props} /> : <>
       {view === 'jornada' && <StaffDesk {...props} />}
       {view === 'torneos' && <><CompetitionPanel {...props} /><RankedSeasonPanel {...props} /></>}
@@ -98,27 +111,38 @@ export function OperationsPage() {
       {view === 'disciplina' && <DisciplinePanel {...props} />}
       {view === 'contenido' && <ContentPanel {...props} />}
       {view === 'integracion' && <IntegrationPanel {...props} />}
+      {data.primary&&data.pages?.[data.primary]&&<WorkspacePagination data={data} setParams={setParams}/>}
+      {view==='turnos'&&data.pages?.matches&&<WorkspacePagination data={data} setParams={setParams} resource="matches" title="Partidos de la semana"/>}
+      {view==='jornada'&&<div className="op-actions">{[['incidents','incidencias','expedientes'],['stats','estadisticas','estadísticas'],['clubs','clubes','clubes'],['deliveries','discord','entregas'],['assignments','turnos','turnos']].filter(([key])=>data.pages?.[key]?.has_more).map(([key,path,title])=><Link key={key} className="btn" to={`/operaciones/${path}`}>Ver {title} ({data.pages[key].total}) <ArrowUpRight size={14}/></Link>)}</div>}
     </>}
   </div>;
+}
+
+function WorkspacePagination({data,setParams,resource=data.primary,title='Registros'}) {
+  const page=data.pages[resource];
+  if(page.total<=page.limit&&page.page===0)return null;
+  const change=value=>setParams(previous=>workspacePageParams(previous,value,data.revision,resource==='matches'&&data.primary!=='matches'?'op_match_page':'op_page'),{replace:true});
+  return <nav className="op-pagination op-card" aria-label={`Páginas de ${title.toLowerCase()}`}><span>{title}: {page.total} · página {page.page+1} de {Math.max(1,Math.ceil(page.total/page.limit))}</span><div className="op-actions"><button className="btn" disabled={page.page===0} onClick={()=>change(0)}>Primera</button><button className="btn" disabled={page.page===0} onClick={()=>change(page.page-1)}>Anterior</button><button className="btn" disabled={!page.has_more} onClick={()=>change(page.page+1)}>Siguiente</button></div></nav>;
 }
 
 function MatchCard({ match: m, data }) {
   const location = useLocation();
   const issues = (data.incidents || []).filter((i) => i.match_id === m.id && !CLOSED_INCIDENTS.includes(i.status));
-  const assigned = (data.assignments || []).filter((a) => a.match_id === m.id && a.status === 'confirmed');
+  const assignedCount = data.coverage ? Object.values(data.coverage[m.id]||{}).reduce((total,role)=>total+role.confirmed,0) : (data.assignments || []).filter((a) => a.match_id === m.id && a.status === 'confirmed').length;
   return <Link state={{ returnTo: location.pathname + location.search }} to={`/operaciones/partidos/${encodeURIComponent(m.id)}`} className="op-match-card">
     <div className="op-match-meta"><span>{label(m.kind)}</span><Badge value={m.status} /></div>
     <div className="op-match-teams"><strong>{teamName(m.team_a)}</strong><div className="op-score">{m.confirmed ? officialResult(m) : 'VS'}</div><strong>{teamName(m.team_b)}</strong></div>
     <div className="op-match-time"><Clock3 size={14} />{dateTime(m.scheduled_at)}</div>
-    <div className="op-match-bottom"><span>{issues.length ? `${issues.length} incidencia${issues.length > 1 ? 's' : ''}` : 'Sin incidencias visibles'}</span><span>{assigned.length} staff confirmado <ArrowUpRight size={14} /></span></div>
+    <div className="op-match-bottom"><span>{issues.length ? `${issues.length} incidencia${issues.length > 1 ? 's' : ''}` : 'Sin incidencias visibles'}</span><span>{assignedCount} staff confirmado <ArrowUpRight size={14} /></span></div>
   </Link>;
 }
 function CasterIndex({ data }) {
   const [params, setParams] = useSearchParams();
   const query = params.get('q') || '';
+  const [search,setSearch]=useWorkspaceSearch(params,setParams);
   const [limit, setLimit] = useState(24);
-  const matches = data.matches.filter(match => [matchName(match), match.title].filter(Boolean).join(' ').toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')));
-  return <><div className="op-section-title"><div><h2>Preparar la narración</h2><p>Roster, mapas y estadísticas aprobadas.</p></div><div className="op-filters"><input aria-label="Buscar dossier de partido" placeholder="Equipo o torneo…" value={query} onChange={event => { setParams(event.target.value ? { q: event.target.value } : {}, { replace: true }); setLimit(24); }} />{query && <button className="btn" onClick={() => setParams({}, { replace: true })}>Limpiar búsqueda</button>}</div></div><div className="op-match-grid">{matches.slice(0, limit).map(match => <MatchCard key={match.id} match={match} data={data} />)}</div>{matches.length > limit && <button className="btn" onClick={() => setLimit(value => value + 24)}>Ver más partidos</button>}{!matches.length && <Empty title={query ? 'No hay partidos con esa búsqueda' : 'Sin partidos sincronizados'}>{query ? 'Prueba otro equipo o borra la búsqueda.' : 'Cada partido tendrá aquí su dossier para casters.'}</Empty>}</>;
+  const matches = data.matches;
+  return <><div className="op-section-title"><div><h2>Preparar la narración</h2><p>Roster, mapas y estadísticas aprobadas.</p></div><div className="op-filters"><input aria-label="Buscar dossier de partido" placeholder="Equipo o torneo…" value={search} onChange={event => { setSearch(event.target.value); setLimit(24); }} />{query && <button className="btn" onClick={() => setSearch('')}>Limpiar búsqueda</button>}</div></div><div className="op-match-grid">{matches.slice(0, limit).map(match => <MatchCard key={match.id} match={match} data={data} />)}</div>{matches.length > limit && <button className="btn" onClick={() => setLimit(value => value + 24)}>Ver más partidos</button>}{!matches.length && <Empty title={query ? 'No hay partidos con esa búsqueda' : 'Sin partidos sincronizados'}>{query ? 'Prueba otro equipo o borra la búsqueda.' : 'Cada partido tendrá aquí su dossier para casters.'}</Empty>}</>;
 }
 function MatchDossier({ id, data, mutate, can, reload }) {
   const location = useLocation();
@@ -142,7 +166,7 @@ function MatchDossier({ id, data, mutate, can, reload }) {
   if (!detail) return <Spinner size={24} />;
   const m = detail.match;
   const maps = approvedMaps(detail.statistics?.length ? detail.statistics : m.statistics);
-  const insights = playerInsights(data.matches, rosterRows(m.roster).map((p) => p.id || p.player_id || p.user_id));
+  const insights = playerInsights([{...m,statistics:detail.statistics}], rosterRows(m.roster).map((p) => p.id || p.player_id || p.user_id));
   return <>
     <div className="op-section-title"><Link to={returnTo}><ArrowLeft size={15} /> {backLabel}</Link><div className="op-actions">{can('realizacion') && <Link className="btn" to={`/operaciones/realizacion?match=${encodeURIComponent(id)}`}>Preparar directo <ArrowUpRight size={14} /></Link>}<WebLink match={m} origin={data.connection?.web_origin} /></div></div>
     <section className="op-dossier-hero"><div className="op-match-meta"><span>{label(m.kind)} · {dateTime(m.scheduled_at)}</span><Badge value={m.status} /></div><h2>{matchName(m)}</h2><p>{m.confirmed ? `Resultado confirmado: ${officialResult(m)}` : 'Resultado oficial pendiente de confirmación'}</p><small>Actualizado: {dateTime(m.synced_at || m.updated_at || data.connection?.last_sync_at)}</small></section>

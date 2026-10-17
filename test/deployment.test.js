@@ -98,6 +98,8 @@ test('proxy HTTPS usa cookie segura y API privada sin caché', async () => {
   const response = await request('POST', '/api/auth/login', { username: 'admin', password: 'local-test-password' }, { Origin: 'https://manager.playctp.com' });
   assert.equal(response.status, 200);
   const cookie = response.headers['set-cookie'][0];
+  assert.match(cookie, /^__Host-ctp_manager_session=/);
+  assert.match(cookie, /; Path=\//); assert.doesNotMatch(cookie, /; Domain=/i);
   assert.match(cookie, /; Secure/); assert.match(cookie, /; HttpOnly/); assert.match(cookie, /; SameSite=Lax/);
   assert.equal(response.headers['cache-control'], 'no-store');
   const denied = await request('GET', '/api/operations/integration');
@@ -105,6 +107,24 @@ test('proxy HTTPS usa cookie segura y API privada sin caché', async () => {
   const status = await request('GET', '/api/operations/integration', undefined, { Cookie: cookie.split(';')[0] });
   assert.equal(status.status, 200);
   assert.equal(status.data.configured, false); assert.equal(status.data.write_enabled, false);
+  assert.equal((await request('GET', '/api/me', undefined, { Cookie: `${cookie.split(';')[0]}; ${cookie.split(';')[0]}` })).status, 401);
+  // The legacy cookie can be set by a sibling domain and no longer authenticates
+  // the public Manager. It also cannot override a valid host-prefixed cookie.
+  const legacy = cookie.split(';')[0].replace('__Host-ctp_manager_session=', 'mrm_session=');
+  assert.equal((await request('GET', '/api/me', undefined, { Cookie: legacy })).status, 401);
+  assert.equal((await request('GET', '/api/me', undefined, { Cookie: `${legacy}; ${cookie.split(';')[0]}` })).status, 200);
+});
+
+test('credential failures are limited with Retry-After without accepting a forwarded peer', async () => {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    assert.equal((await request('POST', '/api/auth/login', { username: 'unknown-staff', password: 'wrong-password' }, { 'X-Forwarded-For': `203.0.113.${attempt}` })).status, 401);
+  }
+  const blocked = await request('POST', '/api/auth/login', { username: 'UNKNOWN-STAFF', password: 'wrong-password' }, { 'X-Forwarded-For': '198.51.100.99' });
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers['retry-after']) >= 1);
+  assert.ok(Number(blocked.headers['retry-after']) <= 60);
+  assert.equal((await request('POST', '/api/auth/login', { username: {}, password: 'bad' })).status, 401);
+  assert.equal((await request('POST', '/api/auth/login', { username: 'admin', password: 'x'.repeat(1025) })).status, 401);
 });
 
 test('Host, Origin y Fetch Metadata se comprueban en la API real', async () => {

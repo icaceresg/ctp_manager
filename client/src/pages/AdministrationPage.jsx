@@ -34,7 +34,7 @@ export default function AdministrationPage(){
   const requestKey=JSON.stringify([resource,page,query,gameId]);
   const {data:loaded,loading,error,reload}=useData(async()=>{
     const filters=new URLSearchParams({resource,page:String(page),limit:'20',...(query?{query}:{}),...(gameId?{game_id:gameId}:{})});
-    const [result,operations]=await Promise.all([api.get(`/administration?${filters}`),api.get('/operations/bootstrap')]);
+    const [result,operations]=await Promise.all([api.get(`/administration?${filters}`),api.get('/operations/bootstrap?view=administration')]);
     return {...result,operations,request_key:requestKey};
   },[resource,page,query,gameId]);
   const data=loaded?.request_key===requestKey?loaded:null;

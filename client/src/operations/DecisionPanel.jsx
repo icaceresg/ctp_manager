@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Badge, Empty } from './ui.jsx';
@@ -6,11 +7,13 @@ import { canSendCommand, dateTime, label } from './model.js';
 import { actionLabel } from './actionLabels.js';
 
 export function DecisionPanel({data,resourceType,resourceId,reload,onChanged}) {
+  const [params,setParams]=useSearchParams();
   const {me,toast}=useApp();
   const [busy,setBusy]=useState(null);
   const [error,setError]=useState('');
   const [limit,setLimit]=useState(30);
-  const [showAll,setShowAll]=useState(Boolean(resourceId));
+  const showAll=Boolean(resourceId)||params.get('include_closed')==='1';
+  const setShowAll=value=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set('include_closed','1'):next.delete('include_closed');next.delete('op_page');next.delete('op_revision');return next;},{replace:true});
   const commands=(data.commands||[]).filter(c=>(!resourceType||c.resource_type===resourceType)&&(!resourceId||c.resource_id===resourceId));
   const visible=commands.filter(command=>showAll||!['acknowledged','cancelled'].includes(command.status));
   const connection=data.connection||{};
@@ -45,6 +48,6 @@ export function DecisionPanel({data,resourceType,resourceId,reload,onChanged}) {
         {pending&&(!connection.write_enabled||!supported(type))&&<p className="op-notice">{!connection.write_enabled?'El envío oficial está desactivado en esta instalación.':'CTP todavía no anuncia esta acción.'}</p>}
         <details className="op-details"><summary>Detalle de la propuesta · {command.id.slice(0,8)}</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(payload,null,2)}</pre><small>{command.attempts} intento(s). Se conserva el mismo identificador en los reintentos.</small></details>
       </article>;
-    })}{visible.length>limit&&<button className="btn" onClick={()=>setLimit(value=>value+30)}>Mostrar más decisiones</button>}
+    })}{visible.length>limit&&<button className="btn" onClick={()=>setLimit(value=>value+30)}>Mostrar más decisiones</button>}{resourceId&&data.pages?.commands?.has_more&&<Link className="btn" to={`/operaciones/decisiones?${new URLSearchParams({resource_type:resourceType,resource_id:resourceId,include_closed:'1'})}`}>Consultar todas las decisiones de este registro</Link>}
   </section>;
 }

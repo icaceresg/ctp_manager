@@ -17,17 +17,21 @@ export function StaffPlanner({ data, mutate, me, can }) {
   const initialMatch = data.matches.find((m) => m.id === matchFilter);
   const linkedWeek = params.get('week');
   const validLinkedWeek = /^\d{4}-\d{2}-\d{2}$/.test(linkedWeek || '') && validTime(`${linkedWeek}T12:00:00Z`) !== null;
-  const [week, setWeek] = useState(() => weekDays(initialMatch?.scheduled_at ? madridDay(initialMatch.scheduled_at) : validLinkedWeek ? linkedWeek : madridDay())[0]);
+  const week=weekDays(validLinkedWeek?linkedWeek:initialMatch?.scheduled_at?madridDay(initialMatch.scheduled_at):madridDay())[0];
+  const setWeek=value=>selectParam('week',value);
   useEffect(() => { const selected = data.matches.find((m) => m.id === matchFilter); if (selected?.scheduled_at) setWeek(weekDays(madridDay(selected.scheduled_at))[0]); }, [matchFilter]);
-  const [role, setRole] = useState('all');
-  const [showClosed, setShowClosed] = useState(false);
+  const role=params.get('role')||'all';
+  const setRole=value=>selectParam('role',value);
+  const showClosed=params.get('closed')==='1';
+  const setShowClosed=value=>selectParam('closed',value?'1':'');
   const person = params.get('person') || 'all';
   const days = weekDays(week);
   const assignments = data.assignments || [];
   const missing = params.get('coverage') === 'missing';
   const selectParam = (key, value) => { const next = new URLSearchParams(params); value && value !== 'all' ? next.set(key, value) : next.delete(key); setParams(next); };
   const filtered = assignments.filter((a) => (showClosed || ACTIVE_ASSIGNMENTS.includes(a.status)) && (!matchFilter || a.match_id === matchFilter) && (role === 'all' || a.role === role) && (person === 'all' || a.user_id === (person === 'me' ? me.id : Number(person))) && spanIntersects(a, days));
-  const weekMatches = data.matches.filter((m) => m.scheduled_at && madridDay(m.scheduled_at) >= days[0] && madridDay(m.scheduled_at) <= days[6] && (!matchFilter || m.id === matchFilter) && (!missing || !matchCoverage(m.id, assignments).referee.confirmed)).sort((a, b) => validTime(a.scheduled_at) - validTime(b.scheduled_at));
+  const matchPageIds=data.match_page_ids?new Set(data.match_page_ids):null;
+  const weekMatches = data.matches.filter((m) => (!matchPageIds||matchPageIds.has(m.id))&&m.scheduled_at && madridDay(m.scheduled_at) >= days[0] && madridDay(m.scheduled_at) <= days[6] && (!matchFilter || m.id === matchFilter) && (!missing || !matchCoverage(m.id, assignments, data.coverage).referee.confirmed)).sort((a, b) => validTime(a.scheduled_at) - validTime(b.scheduled_at));
   const availableStaff = data.staff || [];
   const openCreate = (matchId) => setDialog({ type: 'create', matchId: matchId || matchFilter });
   return <>
@@ -38,7 +42,7 @@ export function StaffPlanner({ data, mutate, me, can }) {
     <div className="op-week-grid">{days.map((day) => { const rows = filtered.filter((a) => madridDay(a.starts_at) <= day && madridDay(new Date(validTime(a.ends_at) - 1)) >= day); const ready = availableStaff.filter((s) => (role === 'all' || s.is_admin || s.sections?.includes(ROLE_SECTIONS[role])) && (person === 'all' || s.id === (person === 'me' ? me.id : Number(person))) && s.availability?.some((a) => a.date === day && a.status === 'disponible')); return <section className={`op-week-day ${day === madridDay() ? 'is-today' : ''}`} key={day}><header><strong>{dayTitle(day)}</strong>{can('operaciones') && <small>{ready.length} disponibles</small>}</header><div className="op-week-items">{rows.length ? rows.map((a) => <Link key={a.id} to={`/operaciones/partidos/${encodeURIComponent(a.match_id)}`} className={`op-week-assignment op-role-${a.role}`}><span>{new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(a.starts_at))} · {label(a.role)}</span><strong>{a.user_name || availableStaff.find((s) => s.id === a.user_id)?.name || 'Staff'}</strong><small>{matchName(data.matches.find((m) => m.id === a.match_id))}</small><Badge value={a.status} /></Link>) : <span className="op-week-empty">Sin turnos</span>}</div>{can('operaciones') && ready.length > 0 && <details><summary>Disponibles</summary><ul>{ready.map((s) => <li key={s.id}>{s.name}</li>)}</ul></details>}</section>; })}</div>
     {can('operaciones') && <section className="op-card"><div className="op-section-title"><div><h2>Cobertura de los partidos</h2><p>Arbitraje pendiente de confirmar. Casters y realización según la emisión prevista.</p></div><label className="op-check"><input type="checkbox" checked={missing} onChange={(e) => selectParam('coverage', e.target.checked ? 'missing' : '')} /> Solo sin árbitro confirmado</label></div><DataTable rows={weekMatches} empty="No hay partidos con esos filtros esta semana" emptyDetail="Cambia de semana o el filtro de partido para planificar otra jornada." columns={[
       { key: 'match', title: 'Partido', render: (m) => <div className="op-stack"><MatchLink match={m} /><small>{dateTime(m.scheduled_at)}</small></div> },
-      ...['referee', 'caster', 'producer'].map((r) => ({ key: r, title: label(r), render: (m) => { const c = matchCoverage(m.id, assignments)[r]; return <span className={r === 'referee' && !c.confirmed ? 'op-urgent' : ''}>{c.confirmed ? `${c.confirmed} confirmado${c.confirmed > 1 ? 's' : ''}` : c.assigned ? `${c.assigned} por confirmar` : 'Sin asignar'}</span>; } })),
+      ...['referee', 'caster', 'producer'].map((r) => ({ key: r, title: label(r), render: (m) => { const c = matchCoverage(m.id, assignments, data.coverage)[r]; return <span className={r === 'referee' && !c.confirmed ? 'op-urgent' : ''}>{c.confirmed ? `${c.confirmed} confirmado${c.confirmed > 1 ? 's' : ''}` : c.assigned ? `${c.assigned} por confirmar` : 'Sin asignar'}</span>; } })),
       { key: 'action', title: 'Equipo', render: (m) => <button className="btn sm" onClick={() => openCreate(m.id)}>Asignar</button> },
     ]} /></section>}
     <div className="op-section-title"><h2>Seguimiento de turnos</h2><span className="op-count">{filtered.length} turnos en esta selección</span></div>

@@ -61,7 +61,8 @@ export function assignmentCandidates(staff, assignments, { role, starts_at, ends
     return { ...s, eligible: !reason, unavailableReason: reason };
   }).sort((a, b) => Number(b.eligible) - Number(a.eligible) || (a.name || '').localeCompare(b.name || '', 'es'));
 }
-export function matchCoverage(matchId, assignments) {
+export function matchCoverage(matchId, assignments, coverage) {
+  if(coverage)return Object.fromEntries(Object.keys(ROLE_SECTIONS).map(role=>[role,coverage[matchId]?.[role]||{assigned:0,confirmed:0}]));
   const rows = assignments.filter((a) => a.match_id === matchId && ACTIVE_ASSIGNMENTS.includes(a.status));
   return Object.fromEntries(Object.keys(ROLE_SECTIONS).map((role) => {
     const assigned = rows.filter((a) => a.role === role);
@@ -70,12 +71,12 @@ export function matchCoverage(matchId, assignments) {
 }
 export function personalTasks(data, me, can, now = Date.now()) {
   const tasks = [];
-  const matchById = (id) => data.matches?.find((m) => m.id === id);
+  const matchById = (id) => data.matches?.find((m) => m.id === id)||data.context_matches?.find((m)=>m.id===id);
   for (const a of data.assignments || []) if (a.user_id === me.id && ['pending', 'assigned'].includes(a.status) && (validTime(a.ends_at) ?? 0) > now) tasks.push({ id: `assignment:${a.id}`, title: 'Confirmar tu turno', detail: `${matchName(matchById(a.match_id))}`, to: `/operaciones/turnos?match=${encodeURIComponent(a.match_id)}`, priority: 1, when: a.starts_at });
   if (can('arbitraje')) for (const i of data.incidents || []) if (!CLOSED_INCIDENTS.includes(i.status) && (i.assignee_id === me.id || !i.assignee_id)) tasks.push({ id: `incident:${i.id}`, title: incidentNextAction(i), detail: i.title, to: `/operaciones/incidencias?case=${encodeURIComponent(i.id)}`, priority: i.priority === 'urgent' ? 0 : i.assignee_id === me.id ? 1 : 2, when: i.created_at });
-  if (can('arbitraje')) { const pending = (data.stats || []).filter((s) => s.status === 'pending' && !s.pending_command_id).length; if (pending) tasks.push({ id: 'stats', title: 'Revisar estadísticas', detail: `${pending} ${pending === 1 ? 'mapa pendiente' : 'mapas pendientes'}`, to: '/operaciones/estadisticas', priority: 2 }); }
-  if (can('clubes')) { const pending = (data.clubs || []).filter((c) => !c.verified && !c.pending_command_id).length; if (pending) tasks.push({ id: 'clubs', title: 'Revisar identidades de clubes', detail: `${pending} clubes sin verificar`, to: '/operaciones/clubes', priority: 3 }); }
-  if (can('comunicaciones')) { const failed = (data.deliveries || []).filter((d) => ['error', 'failed', 'dead'].includes(d.status)).length; if (failed) tasks.push({ id: 'discord', title: 'Revisar avisos de Discord', detail: `${failed} entregas con errores`, to: '/operaciones/discord', priority: 2 }); }
+  if (can('arbitraje')) { const pending = data.pages?.stats?.total??(data.stats || []).filter((s) => s.status === 'pending' && !s.pending_command_id).length; if (pending) tasks.push({ id: 'stats', title: 'Revisar estadísticas', detail: `${pending} ${pending === 1 ? 'mapa pendiente' : 'mapas pendientes'}`, to: '/operaciones/estadisticas', priority: 2 }); }
+  if (can('clubes')) { const pending = data.pages?.clubs?.total??(data.clubs || []).filter((c) => !c.verified && !c.pending_command_id).length; if (pending) tasks.push({ id: 'clubs', title: 'Revisar identidades de clubes', detail: `${pending} clubes sin verificar`, to: '/operaciones/clubes', priority: 3 }); }
+  if (can('comunicaciones')) { const failed = data.pages?.deliveries?.total??(data.deliveries || []).filter((d) => ['error', 'failed', 'dead'].includes(d.status)).length; if (failed) tasks.push({ id: 'discord', title: 'Revisar avisos de Discord', detail: `${failed} entregas con errores`, to: '/operaciones/discord', priority: 2 }); }
   if (can('realizacion') || can('casters')) {
     const assigned = new Set((data.assignments || []).filter((a) => a.user_id === me.id && ACTIVE_ASSIGNMENTS.includes(a.status) && ['caster', 'producer'].includes(a.role) && (validTime(a.ends_at) ?? 0) > now).map((a) => a.match_id));
     for (const id of assigned) { const match = matchById(id); if (!match) continue; const production = data.production?.find((p) => p.match_id === id); if (can('realizacion') && (!production?.rundown_id || !production.note)) tasks.push({ id: `production:${id}`, title: 'Preparar el directo asignado', detail: matchName(match), to: `/operaciones/realizacion?match=${encodeURIComponent(id)}`, priority: 2, when: match.scheduled_at }); else if (can('casters')) tasks.push({ id: `dossier:${id}`, title: 'Revisar el dossier asignado', detail: matchName(match), to: `/operaciones/partidos/${encodeURIComponent(id)}`, priority: 3, when: match.scheduled_at }); }

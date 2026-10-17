@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
-import { HttpError } from './auth.js';
+import { HttpError, describeUser } from './auth.js';
 
 export const OBS_SCENES = ['preview', 'teams', 'map', 'pause', 'result', 'next'];
 const LEASE_MS = 30_000;
@@ -87,9 +87,9 @@ export function claimObsCommand() {
     const latest = db.prepare("SELECT * FROM obs_commands WHERE status IN ('pending','claimed') ORDER BY seq DESC LIMIT 1").get();
     if (!latest) return { enabled: true, command: null };
     db.prepare("UPDATE obs_commands SET status='superseded',updated_at=? WHERE status IN ('pending','claimed') AND seq<?").run(now, latest.seq);
-    const author = db.prepare('SELECT active,is_admin FROM users WHERE id=?').get(latest.actor_id);
-    const roles = db.prepare('SELECT r.sections FROM roles r JOIN user_roles ur ON r.id=ur.role_id WHERE ur.user_id=?').all(latest.actor_id);
-    if (!author?.active || (!author.is_admin && !roles.some((r) => JSON.parse(r.sections).includes('realizacion')))) {
+    const author = db.prepare('SELECT * FROM users WHERE id=?').get(latest.actor_id);
+    const permissions = author?.active ? describeUser(author) : null;
+    if (!permissions || (!permissions.is_admin && !permissions.sections.includes('realizacion'))) {
       db.prepare("UPDATE obs_commands SET status='failed',error='Permiso del operador revocado.',updated_at=? WHERE id=?").run(now, latest.id);
       return { enabled: true, command: null };
     }

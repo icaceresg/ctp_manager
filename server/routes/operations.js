@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { requireAuth, allow } from '../auth.js';
 import * as operations from '../operations.js';
+import { operationsWorkspace } from '../operations-workspace.js';
 
 export const operationsRouter = Router();
 operationsRouter.use('/operations', requireAuth, allow(...operations.OPERATION_SECTIONS));
 const get = (path, handler) => operationsRouter.get(`/operations${path}`, (req, res) => res.json(handler(req)));
 const post = (path, handler) => operationsRouter.post(`/operations${path}`, (req, res) => res.json(handler(req)));
 const patch = (path, handler) => operationsRouter.patch(`/operations${path}`, (req, res) => res.json(handler(req)));
-get('/bootstrap', (req) => operations.bootstrap(req.user));
+get('/bootstrap', (req) => operationsWorkspace(req.user,req.query));
 get('/matches/:id', (req) => operations.matchDossier(req.user, req.params.id));
 get('/incidents/:id', (req) => operations.incidentDetail(req.user, req.params.id));
 post('/incidents', (req) => operations.createIncident(req.user, req.body || {}));

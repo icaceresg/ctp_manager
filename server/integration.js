@@ -7,6 +7,7 @@ import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
+import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -84,7 +85,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  if (body.action !== 'admin_service' || body.service !== 'twitch' || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  if (body.action !== 'admin_service' || !['twitch','crm'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
   try {
@@ -96,6 +97,10 @@ async function ownerServiceFailure(body, response) {
       chunks.push(Buffer.from(part.value));
     }
     const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (body.service === 'crm') {
+      const message = typeof error?.crm_error === 'string' && Object.hasOwn(CRM_ERRORS, error.crm_error) ? CRM_ERRORS[error.crm_error] : null;
+      return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
+    }
     if (error?.code !== 'provider_error') return null;
     const messages = {
       configPending: 'La conexión de Twitch está pendiente de configurar en el servidor.',
@@ -434,8 +439,9 @@ export async function getAdministrationData(user, query = {}) {
 
 export async function getAdministrationService(user, service, payload) {
   if (!user?.is_admin) throw integrationError(403, 'Esta sección requiere administración CTP.');
-  if (!['twitch','push','image'].includes(service)) throw integrationError(400, 'Servicio no admitido.');
-  if (service !== 'push' && payload?.action !== 'status' && !config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  if (!['twitch','push','image','crm'].includes(service)) throw integrationError(400, 'Servicio no admitido.');
+  const read = service === 'crm' ? crmIsRead(payload?.action) : service === 'push' || payload?.action === 'status';
+  if (!read && !config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   return request({action:'admin_service',actor_id:getOperatorIdentity(user.id),service,payload});
 }
 

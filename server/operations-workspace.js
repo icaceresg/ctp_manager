@@ -52,6 +52,7 @@ function parameters(query={}) {
 }
 function permittedKinds(user) {
   const result=[];
+  if(can(user,'realizacion'))result.push('pro_view');
   for(const [collection,[kind,...sections]]of Object.entries(KINDS))if(can(user,...sections))result.push(kind);
   if(can(user,'arbitraje'))result.push('guard_match','guard_tournament','fixture','case_incident','case_match');
   if(can(user,'operaciones'))result.push('tournament','registration','fixture');

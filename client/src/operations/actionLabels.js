@@ -1,4 +1,5 @@
 const commands={
+  'pro_view.configure':'Publicación de Pro View',
   'admin.user.role':'Cambiar rol de CTP',
   'admin.entitlement.grant':'Conceder acceso al circuito',
   'admin.entitlement.revoke':'Retirar acceso al circuito',

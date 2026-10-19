@@ -9,10 +9,11 @@ import { canSendCommand, dateTime, label, matchName, officialResult } from './mo
 import { ActionButton } from './ReviewPanels.jsx';
 import { ManualClubCreatePanel } from './ManualClubCreatePanel.jsx';
 import { useWorkspaceSearch } from './useWorkspaceSearch.js';
+import { ProViewPanel } from './ProViewPanel.jsx';
 
 export { StaffPlanner as AssignmentsPanel } from './StaffPlanner.jsx';
 
-export function ProductionPanel({ data, mutate, can }) {
+export function ProductionPanel({ data, mutate, can, me }) {
   const [params, setParams] = useSearchParams();
   const selected = params.get('match') || '';
   const [dialog, setDialog] = useState(false);
@@ -23,7 +24,7 @@ export function ProductionPanel({ data, mutate, can }) {
   const assigned = (data.assignments || []).filter((a) => a.match_id === selected && !['cancelled', 'declined'].includes(a.status));
   const states = { preparation: 'En preparación', ready: 'Preparado', live: 'En seguimiento', paused: 'Seguimiento en pausa', finished: 'Cerrado' };
   const transitions = { preparation: ['preparation', 'ready'], ready: ['ready', 'preparation', 'live'], live: ['live', 'paused', 'finished'], paused: ['paused', 'live', 'finished'], finished: ['finished', 'preparation'] };
-  return <><div className="op-section-title"><div><h2>Preparación del directo</h2><p>Organiza la escaleta, el equipo y las notas del encuentro.</p></div>{can('escaleta') && <Link className="btn" to="/escaleta"><Clapperboard size={16} /> Escaletas</Link>}</div>
+  return <><ProViewPanel data={data} me={me} /><div className="op-section-title"><div><h2>Preparación del directo</h2><p>Organiza la escaleta, el equipo y las notas del encuentro.</p></div>{can('escaleta') && <Link className="btn" to="/escaleta"><Clapperboard size={16} /> Escaletas</Link>}</div>
     <div className="op-inline-note"><Clapperboard size={18} /><p>La salida en directo se maneja desde CTP Panel, en el dock de OBS. Aquí queda preparada la información para el equipo.</p></div>
     <Field label="Partido"><SelectMatch matches={data.matches} value={selected} onChange={(e) => setParams(e.target.value ? { match: e.target.value } : {})} /></Field>
     {!match ? <Empty title={selected ? 'El encuentro no está en la consulta actual' : 'Selecciona el próximo encuentro'}>{selected ? 'Elige otro partido o actualiza los datos de CTP.' : 'Vincula su escaleta, consulta quién participa y deja las indicaciones del directo.'}</Empty> : <>

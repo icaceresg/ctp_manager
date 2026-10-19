@@ -7,6 +7,7 @@ import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
+import { PRO_VIEW_ACTION, proViewSettings, proViewState } from './pro-view-contract.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -18,9 +19,11 @@ import {
   rememberRankedState,
   rememberAdministrationData,
   rememberCaseData,
+  rememberProViewState,
 } from './operations.js';
 
 const ACTION_SECTIONS = Object.freeze({
+  [PRO_VIEW_ACTION]: 'realizacion',
   ...Object.fromEntries(CASE_ACTIONS.map(type => [type,'arbitraje'])),
   ...Object.fromEntries(ADMIN_ACTIONS.map(type => [type, '__admin__'])),
   ...Object.fromEntries(COMPETITION_ACTIONS.map((type) => [type, 'operaciones'])),
@@ -184,6 +187,7 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
 }
 
 export function officialPayload(type, payload = {}) {
+  if (type === PRO_VIEW_ACTION) return proViewSettings(payload);
   if (CASE_ACTIONS.includes(type)) return casePayload(type,payload);
   if (ADMIN_ACTIONS.includes(type)) return administrationPayload(type, payload);
   if (GUARD_ACTIONS.includes(type)) return guardPayload(type,payload);
@@ -293,14 +297,17 @@ export async function sendOperationCommand(id) {
     markCommandSending(command.id);
     const commandId = command.idempotency_key || command.id;
     const targetId = command.target_id || command.resource_id;
-    const result = await request({
+    const result = await request(type === PRO_VIEW_ACTION ? {
+      action: 'pro_view_configure', actor_id: getOperatorIdentity(command.actor_id), commandId,
+      expectedRevision: command.expected_version, settings: payload,
+    } : {
       action: 'command', actor_id: getOperatorIdentity(command.actor_id), command_id: commandId,
       type, target_id: targetId,
       expected_version: command.expected_version ?? command.payload?.expected_version,
       payload,
     });
-    if (result.applied !== true || result.command_id !== commandId || result.type !== type || result.target_id !== targetId) throw integrationError(502, 'CTP no ha confirmado la aplicación de esta solicitud.');
-    acknowledgeCommand(command.id, { confirmed: true, external_id: result.external_id || result.command_id, source_version: result.source_version ?? result.version, revision_id: result.revision_id });
+    if (type === PRO_VIEW_ACTION ? result.applied !== true || result.commandId !== commandId || !Number.isSafeInteger(result.revision) || result.revision < 1 : result.applied !== true || result.command_id !== commandId || result.type !== type || result.target_id !== targetId) throw integrationError(502, 'CTP no ha confirmado la aplicación de esta solicitud.');
+    acknowledgeCommand(command.id, { confirmed: true, external_id: result.external_id || result.command_id || result.commandId, source_version: type === PRO_VIEW_ACTION ? result.revision : result.source_version ?? result.version, revision_id: result.revision_id });
     let sync_pending = false;
     if (['stats.correct','incident.status','match.resolve','match.revert'].includes(type)) {
       try { await syncOperations(); } catch { sync_pending = true; }
@@ -308,9 +315,16 @@ export async function sendOperationCommand(id) {
     return { ok: true, confirmed: true, command_id: command.id, sync_pending };
   } catch (error) {
     const safe = error instanceof HttpError ? error.message : 'No se ha confirmado el envío a CTP.';
-    failCommand(command.id, { message: safe, definitive_rejection: !command.attempts && (error.remoteRejected === true || (GUARD_ACTIONS.includes(type) && error.status === 409)) });
+    failCommand(command.id, { message: safe, definitive_rejection: !command.attempts && (error.remoteRejected === true || ((GUARD_ACTIONS.includes(type) || type === PRO_VIEW_ACTION) && error.status === 409)) });
     throw integrationError(error instanceof HttpError ? error.status : 502, safe);
   } finally { sending.delete(command.id); }
+}
+
+export async function getProViewState(user) {
+  if (!user?.is_admin && !user?.sections?.includes('realizacion')) throw integrationError(403, 'Necesitas acceso de producción para gestionar Pro View.');
+  if (!integrationStatus().supported_actions.includes(PRO_VIEW_ACTION)) throw integrationError(503, 'El puente CTP todavía no tiene habilitado Pro View.');
+  const state = proViewState(await request({ action: 'pro_view_state', actor_id: getOperatorIdentity(user.id) }));
+  return rememberProViewState(state);
 }
 
 export async function getGuardState(user,id) {

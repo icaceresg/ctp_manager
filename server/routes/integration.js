@@ -1,13 +1,24 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
-import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getClubCandidates } from '../integration.js';
-import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand } from '../operations.js';
+import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getClubCandidates, getProViewState } from '../integration.js';
+import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
+import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
 import { HttpError } from '../auth.js';
 import { getCaseData,getOfficialIncident } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
 
 export const integrationRouter = Router();
+integrationRouter.get('/operations/pro-view', requireAuth, allow('realizacion'), async (req, res) => res.json(await getProViewState(req.user)));
+integrationRouter.post('/operations/pro-view/commands', requireAuth, allow('realizacion'), async (req, res) => {
+  const state = await getProViewState(req.user);
+  res.json(prepareProViewCommand(req.user, req.body || {}, state));
+});
+integrationRouter.post('/operations/pro-view/commands/:id/send', requireAuth, allow('realizacion'), async (req, res) => {
+  const command = getCommand(req.params.id);
+  if (command.type !== PRO_VIEW_ACTION || (!req.user.is_admin && command.actor_id !== req.user.id)) throw new HttpError(403, 'Solo puedes enviar tus propias propuestas de Pro View.');
+  res.json(await sendOperationCommand(command.id));
+});
 integrationRouter.get('/operations/matches/:id',requireAuth,allow('operaciones','arbitraje','casters','realizacion'),async(req,res)=>res.json(await getOfficialMatchDossier(req.user,req.params.id)));
 integrationRouter.get('/operations/cases',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getCaseData(req.user,req.query)));
 integrationRouter.get('/operations/incidents/:id',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getOfficialIncident(req.user,req.params.id)));

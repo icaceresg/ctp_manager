@@ -12,6 +12,8 @@ El [centro operativo](docs/OPERATIONS_IMPLEMENTATION.md) reúne la jornada, el e
 
 En Manager, **Dossier** reúne el contexto aprobado para casters y **Preparación** vincula partido, escaleta y notas del equipo. Sus estados son coordinación manual: «En preparación», «Preparado», «En seguimiento», «Seguimiento en pausa» y «Cerrado» no confirman ni cambian el estado de OBS.
 
+**Preparación** incluye además el editor de [CTP Pro View](docs/PRO_VIEW.md): selecciona el encuentro y el canal, configura el retraso de los datos y prepara su publicación para espectadores. Esta capacidad requiere que el puente CTP la anuncie y confirme cada cambio; las salas se identifican sin exponer sus claves. CTP Panel conserva el control de OBS.
+
 Debe mantenerse un único Panel por emisión. Manager no abre otra instancia del Panel ni emite estado de overlay ni configura OBS. El [agente OBS anterior](docs/OBS_AGENT.md) se conserva como código histórico desactivado, fuera del flujo de uso actual. La futura alimentación de datos al Panel requiere acordar y probar su contrato JSON; aún no hay un endpoint ni una conexión Panel implementados en Manager. La [matriz funcional](docs/OPERATIONS_IMPLEMENTATION.md#propiedad-funcional-y-alcance-real) distingue las funciones actuales del traslado pendiente de herramientas de staff.
 
 ## Qué puedes hacer

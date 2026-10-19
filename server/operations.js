@@ -9,6 +9,7 @@ import { manualClubPayload } from './manual-club-contract.js';
 import { date as calendarDate } from './validate.js';
 import { ADMIN_ACTIONS, ADMIN_CREATE_ACTIONS, administrationPayload } from './administration-contract.js';
 import { CASE_ACTIONS,CASE_RESOURCE_TYPES,casePayload } from './case-contract.js';
+import { PRO_VIEW_ACTION, PRO_VIEW_RESOURCE_ID, validateProViewProposal } from './pro-view-contract.js';
 
 export const OPERATION_SECTIONS = ['operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones'];
 const READ_MATCH = ['operaciones', 'arbitraje', 'casters', 'realizacion', 'comunicaciones'];
@@ -216,7 +217,7 @@ export function cancelCommand(user,commandId,input) {
   return tx(()=>{
     const command=getCommand(commandId);
     const section={'incident.status':'arbitraje','match.reply':'arbitraje','match.resolve':'arbitraje','match.revert':'arbitraje','veto.prepare':'arbitraje','veto.reset':'arbitraje','veto.start':'arbitraje','veto.staff_gate':'arbitraje','guard.configure':'arbitraje','guard.exempt':'arbitraje','guard.start':'arbitraje','incident.resolve':'arbitraje','incident.reply':'arbitraje','stats.review':'arbitraje','stats.correct':'arbitraje','club.verify':'clubes','discord.retry':'comunicaciones','sanction.create':'arbitraje','sanction.appeal':'arbitraje','sanction.review':'arbitraje','sanction.revoke':'arbitraje'}[command.type];
-    requireSection(user,section||'operaciones');
+    requireSection(user,command.type===PRO_VIEW_ACTION?'realizacion':section||'operaciones');
     if(!user.is_admin&&command.actor_id!==user.id)throw new HttpError(403,'Solo el autor o un administrador puede descartar esta solicitud.');
     if(!Number.isInteger(input.expected_updated_at)||input.expected_updated_at!==command.updated_at)throw new HttpError(409,'La solicitud ha cambiado. Recarga antes de descartarla.');
     const neverSent=command.status==='pending'&&command.attempts===0;
@@ -293,6 +294,7 @@ export function bootstrap(user) {
   const staff=can(user,'operaciones','arbitraje','casters','realizacion')?db.prepare('SELECT * FROM users WHERE active=1 ORDER BY name,username').all().filter(u=>isStaffUser(describeUser(u))).map((u)=>{const described=describeUser(u);return{id:u.id,name:described.name,username:u.username,sections:described.sections,...(user.is_admin?{integration_actor_id:getOperatorIdentity(u.id)}:{}),availability:can(user,'operaciones')?db.prepare('SELECT date,status,note FROM availability WHERE user_id=? ORDER BY date').all(u.id):u.id===user.id?db.prepare('SELECT date,status,note FROM availability WHERE user_id=? ORDER BY date').all(u.id):[]};}):[];
   const allowedKinds=new Set();if(can(user,'arbitraje')){allowedKinds.add('guard_match');allowedKinds.add('guard_tournament');allowedKinds.add('fixture');}if(can(user,...READ_MATCH))allowedKinds.add('match');if(can(user,'operaciones')){allowedKinds.add('tournament');allowedKinds.add('registration');allowedKinds.add('fixture');}if(can(user,'arbitraje')){allowedKinds.add('incident');allowedKinds.add('stat');allowedKinds.add('sanction');allowedKinds.add('case_incident');allowedKinds.add('case_match');}if(can(user,'clubes'))allowedKinds.add('club');if(can(user,'comunicaciones'))allowedKinds.add('delivery');
   if (user.is_admin) { allowedKinds.add('ranked_season'); allowedKinds.add('club_create'); allowedKinds.add('administration'); allowedKinds.add('administration_create'); }
+  if (can(user,'realizacion')) allowedKinds.add('pro_view');
   const commandRows=db.prepare('SELECT * FROM operation_commands ORDER BY created_at DESC LIMIT 300').all().filter(c=>allowedKinds.has(c.resource_type)).map(c=>getCommand(c.id));
   return {matches:can(user,...READ_MATCH)?rows('match'):[],incidents:can(user,'arbitraje')?rows('incident').map(i=>({...i,notes:notes('incident',i.id,true)})):[],assignments:can(user,'operaciones','arbitraje','casters','realizacion')?db.prepare('SELECT a.*,u.name user_name,u.username FROM operation_assignments a JOIN users u ON u.id=a.user_id ORDER BY starts_at').all():[],staff,stats:can(user,'arbitraje')?rows('stat').map(statisticsWithRoster):[],clubs:can(user,'clubes')?rows('club'):[],deliveries:can(user,'comunicaciones')?rows('delivery'):[],sanctions:can(user,'arbitraje')?rows('sanction').map(effectiveSanction):[],production:can(user,'operaciones','casters','realizacion')?db.prepare('SELECT * FROM operation_production ORDER BY updated_at DESC').all():[],audit:db.prepare('SELECT a.*,u.name actor_name,u.username actor_username FROM operation_audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 200').all().filter(a=>allowedKinds.has(a.resource_type)).map(a=>({...a,details:parse(a.details,{})})),connection:getIntegrationStatus(),commands:commandRows,rundowns:can(user,'realizacion','casters')?db.prepare('SELECT id,title,date,time FROM rundowns ORDER BY date DESC,id DESC').all():[]};
 }
@@ -521,6 +523,28 @@ export function rememberRankedState(state) {
       save('ranked_season', { ...item, source_version: item.manager_version, in_feed: true, pending_command_id: old?.pending_command_id || null }, 'ctp');
     }
     return { ...state, commands: db.prepare("SELECT * FROM operation_commands WHERE resource_type='ranked_season' ORDER BY created_at DESC LIMIT 10").all().map(commandView) };
+  });
+}
+export function rememberProViewState(state) {
+  return tx(() => {
+    let old = null; try { old = record('pro_view', PRO_VIEW_RESOURCE_ID, true); } catch {}
+    if (old && old.source_version > state.revision) throw new HttpError(409, 'Se ha recibido una configuración de Pro View obsoleta.');
+    // Polling an unchanged editor must not invalidate pagination in every other
+    // Manager workspace. Automatic snapshot captures do not change this CAS.
+    if (!old || old.source_version !== state.revision || old.in_feed === false) save('pro_view', { id: PRO_VIEW_RESOURCE_ID, source_version: state.revision, in_feed: true, pending_command_id: old?.pending_command_id || null }, 'ctp');
+    const commands = db.prepare("SELECT id FROM operation_commands WHERE resource_type='pro_view' AND resource_id=? ORDER BY created_at DESC,id DESC LIMIT 10").all(PRO_VIEW_RESOURCE_ID).map(row => getCommand(row.id));
+    return { ...state, commands };
+  });
+}
+export function prepareProViewCommand(user, input, state) {
+  requireSection(user, 'realizacion');
+  if (!getIntegrationStatus().supported_actions?.includes(PRO_VIEW_ACTION)) throw new HttpError(422, 'CTP todavía no tiene habilitada la publicación de Pro View.');
+  const payload = validateProViewProposal(input, state);
+  return tx(() => {
+    const item = record('pro_view', PRO_VIEW_RESOURCE_ID);
+    const command = queue(PRO_VIEW_ACTION, 'pro_view', item, payload, user);
+    save('pro_view', { ...item, pending_command_id: command.id }, 'ctp');
+    return { command };
   });
 }
 export function prepareRankedCommand(user, input, state) {

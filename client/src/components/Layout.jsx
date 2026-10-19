@@ -37,7 +37,7 @@ export function Layout() {
     window.scrollTo(0, 0);
     document.getElementById('manager-content')?.focus({ preventScroll: true });
     const title = managerNavigation(can, me.is_admin).find(item => item.to === location.pathname)?.title
-      || (location.pathname.startsWith('/operaciones/partidos/') ? 'Ficha de partido' : location.pathname === '/cuenta' ? 'Mi cuenta' : 'Área de trabajo');
+      || (location.pathname.startsWith('/operaciones/partidos/') ? 'Ficha de partido' : location.pathname.startsWith('/crm/') ? 'CRM y correos' : location.pathname === '/cuenta' ? 'Mi cuenta' : 'Área de trabajo');
     document.title = `${title} · CTP Manager`;
   }, [location.pathname]);
   useEffect(() => {

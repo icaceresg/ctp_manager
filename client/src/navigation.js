@@ -23,6 +23,7 @@ export function managerNavigation(can, isAdmin) {
   items.push(...editorial.filter(item => can(item.section)).map(item => ({ ...item, id: item.section, group: 'Contenido editorial' })));
   if (isAdmin) items.push(
     { id: 'administracion', to: '/administracion/resumen', title: 'Administración CTP', group: 'Administración', keywords: 'jugadores clubes accesos pases mapas campañas ranked integraciones auditoría' },
+    { id: 'crm', to: '/crm/resumen', title: 'CRM y correos', group: 'Administración', keywords: 'campañas email newsletter contactos segmentos marketing promocionales transaccionales plantillas fluentcrm' },
     { id: 'usuarios', to: '/usuarios', title: 'Usuarios y roles', group: 'Administración', keywords: 'permisos staff cuentas' },
     { id: 'integracion', to: '/operaciones/integracion', title: 'Conexión CTP', group: 'Administración', keywords: 'api sincronización integración' },
   );

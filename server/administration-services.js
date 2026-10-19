@@ -54,7 +54,7 @@ export async function ownerAction(req) {
 }
 export async function uploadAdministrationImage(user,input) {
   if(!input||Object.keys(input).some(key=>!['bucket','content_type','base64','request_id'].includes(key))
-    ||!['game-maps','tournament-images'].includes(input.bucket)||!['image/png','image/jpeg','image/webp'].includes(input.content_type)
+    ||!['game-maps','tournament-images','email-images'].includes(input.bucket)||!['image/png','image/jpeg','image/webp'].includes(input.content_type)
     ||typeof input.base64!=='string'||input.base64.length<16||input.base64.length>2796204||!/^[A-Za-z0-9+/]+={0,2}$/.test(input.base64)
     ||typeof input.request_id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(input.request_id))throw new HttpError(400,'Selecciona una imagen PNG, JPG o WebP de hasta 2 MB.');
   const result=await getAdministrationService(user,'image',input);

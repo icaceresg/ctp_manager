@@ -56,6 +56,14 @@ Intranet privada del equipo de **Connect To Play** para organizar el contenido d
 - Si desactivas a alguien o le cambias la contraseña, sus sesiones abiertas se cierran al momento.
 - Cada usuario puede cambiar su contraseña en *Mi cuenta*.
 
+### Ruleta (ruleta.playctp.com)
+- Sorteo en directo pensado para el stream: una máquina de chicles en 3D suelta chicles con nombres, entran en una caja misteriosa y de ella van saliendo nombres cada vez más despacio hasta que se queda uno (~45 s).
+- Entran **todas las personas registradas** (usuarios activos). En *Participantes* se puede desmarcar a quien no deba entrar en ese sorteo.
+- Solo entra quien tiene cuenta en el manager: la sesión es la misma (si ya has iniciado sesión en manager.playctp.com, entras directamente). Sin sesión, ni la página ni la API dejan ver nada.
+- El ganador lo elige el **servidor** con un generador aleatorio criptográfico; el navegador solo lo anima. Cada sorteo queda guardado en *Últimos sorteos*.
+- Música y efectos sintetizados en el navegador (composición propia, sin derechos de autor). Teclas: **Espacio** gira, **H** oculta la interfaz (modo stream), **F** pantalla completa, **M** silencia.
+- En local está en <http://localhost:3210/ruleta>.
+
 ## Instalación
 
 1. Instala [Node.js](https://nodejs.org) 22 o superior (probado con Node 24).
@@ -70,6 +78,26 @@ npm start
 ```
 
 De momento la app solo acepta conexiones desde este ordenador (`localhost`). Para abrirla a la red de la oficina o a internet habrá que añadir HTTPS y cambiar la configuración de red.
+
+### Publicar en manager.playctp.com y ruleta.playctp.com
+
+1. Los dos subdominios apuntan (registro A) a la IP del servidor.
+2. En el `.env` del servidor:
+   ```
+   MANAGER_HOST=manager.playctp.com
+   RULETA_HOST=ruleta.playctp.com
+   COOKIE_DOMAIN=playctp.com
+   TRUST_PROXY=1
+   ```
+3. Un proxy con HTTPS reenvía los dos dominios a la app conservando el `Host`. Con Caddy (HTTPS automático):
+   ```
+   manager.playctp.com, ruleta.playctp.com {
+     reverse_proxy localhost:3210
+   }
+   ```
+   Con nginx, un `server` para cada dominio (o los dos en `server_name`) con `proxy_pass http://127.0.0.1:3210;` y `proxy_set_header Host $host;`, y el certificado con `certbot --nginx -d manager.playctp.com -d ruleta.playctp.com`.
+
+Tras el cambio, cada persona tiene que volver a iniciar sesión una vez para que la sesión pase a valer en los dos subdominios.
 
 ### ¿Olvidaste la contraseña del administrador?
 

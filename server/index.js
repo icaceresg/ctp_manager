@@ -3,7 +3,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import express from 'express';
-import { APP_HOST, APP_ORIGIN, DIST_DIR, PORT } from './config.js';
+import { APP_HOST, APP_ORIGIN, DIST_DIR, PORT, PUBLIC_HOSTS, RULETA_HOST, TRUST_PROXY } from './config.js';
+import { ruletaRouter } from './routes/ruleta.js';
 import { db } from './db.js';
 import { HttpError } from './auth.js';
 import { authRouter } from './routes/auth.js';
@@ -13,17 +14,22 @@ import { boardRouter } from './routes/board.js';
 
 const app = express();
 app.disable('x-powered-by');
+if (TRUST_PROXY) app.set('trust proxy', 'loopback');
 
-// Solo responde a peticiones de este ordenador: se rechazan otros nombres de
-// host (protección contra DNS rebinding) y cambios enviados desde otras webs.
+// Solo responde a peticiones de este ordenador o de los dominios configurados
+// (manager.playctp.com, ruleta.playctp.com): se rechazan otros nombres de host
+// (protección contra DNS rebinding) y cambios enviados desde otras webs.
 const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+const isAllowedHost = (host) => LOCAL_HOST.test(host) || PUBLIC_HOSTS.includes(host.toLowerCase().replace(/:\d+$/, ''));
+const hostOf = (req) => (req.get('host') || '').toLowerCase().replace(/:\d+$/, '');
+
 app.use((req, res, next) => {
   // Intranet privada: que ningún buscador la indexe.
   res.set('X-Robots-Tag', 'noindex, nofollow');
   const host = req.get('host') || '';
-  if (!LOCAL_HOST.test(host)) return res.status(403).send('Solo accesible desde este ordenador.');
+  if (!isAllowedHost(host)) return res.status(403).send('Solo accesible desde este ordenador.');
   const origin = req.get('origin');
-  if (req.method !== 'GET' && origin && !LOCAL_HOST.test(origin.replace(/^https?:\/\//, ''))) {
+  if (req.method !== 'GET' && origin && !isAllowedHost(origin.replace(/^https?:\/\//, ''))) {
     return res.status(403).json({ error: 'Origen no permitido.' });
   }
   // Las cookies de sesión van ligadas al nombre de host: usamos siempre "localhost".
@@ -34,14 +40,16 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '1mb' }));
-app.use('/api', authRouter, adminRouter, boardRouter, apiRouter);
+app.use('/api', authRouter, adminRouter, ruletaRouter, boardRouter, apiRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
 
 // Interfaz web ya compilada (npm run build).
 app.use(express.static(DIST_DIR, { index: false }));
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
-  const index = path.join(DIST_DIR, 'index.html');
+  // La ruleta: en ruleta.playctp.com es la página entera; en local, /ruleta.
+  const ruleta = (RULETA_HOST && hostOf(req) === RULETA_HOST) || /^\/ruleta\/?$/.test(req.path);
+  const index = path.join(DIST_DIR, ruleta ? 'ruleta.html' : 'index.html');
   if (!fs.existsSync(index)) {
     return res
       .status(503)

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
-import { SESSION_COOKIE, SESSION_DAYS } from './config.js';
+import { COOKIE_DOMAIN, PUBLIC_HOSTS, SECURE_COOKIES, SESSION_COOKIE, SESSION_DAYS } from './config.js';
 import { SECTION_IDS } from '../shared/access.js';
 
 const SESSION_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
@@ -115,17 +115,41 @@ export function createSession(res, userId) {
   const now = Date.now();
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(token, userId, now, now + SESSION_MS);
-  res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', maxAge: SESSION_MS, path: '/' });
+  res.cookie(SESSION_COOKIE, token, { ...cookieOptions(res.req), maxAge: SESSION_MS });
   return token;
+}
+
+/**
+ * En los dominios públicos (manager.playctp.com, ruleta.playctp.com) la cookie
+ * se emite para todo playctp.com, así una misma sesión vale en los dos. En
+ * localhost sigue siendo una cookie normal del propio host.
+ */
+function cookieOptions(req) {
+  const host = String(req?.hostname || '').toLowerCase();
+  const isPublic = PUBLIC_HOSTS.includes(host);
+  const shared = isPublic && COOKIE_DOMAIN && (host === COOKIE_DOMAIN || host.endsWith(`.${COOKIE_DOMAIN}`));
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    ...(isPublic && SECURE_COOKIES ? { secure: true } : {}),
+    ...(shared ? { domain: COOKIE_DOMAIN } : {}),
+  };
 }
 
 export function readSessionToken(req) {
   const header = req.headers.cookie || '';
+  const tokens = [];
   for (const part of header.split(';')) {
     const [name, ...rest] = part.trim().split('=');
-    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join('='));
+    if (name === SESSION_COOKIE) tokens.push(decodeURIComponent(rest.join('=')));
   }
-  return null;
+  // Puede haber dos (la de este host y la compartida de playctp.com): vale la que siga viva.
+  if (tokens.length > 1) {
+    const live = tokens.find((t) => db.prepare('SELECT 1 FROM sessions WHERE token = ? AND expires_at > ?').get(t, Date.now()));
+    if (live) return live;
+  }
+  return tokens[0] || null;
 }
 
 /** Usuario de la sesión actual (activo y con sesión sin caducar) o null. */
@@ -144,7 +168,10 @@ export function currentUser(req) {
 export function destroySession(req, res) {
   const token = readSessionToken(req);
   if (token) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
-  res.clearCookie(SESSION_COOKIE, { path: '/' });
+  const options = cookieOptions(req);
+  res.clearCookie(SESSION_COOKIE, options);
+  // Borra también una posible cookie antigua ligada solo a este host.
+  if (options.domain) res.clearCookie(SESSION_COOKIE, { path: '/' });
 }
 
 export function requireAuth(req, res, next) {

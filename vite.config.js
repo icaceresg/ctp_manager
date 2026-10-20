@@ -9,6 +9,13 @@ export default defineConfig({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      input: {
+        main: 'client/index.html',
+        ruleta: 'client/ruleta.html',
+      },
+    },
   },
   server: {
     port: 5173,

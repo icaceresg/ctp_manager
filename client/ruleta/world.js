@@ -670,6 +670,12 @@ export function buildWorld(stage) {
 
   // Grafiti CTP y tiza del arma
   mesh(new THREE.PlaneGeometry(4.6, 2.3), new THREE.MeshStandardMaterial({ map: graffitiTexture(), transparent: true, roughness: 0.9, depthWrite: false }), 7.3, 2.8, BACK_Z + 0.42, { cast: false });
+  // Logo de Modern Warfare 4 en la pared derecha, sobre el contenedor de Ranked.
+  const mw4 = loader.load(`${MEDIA}/mw4-logo.webp`);
+  mw4.colorSpace = THREE.SRGBColorSpace;
+  mesh(new THREE.PlaneGeometry(4.9, 2.3), new THREE.MeshStandardMaterial({ color: 0x0b0909, roughness: 0.85, metalness: 0.3 }), SIDE_X - 0.38, 4.8, 7.2, { ry: -Math.PI / 2, cast: false });
+  mesh(new THREE.PlaneGeometry(4.4, 1.82), new THREE.MeshBasicMaterial({ map: mw4, transparent: true, color: new THREE.Color(0.78, 0.78, 0.78), depthWrite: false }), SIDE_X - 0.42, 4.8, 7.2, { ry: -Math.PI / 2, cast: false });
+
   mesh(new THREE.PlaneGeometry(2.8, 1.1), new THREE.MeshBasicMaterial({ map: chalkTexture(), transparent: true, color: new THREE.Color(0.8, 0.8, 0.8), depthWrite: false }), -SIDE_X + 0.42, 2.4, 8.4, { ry: Math.PI / 2, cast: false });
   mesh(new THREE.PlaneGeometry(1.1, 0.82), new THREE.MeshStandardMaterial({ map: warningSignTexture('PELIGRO', 'ALTA TENSIÓN'), roughness: 0.6 }), -3.0, 2.4, BACK_Z + 0.42, { cast: false });
 

@@ -380,115 +380,152 @@ export class AudioEngine {
   // ---------- efectos ----------
 
   /**
-   * Zombi lejano, sintetizado: voz rasposa (sierra con temblor y formantes
-   * de vocal) más ruido de garganta, distorsionada y con mucha reverb.
-   * kind: 'groan' (gemido largo), 'scream' (chillido) o 'growl' (gruñidos).
+   * Zombi sintetizado al estilo de los mapas de zombis: garganta rota con
+   * "vocal fry" (traqueteo de 25-60 Hz), subarmónico, mucho aliento por los
+   * formantes y saturación. El tono deriva al azar para que nunca suene igual.
+   * kind: 'groan' (gemido), 'growl' (gruñido a golpes), 'scream' (chillido)
+   * o 'snarl' (bufido corto).
    */
   zombie(kind = 'groan', delay = 0) {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const t = this.now + delay;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const A = [760, 1180, 2550]; // vocal "a"
+    const O = [430, 820, 2400]; // vocal "o/u"
+    const E = [900, 1750, 2900]; // vocal "e" abierta
     const spec = {
-      groan: { f0: 85 + Math.random() * 40, f1: 60, dur: 1.4 + Math.random() * 0.9, gain: 1.0, vowel: [520, 900, 2300] },
-      scream: { f0: 300 + Math.random() * 140, f1: 170, dur: 0.75 + Math.random() * 0.4, gain: 0.6, vowel: [800, 1250, 2600] },
-      growl: { f0: 70 + Math.random() * 30, f1: 55, dur: 0.9 + Math.random() * 0.5, gain: 0.8, vowel: [450, 800, 2400] },
+      groan: { pitch: [rnd(105, 140), rnd(95, 120), rnd(62, 78)], dur: rnd(1.5, 2.3), gain: 0.9, from: A, to: O, fry: rnd(28, 40), fryDepth: 0.75, breath: 0.55, drive: 4, attack: 0.18 },
+      growl: { pitch: [rnd(80, 95), rnd(70, 85), rnd(55, 65)], dur: rnd(1.0, 1.6), gain: 0.95, from: O, to: A, fry: rnd(22, 32), fryDepth: 0.95, breath: 0.65, drive: 5, attack: 0.04 },
+      scream: { pitch: [rnd(330, 400), rnd(480, 600), rnd(280, 340)], dur: rnd(0.85, 1.25), gain: 0.7, from: A, to: E, fry: rnd(45, 65), fryDepth: 0.45, breath: 0.85, drive: 6, attack: 0.03 },
+      snarl: { pitch: [rnd(170, 210), rnd(150, 170), rnd(110, 130)], dur: rnd(0.32, 0.5), gain: 0.85, from: E, to: A, fry: rnd(35, 50), fryDepth: 0.7, breath: 0.95, drive: 5, attack: 0.015 },
     }[kind];
     const { dur } = spec;
+    const end = t + dur + 0.45;
 
-    // A un lado del búnker: paneo aleatorio y un filtro suave de distancia.
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() * 2 - 1) * 0.85;
-    const far = ctx.createBiquadFilter();
-    far.type = 'lowpass';
-    far.frequency.value = 3800 + Math.random() * 2600;
+    // Salida: a un lado del búnker, algo de distancia y sala.
     const out = ctx.createGain();
-    out.connect(far).connect(pan).connect(this.sfxBus);
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = rnd(-0.8, 0.8);
+    const air = ctx.createBiquadFilter();
+    air.type = 'lowpass';
+    air.frequency.value = rnd(5200, 7500);
+    out.connect(air).connect(pan).connect(this.sfxBus);
     const send = ctx.createGain();
-    send.gain.value = 0.75;
+    send.gain.value = 0.6;
     out.connect(send).connect(this.reverbSend);
 
-    // Saturación para la garganta rota.
-    const shaper = ctx.createWaveShaper();
-    const curve = new Float32Array(256);
-    for (let i = 0; i < 256; i++) {
-      const x = (i / 255) * 2 - 1;
-      curve[i] = Math.tanh(x * 3.2);
-    }
-    shaper.curve = curve;
-    const voice = ctx.createGain();
-    voice.gain.value = 0.9;
-    shaper.connect(voice);
-    for (const [i, f] of spec.vowel.entries()) {
+    // Banco de formantes que se mueve de una vocal a otra.
+    const bank = ctx.createGain();
+    for (let i = 0; i < 3; i++) {
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(f, t);
-      bp.frequency.linearRampToValueAtTime(f * (0.75 + Math.random() * 0.2), t + dur);
-      bp.Q.value = 3.5 + i * 1.5;
+      bp.frequency.setValueAtTime(spec.from[i] * rnd(0.92, 1.08), t);
+      bp.frequency.linearRampToValueAtTime(spec.to[i] * rnd(0.92, 1.08), t + dur);
+      bp.Q.value = [4, 5, 7][i];
       const fg = ctx.createGain();
-      fg.gain.value = [1.4, 0.9, 0.4][i];
-      voice.connect(bp).connect(fg).connect(out);
+      fg.gain.value = [1.6, 1.0, 0.45][i];
+      bank.connect(bp).connect(fg).connect(out);
     }
+    // Cuerpo grave del pecho, sin filtrar por la vocal.
+    const chest = ctx.createBiquadFilter();
+    chest.type = 'lowpass';
+    chest.frequency.value = 380;
+    const chestGain = ctx.createGain();
+    chestGain.gain.value = kind === 'scream' ? 0.15 : 0.5;
+    bank.connect(chest).connect(chestGain).connect(out);
 
-    // Cuerdas vocales: dos sierras desafinadas con temblor irregular.
-    const pitch = ctx.createGain();
-    pitch.gain.value = spec.f0 * 0.06;
-    const jitter = ctx.createOscillator();
-    jitter.type = 'square';
-    jitter.frequency.value = 7 + Math.random() * 9;
-    jitter.connect(pitch);
-    const oscs = [0, 14].map((det) => {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.detune.value = det;
-      o.frequency.setValueAtTime(spec.f0 * (kind === 'scream' ? 0.8 : 1), t);
-      if (kind === 'scream') o.frequency.exponentialRampToValueAtTime(spec.f0 * 1.15, t + dur * 0.25);
-      o.frequency.exponentialRampToValueAtTime(spec.f1, t + dur);
-      pitch.connect(o.frequency);
-      o.connect(shaper);
-      return o;
-    });
+    // Garganta rota: saturación fuerte antes de los formantes.
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(512);
+    for (let i = 0; i < 512; i++) curve[i] = Math.tanh(((i / 511) * 2 - 1) * spec.drive);
+    shaper.curve = curve;
+    shaper.oversample = '2x';
+    shaper.connect(bank);
 
-    // Aire rasposo por los mismos formantes.
-    const rasp = ctx.createBufferSource();
-    rasp.buffer = this.noiseBuf;
-    rasp.loop = true;
-    const rf = ctx.createBiquadFilter();
-    rf.type = 'bandpass';
-    rf.frequency.value = kind === 'scream' ? 2200 : 1100;
-    rf.Q.value = 1.2;
-    const rg = ctx.createGain();
-    rg.gain.value = kind === 'scream' ? 0.5 : 0.35;
-    rasp.connect(rf).connect(rg).connect(shaper);
+    // Vocal fry: la voz se entrecorta a 25-60 Hz con ritmo irregular.
+    const fry = ctx.createGain();
+    fry.gain.value = 1 - spec.fryDepth / 2;
+    const fryLfo = ctx.createOscillator();
+    fryLfo.type = 'sawtooth';
+    const fryCurve = new Float32Array(24).map(() => spec.fry * rnd(0.7, 1.3));
+    fryLfo.frequency.setValueCurveAtTime(fryCurve, t, dur + 0.3);
+    const fryAmt = ctx.createGain();
+    fryAmt.gain.value = spec.fryDepth / 2;
+    fryLfo.connect(fryAmt).connect(fry.gain);
+    fry.connect(shaper);
 
-    // Envolvente con tartamudeo (los gruñidos van a golpes).
+    // Cuerdas vocales: tono que deriva al azar entre tres puntos clave.
+    const N = 40;
+    const f0 = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const p = i / (N - 1);
+      const [a, b, c] = spec.pitch;
+      const base = p < 0.3 ? a + (b - a) * (p / 0.3) : b + (c - b) * ((p - 0.3) / 0.7);
+      f0[i] = base * rnd(0.94, 1.06);
+    }
+    const voice = ctx.createOscillator();
+    voice.type = 'sawtooth';
+    voice.frequency.setValueCurveAtTime(f0, t, dur + 0.3);
+    const sub = ctx.createOscillator();
+    sub.type = 'square';
+    sub.frequency.setValueCurveAtTime(f0.map((v) => v / 2), t, dur + 0.3);
+    const subGain = ctx.createGain();
+    subGain.gain.value = kind === 'scream' ? 0.15 : 0.4;
+    voice.connect(fry);
+    sub.connect(subGain).connect(fry);
+
+    // Aliento: ruido por la garganta y directo a los formantes.
+    const breath = ctx.createBufferSource();
+    breath.buffer = this.noiseBuf;
+    breath.loop = true;
+    const bf = ctx.createBiquadFilter();
+    bf.type = kind === 'scream' || kind === 'snarl' ? 'highpass' : 'bandpass';
+    bf.frequency.value = kind === 'scream' || kind === 'snarl' ? 900 : 1300;
+    bf.Q.value = 0.8;
+    const bg = ctx.createGain();
+    bg.gain.value = spec.breath;
+    breath.connect(bf).connect(bg);
+    bg.connect(bank);
+    const grit = ctx.createGain();
+    grit.gain.value = 0.25;
+    bg.connect(grit).connect(shaper);
+
+    // Envolvente: los gruñidos van a golpes; el resto, un solo aliento.
     const g = out.gain;
     g.setValueAtTime(0.0001, t);
     if (kind === 'growl') {
       let k = t;
       while (k < t + dur) {
-        const len = 0.12 + Math.random() * 0.2;
-        g.linearRampToValueAtTime(spec.gain, k + 0.03);
-        g.linearRampToValueAtTime(spec.gain * 0.15, k + len);
-        k += len + Math.random() * 0.08;
+        const len = rnd(0.14, 0.32);
+        g.linearRampToValueAtTime(spec.gain, k + 0.04);
+        g.linearRampToValueAtTime(spec.gain * 0.25, k + len);
+        k += len + rnd(0.02, 0.1);
       }
     } else {
-      g.linearRampToValueAtTime(spec.gain, t + (kind === 'scream' ? 0.05 : 0.35));
-      g.setTargetAtTime(spec.gain * 0.7, t + 0.4, dur / 3);
+      g.linearRampToValueAtTime(spec.gain, t + spec.attack);
+      g.setTargetAtTime(spec.gain * 0.75, t + spec.attack + 0.1, dur / 3);
     }
-    g.exponentialRampToValueAtTime(0.0001, t + dur + 0.35);
-    const end = t + dur + 0.4;
-    for (const node of [...oscs, jitter, rasp]) {
-      node.start(t, node === rasp ? Math.random() * 2 : undefined);
+    g.setTargetAtTime(0.0001, t + dur, 0.12);
+    for (const node of [voice, sub, fryLfo]) {
+      node.start(t);
       node.stop(end);
     }
+    breath.start(t, Math.random() * 2);
+    breath.stop(end);
   }
 
+  /** Trueno: chasquido seco, estallido y retumbe largo que va y viene. */
   thunder(delay = 0) {
     if (!this.ctx) return;
     const t = this.now + delay;
-    this.noise(t, 0.25, { type: 'highpass', freq: 1500, gain: 0.5, a: 0.002 });
-    this.noise(t + 0.05, 3.8, { type: 'lowpass', freq: 380, sweepTo: 70, q: 0.5, gain: 1.1, a: 0.08 });
-    this.noise(t + 0.4, 2.5, { type: 'lowpass', freq: 160, gain: 0.8, a: 0.3 });
+    this.noise(t, 0.18, { type: 'highpass', freq: 2200, gain: 0.9, a: 0.002 });
+    this.noise(t + 0.02, 0.6, { type: 'bandpass', freq: 600, q: 0.7, gain: 1.1, a: 0.01, sweepTo: 180 });
+    this.noise(t + 0.08, 4.2, { type: 'lowpass', freq: 420, sweepTo: 60, q: 0.6, gain: 1.6, a: 0.05 });
+    for (let i = 0; i < 3; i++) {
+      const at = t + 0.6 + i * (0.7 + Math.random() * 0.6);
+      this.noise(at, 1.6 + Math.random(), { type: 'lowpass', freq: 220 + Math.random() * 120, sweepTo: 55, q: 0.8, gain: 1.1 - i * 0.25, a: 0.25 });
+    }
   }
 
   crankClick(delay = 0) {

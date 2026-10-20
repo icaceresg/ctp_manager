@@ -266,7 +266,7 @@ export function signTexture() {
   // Bombillas del marco
   for (let x = 40; x < 1000; x += 48) {
     for (const y of [30, 226]) {
-      ctx.fillStyle = '#ffe9a8';
+      ctx.fillStyle = '#d9c48c';
       ctx.beginPath();
       ctx.arc(x, y, 7, 0, Math.PI * 2);
       ctx.fill();
@@ -275,9 +275,10 @@ export function signTexture() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `800 132px ${DISPLAY_FONT}`;
-  ctx.shadowColor = '#ff3b5c';
-  ctx.shadowBlur = 28;
-  ctx.fillStyle = '#ffd9e0';
+  // Menos halo y un rosa menos saturado: con el bloom se quemaba.
+  ctx.shadowColor = '#c8384f';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#f0c6cd';
   ctx.fillText('CTP · GUM', 512, 134);
   return toTexture(c);
 }

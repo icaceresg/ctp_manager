@@ -96,6 +96,7 @@ const TOUR = [
   shot([-8.6, 3.0, 5.2], [-8.4, 3.2, 2.0], [-12.6, 3.0, 3.0], [-12.6, 3.1, 2.0], 6), // CTP CUP
   shot(null, [-8.6, 3.7, -1.0], null, [-12.5, 3.7, -1.2], 5.5, true), // pantalla LED
   shot([7.6, 4.0, 4.4], [7.6, 3.8, -0.4], [12.6, 3.9, 2.6], [12.6, 3.9, 0.9], 6.5), // divisiones de Ranked
+  shot(null, [6.4, 4.5, 8.8], null, [12.6, 4.8, 7.2], 6, true), // logo de MW4
   shot([7.0, 3.3, -3.2], [9.6, 3.2, -3.4], [8.6, 2.9, -7.2], [10.6, 3.0, -7.2], 6), // grafiti y CTP CHAMP
   orbitShot([-3.3, 2.4, 0], 4.3, 3.1, 0.35, -0.75, 7), // máquina de chicles
   orbitShot([2.9, 1.1, 0.15], 3.8, 2.0, 1.0, 0.05, 6.5), // caja del destino
@@ -383,7 +384,7 @@ export class Stage {
     const signTex = signTexture();
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(1.9, 0.475),
-      new THREE.MeshStandardMaterial({ map: signTex, emissiveMap: signTex, emissive: 0xffffff, emissiveIntensity: 1.0, roughness: 0.5 }),
+      new THREE.MeshStandardMaterial({ map: signTex, emissiveMap: signTex, emissive: 0xffffff, emissiveIntensity: 0.6, roughness: 0.5 }),
     );
     sign.position.set(0, 5.95, 0);
     g.add(sign);
@@ -657,6 +658,7 @@ export class Stage {
         uFlash: { value: 0 },
         uAberration: { value: 0.0015 },
         uFlashColor: { value: new THREE.Color(1, 1, 1) },
+        uLightning: { value: 0 },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -667,6 +669,7 @@ export class Stage {
         uniform float uFlash;
         uniform float uAberration;
         uniform vec3 uFlashColor;
+        uniform float uLightning;
         varying vec2 vUv;
         float rand(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
         void main() {
@@ -675,6 +678,8 @@ export class Stage {
           vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
           float vig = smoothstep(0.95, 0.25, length(d * vec2(1.15, 1.0)));
           col *= mix(0.35, 1.0, vig);
+          // Relámpago: destello azulado sobre toda la imagen.
+          col += uLightning * vec3(0.6, 0.68, 0.95) * mix(0.6, 1.0, vig);
           col += (rand(vUv * 1000.0 + uTime) - 0.5) * 0.045;
           col = mix(col, uFlashColor, clamp(uFlash, 0.0, 1.0));
           gl_FragColor = vec4(col, 1.0);
@@ -781,7 +786,8 @@ export class Stage {
       [0.3, 0.55],
     ];
     for (const [dt, v] of pattern) this.flashes.push({ t: now + dt, v: v * strength });
-    if (withThunder) this.audio.thunder(0.25 + Math.random() * 0.6);
+    // El trueno llega casi a la vez para que se asocie al destello.
+    if (withThunder) this.audio.thunder(0.08 + Math.random() * 0.2);
   }
 
   burstSparks(origin, count, { speed = 4, up = 3, colors = ['#ffe9a8', '#d4a843', '#ffffff'], life = 2.2, gravity = 6 } = {}) {
@@ -911,9 +917,13 @@ export class Stage {
     this.camera.lookAt(this.cam.target);
 
     // Rayos
-    if (this.mode === 'idle' && t > this.nextLightning) {
-      this.lightning(0.7, true);
-      this.nextLightning = t + 10 + Math.random() * 14;
+    // Tormenta: relámpago y trueno juntos, antes y después del sorteo.
+    if ((this.mode === 'idle' || this.drawDone) && t > this.nextLightning) {
+      if (!this.audio.ctx) this.nextLightning = t + 1;
+      else {
+        this.lightning(1, true);
+        this.nextLightning = t + 12 + Math.random() * 14;
+      }
     }
     // Zombis de fondo: antes y después del sorteo, nunca durante.
     if ((this.mode === 'idle' || this.drawDone) && t > this.nextZombie) {
@@ -922,9 +932,11 @@ export class Stage {
       if (!this.audio.ctx) this.nextZombie = t + 1;
     }
     if ((this.mode === 'idle' || this.drawDone) && t > this.nextZombie) {
-      const kinds = ['groan', 'groan', 'growl', 'scream'];
-      this.audio.zombie(kinds[Math.floor(Math.random() * kinds.length)]);
-      if (Math.random() < 0.35) this.audio.zombie(kinds[Math.floor(Math.random() * 3)], 0.5 + Math.random() * 1.2);
+      const kinds = ['groan', 'groan', 'growl', 'scream', 'snarl'];
+      const pick = () => kinds[Math.floor(Math.random() * kinds.length)];
+      this.audio.zombie(pick());
+      // A veces contesta otro desde el otro lado.
+      if (Math.random() < 0.4) this.audio.zombie(pick(), 0.4 + Math.random() * 1.1);
       this.nextZombie = t + 5 + Math.random() * 9;
     }
     let flash = 0;
@@ -934,7 +946,8 @@ export class Stage {
       flash = Math.max(flash, f.v * Math.exp(-age * 18));
       return age < 0.5;
     });
-    this.flashLight.intensity = flash * 6;
+    this.flashLight.intensity = flash * 12;
+    this.finalPass.uniforms.uLightning.value = flash * 0.42;
     this.sky.material.uniforms.uFlash.value = flash;
     this.sky.material.uniforms.uTime.value = t;
 
@@ -952,7 +965,7 @@ export class Stage {
       this.bulbs.setColorAt(i, c);
     }
     this.bulbs.instanceColor.needsUpdate = true;
-    this.sign.material.emissiveIntensity = this.blackout ? 0.05 : 0.95 + Math.sin(t * 3) * 0.15 + (Math.sin(t * 31) > 0.97 ? -1 : 0);
+    this.sign.material.emissiveIntensity = this.blackout ? 0.05 : 0.58 + Math.sin(t * 3) * 0.08 + (Math.sin(t * 31) > 0.97 ? -1 : 0);
     this.machineGlow.intensity = this.blackout ? 0 : 2 + this.agitate * 6;
 
     // Chicles de la bola: se agitan con la manivela

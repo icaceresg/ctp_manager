@@ -659,22 +659,23 @@ export class Stage {
         map: t.gum,
         emissiveMap: t.gum,
         emissive: 0xffffff,
-        emissiveIntensity: 0.12,
-        roughness: 0.32,
-        clearcoat: 1,
-        clearcoatRoughness: 0.1,
+        emissiveIntensity: 0.08,
+        roughness: 0.4,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.25,
       }),
     );
     mesh.castShadow = true;
     group.add(mesh);
     const glow = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: this.tex.dot, color: new THREE.Color(t.color).multiplyScalar(1.3), transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.SpriteMaterial({ map: this.tex.dot, color: new THREE.Color(t.color).multiplyScalar(1.3), transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
     glow.scale.setScalar(radius * 3.6);
     group.add(glow);
-    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: t.label.texture, transparent: true, depthWrite: false }));
+    // Color por debajo del umbral del bloom (0.92) para que el nombre no se emborrone.
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: t.label.texture, color: new THREE.Color(0.86, 0.86, 0.86), transparent: true, depthWrite: false }));
     label.userData.aspect = t.label.aspect;
-    const lh = 0.34;
+    const lh = 0.4;
     label.scale.set(lh * t.label.aspect, lh, 1);
     label.position.y = radius + 0.3;
     label.material.opacity = 0;

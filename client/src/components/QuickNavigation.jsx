@@ -26,7 +26,13 @@ export function QuickNavigation({ items }) {
         <input id="manager-tool-query" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Estadísticas, árbitro, turnos…" autoComplete="off" />
       </form>
       <div className="manager-search-results" aria-label="Herramientas disponibles">
-        {results.map((item, index) => <Link id={index === 0 ? 'manager-first-result' : undefined} key={item.id} to={item.to} onClick={close}><span><strong>{item.title}</strong><small>{item.group}</small></span><ArrowUpRight size={16} /></Link>)}
+        {results.map((item, index) => {
+          const body = <><span><strong>{item.title}</strong><small>{item.group}</small></span><ArrowUpRight size={16} /></>;
+          const id = index === 0 ? 'manager-first-result' : undefined;
+          return item.href
+            ? <a id={id} key={item.id} href={item.href} target="_blank" rel="noopener" onClick={close}>{body}</a>
+            : <Link id={id} key={item.id} to={item.to} onClick={close}>{body}</Link>;
+        })}
         {!results.length && <p role="status">No hay herramientas que coincidan. Prueba otro nombre.</p>}
       </div>
     </Modal>}

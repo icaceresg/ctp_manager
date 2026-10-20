@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Activity, CalendarCheck, CalendarDays, Clapperboard, ListChecks, LogOut, Menu, Plus, ShieldCheck, SquareKanban, Trophy, UserRound, Users, ChartNoAxesCombined, History, Radio, Settings2, MessageSquare, Gavel, BadgeCheck, FileText } from 'lucide-react';
-import { managerNavigation } from '../navigation.js';
+import { Activity, CalendarCheck, CalendarDays, Clapperboard, ListChecks, LogOut, Menu, Plus, ShieldCheck, SquareKanban, Trophy, Gift, UserRound, Users, ChartNoAxesCombined, History, Radio, Settings2, MessageSquare, Gavel, BadgeCheck, FileText } from 'lucide-react';
+import { managerNavigation, ruletaNavigation } from '../navigation.js';
 import { QuickNavigation } from './QuickNavigation.jsx';
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
@@ -12,7 +12,7 @@ export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
 }
 
-const ICONS = { jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, estadisticas: ChartNoAxesCombined, clubes: BadgeCheck, discord: MessageSquare, disciplina: Gavel, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban };
+const ICONS = { jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, estadisticas: ChartNoAxesCombined, clubes: BadgeCheck, discord: MessageSquare, disciplina: Gavel, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
 
 function PendingBadge() {
   const { data: withResources } = useData(() => api.get('/contents?with_resources=1'));
@@ -46,7 +46,7 @@ export function Layout() {
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
   }, [menuOpen]);
-  const items = managerNavigation(can, me.is_admin);
+  const items = [...managerNavigation(can, me.is_admin), ruletaNavigation(window.location.hostname)];
   const groups = [...new Set(items.map(item => item.group))];
   const roleNames = me.is_admin ? 'Administrador' : me.roles.map((r) => r.name).join(' · ') || 'Sin rol';
 
@@ -65,7 +65,7 @@ export function Layout() {
         <nav id="manager-main-nav" className={`nav ${menuOpen ? 'is-open' : ''}`} aria-label="Navegación principal">
           {groups.map(group => <details key={group} className="manager-nav-group" open={group === 'Trabajo diario' || items.some(item => item.group === group && location.pathname === item.to)}>
             <summary>{group}</summary>
-            {items.filter(item => item.group === group).map(item => { const Icon = ICONS[item.id] || ListChecks; return <NavLink key={item.id} to={item.to}><Icon size={17} /><span>{item.title}</span>{item.id === 'recursos' && <PendingBadge />}</NavLink>; })}
+            {items.filter(item => item.group === group).map(item => { const Icon = ICONS[item.id] || ListChecks; if (item.href) return <a key={item.id} href={item.href} target="_blank" rel="noopener"><Icon size={17} /><span>{item.title}</span></a>; return <NavLink key={item.id} to={item.to}><Icon size={17} /><span>{item.title}</span>{item.id === 'recursos' && <PendingBadge />}</NavLink>; })}
           </details>)}
         </nav>
         {can('calendario') && <button className="btn block sidebar-new" onClick={() => openContent()}><Plus size={16} /> Nueva publicación</button>}

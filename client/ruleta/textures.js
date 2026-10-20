@@ -70,8 +70,9 @@ export function gumTexture(name, color) {
     ctx.arc(r() * 1024, r() * 512, 1 + r() * 3, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Banda clara para el nombre.
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  // Banda oscura para el nombre: una banda blanca se quemaba con las luces
+  // y el bloom, y el texto desaparecía.
+  ctx.fillStyle = 'rgba(14,10,14,0.9)';
   ctx.fillRect(0, 196, 1024, 120);
   ctx.fillStyle = shade(color, -0.3);
   ctx.fillRect(0, 190, 1024, 8);
@@ -82,7 +83,7 @@ export function gumTexture(name, color) {
     ctx.font = `800 ${size}px ${DISPLAY_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = shade(color, -0.38);
+    ctx.fillStyle = '#f4ead4';
     ctx.fillText(label, x, 259);
   }
   return toTexture(c);
@@ -108,7 +109,7 @@ export function labelTexture(name, color, { big = false } = {}) {
   ctx.shadowColor = color;
   ctx.shadowBlur = 26;
   path();
-  ctx.fillStyle = 'rgba(8,6,10,0.82)';
+  ctx.fillStyle = 'rgba(8,6,10,0.94)';
   ctx.fill();
   ctx.shadowBlur = 0;
   ctx.lineWidth = big ? 9 : 7;
@@ -123,10 +124,14 @@ export function labelTexture(name, color, { big = false } = {}) {
   ctx.font = `800 ${size}px ${DISPLAY_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 18;
+  // Sin halo en las letras: un contorno oscuro las mantiene nítidas.
+  const y = H / 2 + size * 0.04;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(6, size * 0.12);
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText(label, W / 2, y);
   ctx.fillStyle = '#fff8e8';
-  ctx.fillText(label, W / 2, H / 2 + size * 0.04);
+  ctx.fillText(label, W / 2, y);
   return { texture: toTexture(c), aspect: W / H };
 }
 

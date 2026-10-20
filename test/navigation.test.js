@@ -30,3 +30,8 @@ test('match return links preserve filters but reject external or unknown targets
   assert.equal(matchReturnPath('/operaciones/incidencias?case=one&bucket=mine'), '/operaciones/incidencias?case=one&bucket=mine');
   for (const value of [null, '//evil.example', 'https://evil.example', '/operaciones/partidos/one', '/operaciones/jornada\\evil', '/operaciones/jornada-extra']) assert.equal(matchReturnPath(value), '/operaciones/jornada');
 });
+test('the draw wheel links to its own host in deployments and to /ruleta locally', async () => {
+  const { ruletaNavigation } = await import('../client/src/navigation.js');
+  assert.equal(ruletaNavigation('localhost').href, '/ruleta');
+  assert.equal(ruletaNavigation('manager.playctp.com').href, 'https://ruleta.playctp.com');
+});

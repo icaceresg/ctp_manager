@@ -227,7 +227,7 @@ function containerTexture(color, label, seed) {
   ctx.fillStyle = 'rgba(240,235,225,0.82)';
   ctx.fillText(label, 512, 230);
   ctx.font = `700 40px ${DISPLAY}`;
-  ctx.fillText('CONNECT TO PLAY · LOGISTICS · CTPU 220771', 512, 330);
+  ctx.fillText('PLAYCTP · LOGISTICS · CTPU 220771', 512, 330);
   return tex(c);
 }
 
@@ -368,7 +368,7 @@ function graffitiTexture() {
   ctx.save();
   ctx.translate(800, 420);
   ctx.rotate(-0.12);
-  ctx.fillText('CONNECT TO PLAY', 0, 0);
+  ctx.fillText('PLAYCTP', 0, 0);
   ctx.restore();
   return tex(c);
 }
@@ -577,7 +577,7 @@ export function buildWorld(stage) {
     neons.push({ m, light, base: 9, phase: Math.random() * 20, flicky: neons.length === 1 });
     return m;
   };
-  neon('CONNECT TO PLAY', '#ff2d6f', -8.6, 6.6, BACK_Z + 0.42, 5.2, 1.3);
+  neon('PLAYCTP', '#ff2d6f', -8.6, 6.6, BACK_Z + 0.42, 5.2, 1.3);
   neon('PLAYCTP.COM', '#3fd9ff', 8.7, 6.7, BACK_Z + 0.42, 4.8, 1.2);
   neon('RANKED', '#b06cff', SIDE_X - 0.42, 6.4, 1.4, 4.2, 1.05, -Math.PI / 2);
   neon('ZONA DE SORTEO', '#ffb340', -SIDE_X + 0.42, 6.4, 3.2, 5.2, 1.1, Math.PI / 2);

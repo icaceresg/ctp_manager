@@ -29,6 +29,11 @@ export function managerNavigation(can, isAdmin) {
   );
   return items;
 }
+/** La ruleta es otra página (otro host en la VPS), así que va con enlace normal. */
+export function ruletaNavigation(hostname) {
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
+  return { id: 'ruleta', href: local ? '/ruleta' : 'https://ruleta.playctp.com', title: 'Ruleta del directo', group: 'Emisión y comunidad', keywords: 'sorteo ganador caja destino premio' };
+}
 export function navigationSearch(items, query) {
   const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
   const terms = normalize(query.trim()).split(/\s+/).filter(Boolean);

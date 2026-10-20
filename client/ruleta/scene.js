@@ -98,7 +98,7 @@ export class Stage {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer = renderer;
 
     const scene = new THREE.Scene();
@@ -1258,7 +1258,7 @@ export class Stage {
     tl.tween(burstAt, 0.5, (v) => (this.lid.rotation.x = -v * 1.95), { e: ease.outBack });
     tl.tween(burstAt, 0.8, (v) => (this.finalPass.uniforms.uFlash.value = 0.55 * (1 - v)), { e: ease.out });
     tl.tween(burstAt, 1.2, (v) => {
-      this.beam.material.uniforms.uIntensity.value = lerp(1.6, 1.05, v);
+      this.beam.material.uniforms.uIntensity.value = lerp(1.6, 0.6, v);
       this.boxLight.intensity = lerp(80, 35, v);
       this.shake = 1.2 * (1 - v);
       this.qBoost = lerp(2, 1.2, v);
@@ -1320,7 +1320,7 @@ export class Stage {
     });
     tl.tween(LOCK, 0.55, (v) => {
       display.scale.setScalar(lerp(1, 0.85, v));
-      this.beam.material.uniforms.uIntensity.value = lerp(1.05, 0.3, v);
+      this.beam.material.uniforms.uIntensity.value = lerp(0.6, 0.2, v);
     }, { e: ease.in });
     const REVEAL = LOCK + 0.6;
     tl.at(REVEAL, () => {
@@ -1334,10 +1334,7 @@ export class Stage {
       this.boxInner.material.color.set(2.4, 1.8, 0.7);
       this.qMat.color.set(2.2, 1.8, 0.9);
       this.shock.material.opacity = 1;
-      const big = labelTexture(winner.name, '#f0d48a', { big: true });
-      display.userData.label.material.map = big.texture;
-      display.userData.label.scale.set(0.6 * big.aspect, 0.6, 1);
-      display.userData.label.position.y = 0.34 + 0.55;
+      display.userData.label.visible = false;
       display.userData.glow.material.color.set(2, 1.6, 0.7);
       this.burstSparks(display.position.clone(), 500, { speed: 9, up: 4, life: 3 });
       this.launchConfetti(boxWorld(V(0, 1, 0)));
@@ -1353,7 +1350,7 @@ export class Stage {
     tl.tween(REVEAL, 1.2, (v) => {
       this.shock.scale.setScalar(lerp(0.5, 16, v));
       this.shock.material.opacity = 1 - v;
-      this.beam.material.uniforms.uIntensity.value = lerp(2.4, 1.3, v);
+      this.beam.material.uniforms.uIntensity.value = lerp(2.0, 0.55, v);
     }, { e: ease.out });
     tl.at(REVEAL + 0.4, () => audio.duck(false, 1.5));
     tl.at(REVEAL + 0.4, () => audio.setIntensity(0));
@@ -1362,9 +1359,9 @@ export class Stage {
     let orbit0;
     tl.tween(REVEAL + 0.1, 30, (v, raw) => {
       const a = orbit0 + raw * 30 * 0.12;
-      const r = lerp(5.2, 5.8, ease.out(clamp01(raw * 6)));
-      cam.pos.set(center.x + Math.sin(a) * r, center.y + 0.5, center.z + Math.cos(a) * r);
-      cam.target.lerp(center.clone().add(V(0, 0.2, 0)), 0.1);
+      const r = lerp(5.4, 7.2, ease.out(clamp01(raw * 6)));
+      cam.pos.set(center.x + Math.sin(a) * r, center.y + 0.9, center.z + Math.cos(a) * r);
+      cam.target.lerp(center.clone().add(V(0, 0.75, 0)), 0.1);
       display.position.copy(center).add(V(0, 0.25 + Math.sin(this.elapsed * 1.8) * 0.08, 0));
       display.userData.mesh.rotation.y += 0.01;
       if (Math.random() < 0.25) {

@@ -8,6 +8,8 @@ import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
 import { PRO_VIEW_ACTION, proViewSettings, proViewState } from './pro-view-contract.js';
+import { canManageStaff } from '../shared/access.js';
+import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse } from './staff-access-contract.js';
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
@@ -457,6 +459,22 @@ export async function getAdministrationService(user, service, payload) {
   const read = service === 'crm' ? crmIsRead(payload?.action) : service === 'push' || payload?.action === 'status';
   if (!read && !config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   return request({action:'admin_service',actor_id:getOperatorIdentity(user.id),service,payload});
+}
+
+/** Coordination can manage staff grants without receiving the admin console. */
+export async function getStaffDirectory(user, query) {
+  if (!canManageStaff(user)) throw integrationError(403, 'La gestión de staff requiere administración o coordinación de CTP.');
+  const payload = staffDirectoryQuery(query);
+  const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'staff', payload });
+  return staffDirectoryResponse(result, payload);
+}
+
+export async function setStaffAccess(user, userId, body) {
+  if (!canManageStaff(user)) throw integrationError(403, 'La gestión de staff requiere administración o coordinación de CTP.');
+  if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  const payload = staffAccessPayload(userId, body);
+  const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'staff', payload });
+  return staffAccessResponse(result, payload);
 }
 
 /** Optional read polling only; writes always require a deliberate authenticated request. */

@@ -11,6 +11,7 @@ import '@fontsource/saira-condensed/800.css';
 import '@fontsource/jetbrains-mono/500.css';
 import { UNAUTHORIZED_EVENT, api } from './api.js';
 import { AppProvider } from './context.jsx';
+import { canManageStaff } from '../../shared/access.js';
 import { Layout } from './components/Layout.jsx';
 import { EmptyState, Spinner } from './components/ui.jsx';
 import { Login } from './pages/Login.jsx';
@@ -115,7 +116,7 @@ function App() {
           <Route path="recursos" element={guard('recursos', <ResourcesPage />)} />
           <Route path="disponibilidad" element={guard('disponibilidad', <AvailabilityPage />)} />
           <Route path="tablero" element={guard('tablero', <BoardPage />)} />
-          <Route path="usuarios" element={me.is_admin ? <UsersPage /> : <Navigate to={home} replace />} />
+          <Route path="usuarios" element={canManageStaff(me) ? <UsersPage /> : <Navigate to={home} replace />} />
           <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />
           <Route path="crm" element={me.is_admin ? <Navigate to="/crm/resumen" replace /> : <Navigate to={home} replace />} />

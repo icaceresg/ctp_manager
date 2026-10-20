@@ -9,11 +9,13 @@ import { encryptTokens, decryptTokens } from '../server/ctp-auth.js';
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-shared-session-'));
 const key = crypto.randomBytes(32);
 const admin = '10000000-0000-4000-8000-000000000001', referee = '10000000-0000-4000-8000-000000000002', player = '10000000-0000-4000-8000-000000000003';
+const caster = '10000000-0000-4000-8000-000000000004';
+const coordinator = '10000000-0000-4000-8000-000000000005';
 Object.assign(process.env, { DATA_DIR: temporary, DB_PATH: path.join(temporary, 'session.db'), CTP_AUTH_MODE: 'ctp',
   CTP_AUTH_URL: 'https://pre.playctp.com', CTP_WEB_ORIGIN: 'https://pre.playctp.com', CTP_AUTH_TOKEN_KEY: key.toString('base64url'),
   CTP_AUTH_ANON_KEY: `e30.${Buffer.from('{"role":"anon","exp":4102444800}').toString('base64url')}.fixture`,
   CTP_OPERATIONS_URL: 'https://pre.playctp.com/functions/v1/manager-operations' });
-const roles = new Map([[admin, 'admin'], [referee, 'referee'], [player, 'player']]);
+const roles = new Map([[admin, 'admin'], [referee, 'referee'], [player, 'player'], [caster, 'caster'], [coordinator, 'operations']]);
 const sessions = new Map();
 let unavailable = false, refreshed = 0, heldLogin = null, heldLoginRequests = 0;
 const originalFetch = globalThis.fetch;
@@ -23,7 +25,7 @@ globalThis.fetch = async (url, init) => {
   if (url.includes('grant_type=password')) {
     if (heldLogin) { heldLoginRequests++; await heldLogin; return Response.json({}, { status: 401 }); }
     if (body.password !== 'central-test-password') return Response.json({}, { status: 401 });
-    const id = body.email.startsWith('admin') ? admin : body.email.startsWith('ref') ? referee : player;
+    const id = body.email.startsWith('admin') ? admin : body.email.startsWith('ref') ? referee : body.email.startsWith('caster') ? caster : body.email.startsWith('coord') ? coordinator : player;
     const access = `access-${crypto.randomUUID()}`; sessions.set(access, id);
     return Response.json({ user: { id }, access_token: access, refresh_token: `refresh:${id}`, expires_in: 3600 });
   }
@@ -36,11 +38,14 @@ globalThis.fetch = async (url, init) => {
   }
   const id = sessions.get(init.headers.Authorization?.replace('Bearer ', ''));
   if (!id || roles.get(id) === 'player') return Response.json({}, { status: 403 });
-  return Response.json({ ctp_user_id: id, username: id === admin ? 'CTP Admin' : 'CTP Referee', role: roles.get(id), actor_id: `ctp:${id}`, scopes: ['incident.reply'] });
+  const staff = ['operations', 'production', 'caster', 'communications', 'clubs', 'executive'].includes(roles.get(id));
+  return Response.json({ ctp_user_id: id, username: id === admin ? 'CTP Admin' : id === caster ? 'CTP Caster' : 'CTP Referee',
+    role: staff ? 'staff' : roles.get(id), ...(staff ? { staff_kind: roles.get(id) } : {}), actor_id: `ctp:${id}`, scopes: staff ? ['staff.access'] : ['incident.reply'] });
 };
 const auth = await import('../server/auth.js');
 const users = await import('../server/users.js');
 const { db } = await import('../server/db.js');
+const { SECTION_IDS, STAFF_SECTION_CAPS, canManageStaff } = await import('../shared/access.js');
 after(() => {
   globalThis.fetch = originalFetch;
   db.close();
@@ -82,6 +87,122 @@ test('player, local bootstrap, local passwords and local administrator promotion
   assert.equal(ref.user.is_admin, false);
   assert.ok(ref.user.sections.includes('arbitraje'));
   assert.throws(() => users.updateUser(ref.user.id, { is_admin: true }, ref.user.id), error => error.status === 403);
+});
+
+test('explicit CTP caster signs in with one linked identity, editorial access and encrypted credentials', async () => {
+  const first = await signIn('caster@example.invalid'), second = await signIn('caster@example.invalid');
+  assert.equal(first.user.id, second.user.id);
+  assert.equal(first.user.ctp_user_id, caster);
+  assert.equal(first.user.ctp_role, 'staff');
+  assert.equal(first.user.staff_kind, 'caster');
+  assert.equal(first.user.is_admin, false);
+  assert.deepEqual(first.user.sections, ['escaleta', 'disponibilidad', 'casters']);
+  assert.deepEqual(first.user.roles.map(role => role.staff_kind), ['caster']);
+  assert.equal(db.prepare('SELECT count(*) n FROM users WHERE ctp_user_id=?').get(caster).n, 1);
+  assert.equal(db.prepare('SELECT password_hash FROM users WHERE id=?').get(first.user.id).password_hash, '!ctp-auth-only');
+  assert.equal(db.prepare('SELECT external_id FROM operation_operator_identities WHERE user_id=?').get(first.user.id).external_id, `ctp:${caster}`);
+  assert.ok(!JSON.stringify(first.user).includes('access-'));
+  const stored = db.prepare('SELECT ctp_tokens FROM sessions WHERE token=?').get(first.token).ctp_tokens;
+  assert.ok(!stored.includes('access-') && !stored.includes('refresh:'));
+});
+
+test('caster central ceiling blocks accidental local privilege grants and privileged middleware', async () => {
+  const signed = await signIn('caster@example.invalid');
+  const casterRole = db.prepare("SELECT * FROM roles WHERE staff_kind='caster' ORDER BY id LIMIT 1").get();
+  const originalSections = casterRole.sections;
+  try {
+    // Simulate a mistaken local administrator assigning every role/template.
+    db.prepare('INSERT OR IGNORE INTO user_roles(user_id,role_id) SELECT ?,id FROM roles').run(signed.user.id);
+    db.prepare('UPDATE roles SET sections=? WHERE id=?').run(JSON.stringify(SECTION_IDS), casterRole.id);
+    db.prepare('UPDATE users SET is_admin=1 WHERE id=?').run(signed.user.id);
+    const user = await auth.currentUser(signed.request());
+    assert.equal(user.is_admin, false);
+    assert.deepEqual(user.sections, ['escaleta', 'disponibilidad', 'casters']);
+    assert.ok(user.roles.every(role => role.staff_kind === 'caster'));
+    const statusFor = middleware => {
+      let status, nextCalled = false;
+      middleware({ user }, { status(code) { status = code; return this; }, json() {} }, () => { nextCalled = true; });
+      return { status, nextCalled };
+    };
+    assert.deepEqual(statusFor(auth.requireAdmin), { status: 403, nextCalled: false });
+    for (const section of ['arbitraje', 'operaciones', 'realizacion', 'clubes', 'comunicaciones', 'calendario', 'recursos', 'tablero']) {
+      assert.deepEqual(statusFor(auth.allow(section)), { status: 403, nextCalled: false }, section);
+    }
+    for (const section of ['escaleta', 'disponibilidad', 'casters']) {
+      assert.deepEqual(statusFor(auth.allow(section)), { status: undefined, nextCalled: true }, section);
+    }
+  } finally {
+    db.prepare('UPDATE roles SET sections=? WHERE id=?').run(originalSections, casterRole.id);
+    db.prepare('DELETE FROM user_roles WHERE user_id=? AND role_id<>?').run(signed.user.id, casterRole.id);
+  }
+});
+
+test('changing an existing referee to a caster removes arbitration on the next request', async () => {
+  const signed = await signIn('ref@example.invalid');
+  assert.ok(signed.user.sections.includes('arbitraje'));
+  roles.set(referee, 'caster');
+  try {
+    const limited = await auth.currentUser(signed.request());
+    assert.equal(limited.ctp_role, 'staff');
+    assert.equal(limited.staff_kind, 'caster');
+    assert.equal(limited.is_admin, false);
+    assert.deepEqual(limited.sections, ['escaleta', 'disponibilidad', 'casters']);
+  } finally { roles.set(referee, 'referee'); }
+});
+
+test('revoking explicit caster access expires the session and rejects another sign-in', async () => {
+  const signed = await signIn('caster@example.invalid');
+  roles.set(caster, 'player');
+  try {
+    assert.equal(await auth.currentUser(signed.request()), null);
+    assert.equal(db.prepare('SELECT 1 FROM sessions WHERE token=?').get(signed.token), undefined);
+    assert.equal(db.prepare('SELECT ctp_role FROM users WHERE id=?').get(signed.user.id).ctp_role, '');
+    await assert.rejects(signIn('caster@example.invalid'), { status: 403 });
+  } finally { roles.set(caster, 'caster'); }
+});
+
+test('a coordinator changed to referee cannot retain coordination or user-management privileges', async () => {
+  const signed = await signIn('coord@example.invalid');
+  assert.ok(signed.user.sections.includes('operaciones'));
+  assert.equal(canManageStaff(signed.user), true);
+  roles.set(coordinator, 'referee');
+  try {
+    const changed = await auth.currentUser(signed.request());
+    assert.equal(changed.ctp_role, 'referee');
+    assert.equal(changed.is_admin, false);
+    assert.deepEqual(changed.sections, ['disponibilidad', 'arbitraje']);
+    assert.deepEqual(changed.roles.map(role => role.staff_kind), ['referee']);
+    assert.equal(canManageStaff(changed), false);
+    // A later check of this unchanged legacy identity preserves a reviewed role.
+    const casterRole = db.prepare("SELECT id FROM roles WHERE staff_kind='caster' ORDER BY id LIMIT 1").get();
+    db.prepare('INSERT INTO user_roles(user_id,role_id) VALUES(?,?)').run(changed.id, casterRole.id);
+    assert.ok((await auth.currentUser(signed.request())).roles.some(role => role.staff_kind === 'caster'));
+  } finally { roles.set(coordinator, 'operations'); }
+});
+
+test('each explicit staff kind has a central section ceiling despite all local role grants', async () => {
+  roles.set(coordinator, 'operations');
+  const signed = await signIn('coord@example.invalid');
+  const templates = db.prepare('SELECT id,sections FROM roles').all();
+  try {
+    for (const kind of ['operations', 'production', 'caster', 'communications', 'clubs', 'executive']) {
+      roles.set(coordinator, kind);
+      await auth.currentUser(signed.request());
+      db.prepare('INSERT OR IGNORE INTO user_roles(user_id,role_id) SELECT ?,id FROM roles').run(signed.user.id);
+      db.prepare('UPDATE roles SET sections=? WHERE staff_kind=?').run(JSON.stringify(SECTION_IDS), kind);
+      const limited = await auth.currentUser(signed.request());
+      assert.equal(limited.is_admin, false, kind);
+      assert.equal(limited.ctp_role, 'staff');
+      assert.equal(limited.staff_kind, kind);
+      assert.deepEqual(limited.sections, SECTION_IDS.filter(section => STAFF_SECTION_CAPS[kind].includes(section)), kind);
+      assert.ok(limited.roles.every(role => role.staff_kind === kind), kind);
+      assert.equal(canManageStaff(limited), kind === 'operations');
+    }
+  } finally {
+    roles.set(coordinator, 'operations');
+    const restore = db.prepare('UPDATE roles SET sections=? WHERE id=?');
+    for (const item of templates) restore.run(item.sections, item.id);
+  }
 });
 
 test('concurrent expired sessions rotate credentials once and retain the same identity', async () => {

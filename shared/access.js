@@ -36,6 +36,14 @@ export const DEFAULT_ROLES = [
   { name: 'DIRECTIVOS', staff_kind: 'executive', sections: ['tablero', 'operaciones'] },
 ];
 
+// Central grants cap editable local templates; extra role assignments cannot
+// enlarge the authority of a CTP staff account.
+export const STAFF_SECTION_CAPS = Object.freeze(Object.fromEntries(DEFAULT_ROLES.map(role => [role.staff_kind, Object.freeze([...role.sections])])));
+
+export function canManageStaff(user) {
+  return Boolean(user && (user.is_admin || user.auth_mode === 'ctp' && user.ctp_role === 'staff' && user.staff_kind === 'operations'));
+}
+
 export function isStaffUser(user) {
   return Boolean(user && (user.is_admin || user.roles?.some((r) => STAFF_KINDS.some((kind) => kind.id === r.staff_kind))));
 }

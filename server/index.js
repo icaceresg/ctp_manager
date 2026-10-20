@@ -3,7 +3,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import express from 'express';
-import { APP_HOST, APP_ORIGIN, DIST_DIR, PORT, DEPLOYMENT, requestBoundary } from './config.js';
+import { APP_HOST, APP_ORIGIN, DIST_DIR, PORT, DEPLOYMENT, requestBoundary, isRuletaHost } from './config.js';
+import { ruletaRouter } from './routes/ruleta.js';
 import { db } from './db.js';
 import { HttpError } from './auth.js';
 import { authRouter } from './routes/auth.js';
@@ -36,20 +37,27 @@ app.use((req, res, next) => {
   if (!DEPLOYMENT.publicDeployment && req.method === 'GET' && !req.path.startsWith('/api/') && host !== APP_HOST) {
     return res.redirect(`${APP_ORIGIN}${req.originalUrl}`);
   }
+  // ruleta.playctp.com solo expone la página de la ruleta y lo que ella usa:
+  // el resto de la API de Manager no existe en ese host.
+  if (isRuletaHost(req) && req.path.startsWith('/api/') && !/^\/api\/(auth\/(status|login|logout)|ruleta(\/|$))/.test(req.path)) {
+    return res.status(404).json({ error: 'Ruta no encontrada.' });
+  }
   next();
 });
 
 app.use('/api/administration/images', express.json({limit:'3mb'}));
 app.use('/api/administration/crm', express.json({limit:'2mb'}));
 app.use(express.json({ limit: '1mb' }));
-app.use('/api', authRouter, administrationRouter, obsRouter, integrationRouter, operationsRouter, adminRouter, boardRouter, apiRouter);
+app.use('/api', authRouter, ruletaRouter, administrationRouter, obsRouter, integrationRouter, operationsRouter, adminRouter, boardRouter, apiRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
 
 // Interfaz web ya compilada (npm run build).
 app.use(express.static(DIST_DIR, { index: false }));
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
-  const index = path.join(DIST_DIR, 'index.html');
+  // La ruleta: toda la web en ruleta.playctp.com; en local, en /ruleta.
+  const ruleta = isRuletaHost(req) || (!DEPLOYMENT.publicDeployment && /^\/ruleta\/?$/.test(req.path));
+  const index = path.join(DIST_DIR, ruleta ? 'ruleta.html' : 'index.html');
   if (!fs.existsSync(index)) {
     return res
       .status(503)

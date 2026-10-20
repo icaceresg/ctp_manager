@@ -24,11 +24,27 @@ export function deploymentConfig(env = process.env) {
     if (parsed.origin !== 'https://manager.playctp.com') throw new Error('El único origen público de Manager es https://manager.playctp.com.');
     origin = parsed.origin;
   }
-  const origins = publicDeployment ? [origin] : [
+  // Ruleta del directo: segundo host explícito, con su propia cookie __Host-.
+  // No comparte sesión con Manager ni concede confianza a otros subdominios.
+  let ruletaOrigin = null;
+  if (env.RULETA_ORIGIN) {
+    if (!publicDeployment) throw new Error('RULETA_ORIGIN solo se usa junto a PUBLIC_ORIGIN.');
+    if (env.RULETA_ORIGIN.replace(/\/$/, '') !== RULETA_PUBLIC_ORIGIN) throw new Error(`El único origen de la ruleta es ${RULETA_PUBLIC_ORIGIN}.`);
+    ruletaOrigin = RULETA_PUBLIC_ORIGIN;
+  }
+  const origins = publicDeployment ? [origin, ...(ruletaOrigin ? [ruletaOrigin] : [])] : [
     ...[port, Number(env.DEV_WEB_PORT || 5173)].flatMap((p) => [`http://localhost:${p}`, `http://127.0.0.1:${p}`, `http://[::1]:${p}`]),
   ];
-  const hosts = publicDeployment ? [new URL(origin).host] : [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`];
-  return { port, origin, host: new URL(origin).host, publicDeployment, secureCookies: publicDeployment, origins, hosts };
+  const hosts = publicDeployment ? origins.map((o) => new URL(o).host) : [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`];
+  return { port, origin, host: new URL(origin).host, publicDeployment, secureCookies: publicDeployment, origins, hosts,
+    ruletaOrigin, ruletaHost: ruletaOrigin ? new URL(ruletaOrigin).host : null };
+}
+
+export const RULETA_PUBLIC_ORIGIN = 'https://ruleta.playctp.com';
+
+/** True when the request arrives on ruleta.playctp.com (only in public deployments). */
+export function isRuletaHost(req, config = DEPLOYMENT) {
+  return Boolean(config.ruletaHost && (req.get('host') || '').toLowerCase() === config.ruletaHost);
 }
 
 export const DEPLOYMENT = deploymentConfig();
@@ -47,6 +63,8 @@ export function requestBoundary(req, config = DEPLOYMENT) {
   if (!config.hosts.includes((req.get('host') || '').toLowerCase())) return 'Host no permitido.';
   const origin = req.get('origin');
   if (origin && !config.origins.includes(origin)) return 'Origen no permitido.';
+  // Con dos hosts públicos, cada uno solo acepta peticiones de su propia página.
+  if (origin && config.publicDeployment && origin !== `https://${(req.get('host') || '').toLowerCase()}`) return 'Origen no permitido.';
   const site = req.get('sec-fetch-site');
   const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
   if (site === 'cross-site' && (unsafe || req.path.startsWith('/api/'))) return 'Origen no permitido.';

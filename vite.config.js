@@ -9,6 +9,14 @@ export default defineConfig({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
+    // La escena 3D de la ruleta (three.js) va en su propio fragmento.
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      input: {
+        main: 'client/index.html',
+        ruleta: 'client/ruleta.html',
+      },
+    },
   },
   server: {
     port: 5173,

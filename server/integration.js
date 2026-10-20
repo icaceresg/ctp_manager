@@ -9,6 +9,7 @@ import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './adm
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
 import { PRO_VIEW_ACTION, proViewSettings, proViewState } from './pro-view-contract.js';
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
+import { collectRegisteredPlayers } from './ruleta-contract.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -458,6 +459,15 @@ export async function getAdministrationService(user, service, payload) {
   if (!read && !config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   return request({action:'admin_service',actor_id:getOperatorIdentity(user.id),service,payload});
 }
+
+/** Ruleta: lista de personas registradas en CTP, leída con la identidad del administrador. */
+export async function getRegisteredPlayers(user) {
+  if (!user?.is_admin) throw integrationError(403, 'Cargar la lista de CTP requiere administración.');
+  if (!config.configured) throw integrationError(503, 'Conexión con CTP sin configurar.');
+  return collectRegisteredPlayers(request, getOperatorIdentity(user.id));
+}
+
+export const ctpBridgeConfigured = () => config.configured;
 
 /** Optional read polling only; writes always require a deliberate authenticated request. */
 export function startOperationsSync() {

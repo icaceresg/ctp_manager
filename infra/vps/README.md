@@ -167,6 +167,49 @@ logs del proxy.
 Validar Caddy antes de recargarlo. Un vhost guardado en documentación no
 demuestra que DNS, HTTPS ni la renovación del certificado estén aceptados.
 
+## Ruleta (ruleta.playctp.com)
+
+La ruleta del directo la sirve este mismo servicio en un segundo host. Es
+opcional y explícita: sin `RULETA_ORIGIN` el host se rechaza como cualquier otro.
+
+1. Registro A de `ruleta.playctp.com` hacia la VPS.
+2. Añadir al archivo privado y reiniciar el servicio:
+
+```dotenv
+RULETA_ORIGIN=https://ruleta.playctp.com
+```
+
+3. Bloque de Caddy, igual que el del Manager pero con su host exacto:
+
+```caddyfile
+ruleta.playctp.com {
+    encode zstd gzip
+    header {
+        X-Robots-Tag "noindex, nofollow, noarchive"
+        -Server
+    }
+    reverse_proxy 127.0.0.1:3210 {
+        header_up Host ruleta.playctp.com
+    }
+}
+```
+
+No se comparte la cookie con `manager.playctp.com` (sigue siendo `__Host-`):
+el staff inicia sesión una vez en la ruleta con la misma cuenta CTP y las
+mismas comprobaciones de rol. En ese host solo responden la página, el login y
+`/api/ruleta/*`; cada host rechaza peticiones con `Origin` del otro. La lista de
+participantes la carga un administrador CTP la primera vez que abre la ruleta
+(por el puente ya configurado; no requiere migraciones ni cambios en CTP).
+
+Comprobación sin sesión:
+
+```sh
+curl -s -H 'Host: ruleta.playctp.com' http://127.0.0.1:3210/api/auth/status
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: ruleta.playctp.com' http://127.0.0.1:3210/api/users
+```
+
+La primera responde `authenticated:false`; la segunda `404`.
+
 ## Aceptación y reversión
 
 Comprobar la escucha local y las respuestas sin iniciar una sesión:

@@ -86,6 +86,14 @@ Estado verificado el **15 de octubre de 2026**: [Manager](https://manager.playct
 - Si desactivas a alguien o le cambias la contraseña, sus sesiones abiertas se cierran al momento.
 - En modo público, *Mi cuenta* enlaza a la cuenta CTP para gestionar la contraseña. El formulario local solo aparece en desarrollo.
 
+### Ruleta del directo (ruleta.playctp.com)
+
+- Sorteo pensado para el stream: en un búnker 3D al estilo de los mapas de zombies, con la marca PlayCTP en las paredes, una máquina de chicles suelta chicles con nombres, entran en la caja misteriosa y de ella salen nombres cada vez más despacio hasta que se queda uno (~45 s). Música y efectos sintetizados en el navegador, sin derechos de autor.
+- Participan **las personas registradas en PlayCTP**, leídas por el puente firmado (`admin_query` → `users`): solo identificador, nombre y rol. Cargar o actualizar la lista requiere administración CTP; se guarda en el Manager para que el resto del staff pueda sortear con la última copia. Sin puente (desarrollo local) entran los usuarios del Manager.
+- Solo entra el staff de Manager, con la misma cuenta. `ruleta.playctp.com` tiene su propia cookie `__Host-` y solo expone su página, el login y `/api/ruleta/*`: el resto de la API no existe en ese host.
+- El ganador lo elige el servidor (`crypto.randomInt`) y cada sorteo queda en *Últimos sorteos*. Teclas: **Espacio** gira, **H** modo stream, **F** pantalla completa, **M** silencio.
+- En local: <http://localhost:3210/ruleta>. Despliegue: [infra/vps/README.md](infra/vps/README.md#ruleta-ruletaplayctpcom).
+
 ## Instalación
 
 1. Instala [Node.js](https://nodejs.org) 22 o superior (probado con Node 24).

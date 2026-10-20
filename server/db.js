@@ -199,6 +199,7 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS contents_source_ref ON contents(sourc
 addColumn('sessions', 'user_id', 'INTEGER REFERENCES users(id) ON DELETE CASCADE');
 addColumn('users', 'ctp_user_id', 'TEXT');
 addColumn('users', 'ctp_role', "TEXT NOT NULL DEFAULT ''");
+addColumn('users', 'ctp_staff_kind', "TEXT NOT NULL DEFAULT ''");
 addColumn('sessions', 'auth_mode', "TEXT NOT NULL DEFAULT 'local'");
 addColumn('sessions', 'ctp_tokens', 'TEXT');
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_ctp_identity ON users(ctp_user_id) WHERE ctp_user_id IS NOT NULL;

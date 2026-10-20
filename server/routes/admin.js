@@ -1,5 +1,7 @@
 import { Router } from 'express';
-import { requireAdmin, requireAuth } from '../auth.js';
+import { requireAdmin, requireAuth, HttpError } from '../auth.js';
+import { canManageStaff } from '../../shared/access.js';
+import { getStaffDirectory, setStaffAccess } from '../integration.js';
 import {
   createRole,
   createUser,
@@ -13,6 +15,12 @@ import {
 } from '../users.js';
 
 export const adminRouter = Router();
+const staffManager = (req, res, next) => {
+  if (!canManageStaff(req.user)) throw new HttpError(403, 'La gestión de staff requiere administración o coordinación de CTP.');
+  next();
+};
+adminRouter.get('/staff-access', requireAuth, staffManager, async (req, res) => res.json(await getStaffDirectory(req.user, req.query)));
+adminRouter.patch('/staff-access/:id', requireAuth, staffManager, async (req, res) => res.json(await setStaffAccess(req.user, req.params.id, req.body)));
 adminRouter.use('/users', requireAuth, requireAdmin);
 adminRouter.use('/roles', requireAuth, requireAdmin);
 

@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { EmptyState, Modal, Spinner } from '../components/ui.jsx';
 import { SECTIONS, STAFF_KINDS, DEFAULT_ROLES } from '../../../shared/access.js';
+import { StaffAccessPage } from './StaffAccessPage.jsx';
 
 const dateTime = (ts) => (ts ? new Date(ts).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : 'Nunca');
 
@@ -338,6 +339,11 @@ function RolesTab({ roles, reload }) {
 }
 
 export function UsersPage() {
+  const { me } = useApp();
+  return me.auth_mode === 'ctp' ? <StaffAccessPage/> : <LocalUsersPage/>;
+}
+
+function LocalUsersPage() {
   const [tab, setTab] = useState('users');
   const { data, loading, reload } = useData(async () => {
     const [users, roles] = await Promise.all([api.get('/users'), api.get('/roles')]);

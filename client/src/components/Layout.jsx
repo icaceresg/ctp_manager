@@ -7,6 +7,7 @@ import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { dueWithin } from '../dates.js';
 import { ContentEditor } from './ContentEditor.jsx';
+import { canManageStaff } from '../../../shared/access.js';
 
 export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
@@ -36,7 +37,7 @@ export function Layout() {
   useEffect(() => {
     window.scrollTo(0, 0);
     document.getElementById('manager-content')?.focus({ preventScroll: true });
-    const title = managerNavigation(can, me.is_admin).find(item => item.to === location.pathname)?.title
+    const title = managerNavigation(can, me.is_admin, canManageStaff(me)).find(item => item.to === location.pathname)?.title
       || (location.pathname.startsWith('/operaciones/partidos/') ? 'Ficha de partido' : location.pathname.startsWith('/crm/') ? 'CRM y correos' : location.pathname === '/cuenta' ? 'Mi cuenta' : 'Área de trabajo');
     document.title = `${title} · CTP Manager`;
   }, [location.pathname]);
@@ -46,7 +47,7 @@ export function Layout() {
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
   }, [menuOpen]);
-  const items = [...managerNavigation(can, me.is_admin), ruletaNavigation(window.location.hostname)];
+  const items = [...managerNavigation(can, me.is_admin, canManageStaff(me)), ruletaNavigation(window.location.hostname)];
   const groups = [...new Set(items.map(item => item.group))];
   const roleNames = me.is_admin ? 'Administrador' : me.roles.map((r) => r.name).join(' · ') || 'Sin rol';
 

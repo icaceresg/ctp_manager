@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { db, tx } from './db.js';
 import { DEPLOYMENT, SECURE_COOKIES, SESSION_COOKIE, SESSION_DAYS } from './config.js';
-import { SECTION_IDS, STAFF_KINDS, isStaffUser } from '../shared/access.js';
+import { SECTION_IDS, STAFF_SECTION_CAPS, STAFF_KINDS, isStaffUser } from '../shared/access.js';
 import { ctpAuthConfig, createCtpAuthClient, CtpAuthError, encryptTokens, decryptTokens } from './ctp-auth.js';
 import { createLoginLimiter, LoginLimitError } from './login-limiter.js';
 
@@ -60,13 +60,16 @@ export function hasUsers() {
 
 /** Datos del usuario que ve el navegador: roles y secciones a las que accede. */
 export function describeUser(user) {
-  const roles = db
+  const storedRoles = db
     .prepare('SELECT r.id, r.name, r.sections, r.staff_kind FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.name')
     .all(user.id);
+  const limitedStaff = CTP_AUTH_ENABLED && Boolean(user.ctp_user_id && user.ctp_role === 'staff');
+  const ceiling = limitedStaff ? STAFF_SECTION_CAPS[user.ctp_staff_kind] || [] : SECTION_IDS;
+  const roles = limitedStaff ? storedRoles.filter(role => role.staff_kind === user.ctp_staff_kind) : storedRoles;
   const officialAdmin = CTP_AUTH_ENABLED ? Boolean(user.ctp_user_id && user.ctp_role === 'admin') : Boolean(user.is_admin);
   const sections = officialAdmin
     ? SECTION_IDS
-    : SECTION_IDS.filter((s) => roles.some((r) => STAFF_KINDS.some((kind) => kind.id === r.staff_kind) && JSON.parse(r.sections).includes(s)));
+    : SECTION_IDS.filter((s) => ceiling.includes(s) && roles.some((r) => STAFF_KINDS.some((kind) => kind.id === r.staff_kind) && JSON.parse(r.sections).includes(s)));
   return {
     id: user.id,
     username: user.ctp_user_id ? user.name : user.username,
@@ -74,6 +77,7 @@ export function describeUser(user) {
     is_admin: officialAdmin,
     auth_mode: CTP_AUTH_ENABLED ? 'ctp' : 'local',
     ...(CTP_AUTH_ENABLED ? { ctp_user_id: user.ctp_user_id, ctp_role: user.ctp_role, account_url: `${AUTH_CONFIG.origin}/es/app/settings?seccion=perfil` } : {}),
+    ...(limitedStaff ? { staff_kind: user.ctp_staff_kind } : {}),
     roles: roles.map((r) => ({ id: r.id, name: r.name, staff_kind: r.staff_kind })),
     sections,
   };
@@ -211,17 +215,24 @@ function mirrorCtpIdentity(identity) {
   return tx(() => {
     let user = db.prepare('SELECT * FROM users WHERE ctp_user_id=?').get(identity.ctp_user_id);
     const previousRole = user?.ctp_role;
+    const previousStaffKind = user?.ctp_staff_kind;
     if (user && !user.active) throw new HttpError(403, 'Tu acceso a Manager está desactivado. Contacta con CTP.');
     if (!user) {
       const inserted = db.prepare('INSERT INTO users(username,name,password_hash,is_admin,active,created_at,ctp_user_id,ctp_role) VALUES(?,?,?,?,1,?,?,?)')
         .run(`ctp_${identity.ctp_user_id}`, identity.username, '!ctp-auth-only', identity.role === 'admin' ? 1 : 0, Date.now(), identity.ctp_user_id, identity.role);
       user = db.prepare('SELECT * FROM users WHERE id=?').get(Number(inserted.lastInsertRowid));
     }
-    db.prepare('UPDATE users SET name=?,ctp_role=?,is_admin=?,last_login_at=? WHERE id=?')
-      .run(identity.username, identity.role, identity.role === 'admin' ? 1 : 0, Date.now(), user.id);
-    if (identity.role === 'referee' && (!previousRole || previousRole === 'admin') && !db.prepare('SELECT 1 FROM user_roles WHERE user_id=?').get(user.id)) {
-      const role = db.prepare("SELECT id FROM roles WHERE staff_kind='referee' ORDER BY id LIMIT 1").get();
-      if (role) db.prepare('INSERT OR IGNORE INTO user_roles(user_id,role_id) VALUES(?,?)').run(user.id, role.id);
+    db.prepare('UPDATE users SET name=?,ctp_role=?,ctp_staff_kind=?,is_admin=?,last_login_at=? WHERE id=?')
+      .run(identity.username, identity.role, identity.role === 'staff' ? identity.staff_kind : '', identity.role === 'admin' ? 1 : 0, Date.now(), user.id);
+    const targetKind = identity.role === 'staff' ? identity.staff_kind : identity.role === 'referee' ? 'referee' : null;
+    if (targetKind && (previousRole !== identity.role || identity.role === 'staff' && previousStaffKind !== targetKind)) {
+      const role = db.prepare('SELECT id FROM roles WHERE staff_kind=? ORDER BY id LIMIT 1').get(targetKind);
+      if (!role) throw new HttpError(403, 'El acceso de staff necesita un rol interno de CTP. Contacta con un administrador.');
+      // A deliberate central role change replaces old local assignments. In
+      // particular, a new referee must not inherit a former coordinator role.
+      // Unchanged legacy referee identities retain their reviewed local roles.
+      db.prepare('DELETE FROM user_roles WHERE user_id=?').run(user.id);
+      db.prepare('INSERT OR IGNORE INTO user_roles(user_id,role_id) VALUES(?,?)').run(user.id, role.id);
     }
     db.prepare('INSERT INTO operation_operator_identities(user_id,external_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET external_id=excluded.external_id')
       .run(user.id, identity.actor_id, Date.now());
@@ -273,7 +284,7 @@ async function validateCtpSession(token, user) {
   } catch (error) {
     if (error instanceof CtpAuthError && [401, 403].includes(error.status)) {
       db.prepare('DELETE FROM sessions WHERE token=?').run(token);
-      if (error.status === 403) db.prepare("UPDATE users SET ctp_role='',is_admin=0 WHERE id=?").run(user.id);
+      if (error.status === 403) db.prepare("UPDATE users SET ctp_role='',ctp_staff_kind='',is_admin=0 WHERE id=?").run(user.id);
       return null;
     }
     if (error instanceof HttpError) throw error;

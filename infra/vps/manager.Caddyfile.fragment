@@ -1,0 +1,14 @@
+# Standalone Manager site only. Merge with the reviewed live Caddyfile;
+# do not replace the player-site, API or domain-redirection configuration.
+manager.playctp.com {
+	encode zstd gzip
+	header {
+		X-CTP-Environment "PROD"
+		X-Robots-Tag "noindex, nofollow, noarchive"
+		Cache-Control "no-store"
+		-Server
+	}
+	reverse_proxy 127.0.0.1:3211 {
+		header_up Host manager.playctp.com
+	}
+}

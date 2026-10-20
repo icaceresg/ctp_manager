@@ -1,5 +1,7 @@
 # CTP Manager: instalación y conexión privada
 
+El dominio público usa producción desde el **20 de octubre de 2026**. Consultar el [runbook vigente](MANAGER_PRODUCTION_2026-10-20.md) y las plantillas `infra/vps/ctp-manager-prod.service` y `infra/vps/prod.env.example`. La sección PRE del 15 de octubre y su ejemplo de instalación se conservan como antecedentes; no deben reemplazar `/etc/ctp-manager/prod.env` ni el proxy público actual.
+
 Manager es el backoffice de staff, competición y arbitraje. La aplicación conserva SQLite para organización interna, comandos y proyecciones. El backend CTP compartido con la web de jugadores mantiene la fuente oficial de partidos, estadísticas, clubes y resoluciones; un comando pendiente en Manager no cambia el estado oficial. CTP Panel es una herramienta externa del PC de realización y controla la emisión; desplegar Manager no instala, abre ni conecta ese Panel.
 
 Las decisiones oficiales se preparan en Manager y se envían explícitamente al backend CTP, con identidad y permisos del operador. Esto no crea una segunda base competitiva ni permite acceso directo a Supabase desde el navegador. La [matriz funcional](OPERATIONS_IMPLEMENTATION.md) describe los siete bloques implementados, incluidos torneos, inscripciones, sorteo oficial, publicación, horarios e histórico. Requieren desplegar el puente y las migraciones compatibles; véase el [plan de PRE](PRE_RELEASE_2026-10-02.md).
@@ -14,7 +16,7 @@ La [recepción QA](MANAGER_PRE_QA_2026-10-15.md) distingue pruebas automatizadas
 
 ## Acceso público con la misma cuenta CTP
 
-En la VPS se usa `CTP_AUTH_MODE=ctp`: el staff entra con **el mismo correo y contraseña de CTP**. No crear administradores ni contraseñas independientes en Manager. GoTrue verifica las credenciales en el servidor y la RPC `manager_link_own_identity` confirma que la cuenta mantiene un rol CTP admitido (`admin` o `referee`) y vincula exclusivamente su propia identidad estable `ctp:<UUID>`. Una cuenta de jugador o una vinculación desactivada no concede acceso.
+En la VPS se usa `CTP_AUTH_MODE=ctp`: el staff entra con **el mismo correo y contraseña de CTP**. No crear administradores ni contraseñas independientes en Manager. GoTrue verifica las credenciales en el servidor y `manager_link_own_identity` confirma exclusivamente la identidad propia `ctp:<UUID>`. Se admiten administradores y árbitros CTP, además de jugadores con una concesión organizativa explícita y vigente de la migración 178. Un jugador sin concesión no entra. La identidad `staff` solo contiene `staff.access`; no adquiere ámbitos competitivos o administrativos por tener una sección local.
 
 SQLite conserva un espejo de la identidad y las asignaciones internas, sin la contraseña CTP. Los tokens de sesión CTP se cifran con AES-256-GCM y una clave exclusiva del servidor; no se devuelven al navegador. Cada petición autenticada vuelve a verificar el staff en CTP, y las renovaciones concurrentes de una misma sesión se agrupan para evitar reutilizar tokens de refresco. Una caída de CTP bloquea las operaciones privadas; no activa un acceso local alternativo.
 

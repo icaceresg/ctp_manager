@@ -44,6 +44,23 @@ test('staff identity is self-only and cannot substitute actors or grant player a
   }
 });
 
+test('explicit staff identity requires a known kind and exclusive staff scope without competition authority', () => {
+  const caster = { ...identity, role: 'staff', staff_kind: 'caster', scopes: ['staff.access'] };
+  assert.equal(validateIdentity(caster, subject).staff_kind, 'caster');
+  for (const staff_kind of ['operations', 'referee', 'production', 'caster', 'communications', 'clubs', 'executive']) {
+    assert.equal(validateIdentity({ ...caster, staff_kind }, subject).staff_kind, staff_kind);
+  }
+  for (const update of [
+    { role: 'player' }, { role: 'admin' }, { role: 'referee' },
+    { staff_kind: 'admin' }, { staff_kind: undefined }, { staff_kind: 'unknown' },
+    { scopes: [] }, { scopes: ['competition.read'] },
+    { scopes: ['staff.access', 'admin.console'] },
+    { scopes: ['staff.access', 'incident.reply'] },
+    { scopes: ['staff.access', 'staff.access'] },
+    { actor_id: 'another-caster' }, { ctp_user_id: '10000000-0000-4000-8000-000000000002' },
+  ]) assert.throws(() => validateIdentity({ ...caster, ...update }, subject), { status: 403 });
+});
+
 test('provider uses password/refresh grants and self-binding RPC with server-only headers', async () => {
   const calls = [];
   const client = createCtpAuthClient(ctpAuthConfig(base), async (url, init) => {

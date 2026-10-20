@@ -53,9 +53,14 @@ export function decryptTokens(key, encrypted, associatedData) {
 
 export function validateIdentity(value, expectedSubject) {
   if (!value || !uuid.test(value.ctp_user_id) || value.ctp_user_id !== expectedSubject
-    || !['admin', 'referee'].includes(value.role) || value.actor_id !== `ctp:${expectedSubject}`
+    || !['admin', 'referee', 'staff'].includes(value.role) || value.actor_id !== `ctp:${expectedSubject}`
     || typeof value.username !== 'string' || !value.username.trim() || value.username.length > 100
     || !Array.isArray(value.scopes) || !value.scopes.length || value.scopes.some(scope => typeof scope !== 'string' || scope.length > 100)) fail(403, 'staff_only');
+  // Organisational access is an explicit CTP grant, separate from game roles.
+  if (value.role === 'staff'
+    ? !['operations', 'referee', 'production', 'caster', 'communications', 'clubs', 'executive'].includes(value.staff_kind)
+      || value.scopes.length !== 1 || value.scopes[0] !== 'staff.access'
+    : value.scopes.includes('staff.access') || value.staff_kind !== undefined) fail(403, 'staff_only');
   return value;
 }
 

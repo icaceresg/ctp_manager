@@ -20,6 +20,15 @@ test('admin tools occur once and navigation targets remain unique', () => {
   assert.equal(new Set(items.map(item => item.to)).size, items.length);
   assert.equal(items.filter(item => item.id === 'integracion').length, 1);
 });
+
+test('coordination receives only delegated user management in addition to its own tools', () => {
+  const normal = managerNavigation(value => ['operaciones', 'tablero', 'disponibilidad'].includes(value), false);
+  const delegated = managerNavigation(value => ['operaciones', 'tablero', 'disponibilidad'].includes(value), false, true);
+  assert.deepEqual(delegated.filter(item => !normal.some(existing => existing.id === item.id)).map(item => item.id), ['usuarios']);
+  assert.equal(delegated.find(item => item.id === 'usuarios').to, '/usuarios');
+  assert.equal(delegated.some(item => ['administracion', 'crm', 'integracion'].includes(item.id)), false);
+  assert.equal(new Set(managerNavigation(() => true, true, true).map(item => item.to)).size, managerNavigation(() => true, true, true).length);
+});
 test('tool search matches accents and multiple words only within allowed tools', () => {
   const items = managerNavigation(value => value === 'arbitraje', false);
   assert.deepEqual(navigationSearch(items, 'ESTADISTICAS').map(item => item.id), ['estadisticas']);

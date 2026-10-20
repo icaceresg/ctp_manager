@@ -570,7 +570,7 @@ export function buildWorld(stage) {
   const neons = [];
   const neon = (text, color, x, y, z, w, h, ry = 0, opts) => {
     const t = neonTexture(text, color, opts);
-    const m = mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(1.6, 1.6, 1.6) }), x, y, z, { ry, cast: false, receive: false });
+    const m = mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(1.25, 1.25, 1.25) }), x, y, z, { ry, cast: false, receive: false });
     const light = new THREE.PointLight(new THREE.Color(color), 9, 7, 1.6);
     light.position.set(x + Math.sin(ry) * 0.6, y, z + Math.cos(ry) * 0.6);
     scene.add(light);
@@ -621,7 +621,7 @@ export function buildWorld(stage) {
     screenTex.needsUpdate = true;
   };
   drawScreen(0);
-  const screenMesh = mesh(new THREE.PlaneGeometry(4.4, 2.2), new THREE.MeshBasicMaterial({ map: screenTex, color: new THREE.Color(1.3, 1.3, 1.3) }), -SIDE_X + 0.62, 3.7, -1.2, { ry: Math.PI / 2, cast: false });
+  const screenMesh = mesh(new THREE.PlaneGeometry(4.4, 2.2), new THREE.MeshBasicMaterial({ map: screenTex, color: new THREE.Color(1.0, 1.0, 1.0) }), -SIDE_X + 0.62, 3.7, -1.2, { ry: Math.PI / 2, cast: false });
   // Por delante del pilar de la pared (z = -2), que antes la tapaba.
   mesh(new THREE.BoxGeometry(0.25, 2.5, 4.7), steel, -SIDE_X + 0.47, 3.7, -1.2);
   const screenLight = new THREE.PointLight(0x3fd9ff, 6, 8, 1.6);
@@ -642,11 +642,11 @@ export function buildWorld(stage) {
   const posterFrame = new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: 0.6, metalness: 0.6 });
   const addPoster = (title, file, accent, x, y, z, ry) => {
     const t = posterTexture(null, title, accent);
-    const mat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.2 });
+    const mat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.07 });
     const p = mesh(new THREE.PlaneGeometry(1.6, 2.25), mat, x, y, z, { ry, cast: false });
     mesh(new THREE.BoxGeometry(1.75, 2.4, 0.06), posterFrame, x - Math.sin(ry) * 0.04, y, z - Math.cos(ry) * 0.04, { ry });
     posters.push({ title, file, accent, mat });
-    const lamp = new THREE.SpotLight(0xffe2b0, 18, 5, 0.6, 0.7, 1.5);
+    const lamp = new THREE.SpotLight(0xffe2b0, 9, 5, 0.6, 0.7, 1.5);
     lamp.position.set(x + Math.sin(ry) * 1.2, y + 1.9, z + Math.cos(ry) * 1.2);
     lamp.target = p;
     scene.add(lamp);
@@ -664,7 +664,7 @@ export function buildWorld(stage) {
     t.colorSpace = THREE.SRGBColorSpace;
     const col = i % 4;
     const row = Math.floor(i / 4);
-    const m = new THREE.MeshBasicMaterial({ map: t, transparent: true, color: new THREE.Color(1.15, 1.15, 1.15), depthWrite: false });
+    const m = new THREE.MeshBasicMaterial({ map: t, transparent: true, color: new THREE.Color(0.95, 0.95, 0.95), depthWrite: false });
     mesh(new THREE.PlaneGeometry(1.25, 1.25), m, SIDE_X - 0.42, 4.6 - row * 1.5, -0.6 + col * 1.5, { ry: -Math.PI / 2, cast: false });
   });
 
@@ -836,7 +836,7 @@ export function buildWorld(stage) {
     scene.add(pivot);
     mesh(new THREE.CylinderGeometry(0.012, 0.012, len, 6), cableMat, 0, -len / 2, 0, { parent: pivot, cast: false });
     mesh(new THREE.ConeGeometry(0.42, 0.32, 24, 1, true), shadeMat, 0, -len - 0.1, 0, { parent: pivot, cast: false });
-    const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.4, 1.6) });
+    const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.8, 1.2) });
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), bulbMat);
     bulb.position.y = -len - 0.2;
     pivot.add(bulb);
@@ -849,7 +849,7 @@ export function buildWorld(stage) {
   // Tubos fluorescentes rotos en la pared del fondo (parpadeo)
   const tubes = [];
   for (const x of [-5.2, 5.4]) {
-    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 2.6, 2.8) });
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.9, 2.0) });
     mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 10), mat, x, 5.1, BACK_Z + 0.5, { rz: Math.PI / 2, cast: false });
     const l = new THREE.PointLight(0xcfe8ff, 5, 6, 1.6);
     l.position.set(x, 4.9, BACK_Z + 1.1);
@@ -907,12 +907,12 @@ export function buildWorld(stage) {
         l.pivot.rotation.x = Math.cos(t * 0.7 + l.phase) * 0.03;
         const off = Math.sin(t * 11 + l.phase) * Math.sin(t * 6.7 + l.phase * 2) > 0.95 ? 0.15 : 1;
         l.l.intensity = l.base * off * dim;
-        l.bulbMat.color.setRGB(3, 2.4, 1.6).multiplyScalar(off * dim);
+        l.bulbMat.color.setRGB(2.2, 1.8, 1.2).multiplyScalar(off * dim);
       }
       for (const tb of tubes) {
         const on = Math.sin(t * 23 + tb.phase) > -0.6 || Math.sin(t * 3 + tb.phase) > 0.7 ? 1 : 0.05;
         tb.l.intensity = 5 * on * dim;
-        tb.mat.color.setRGB(2.2, 2.6, 2.8).multiplyScalar(on * dim);
+        tb.mat.color.setRGB(1.6, 1.9, 2.0).multiplyScalar(on * dim);
       }
       for (const [i, f] of fireLights.entries()) f.intensity = (5 + Math.sin(t * 9 + i) * 1.3 + Math.sin(t * 23 + i * 3) * 1.1) * (blackout ? 0.3 : 1);
       for (const f of fires) {

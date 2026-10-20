@@ -389,22 +389,22 @@ export class AudioEngine {
     const ctx = this.ctx;
     const t = this.now + delay;
     const spec = {
-      groan: { f0: 85 + Math.random() * 40, f1: 60, dur: 1.4 + Math.random() * 0.9, gain: 0.32, vowel: [520, 900, 2300] },
-      scream: { f0: 300 + Math.random() * 140, f1: 170, dur: 0.75 + Math.random() * 0.4, gain: 0.26, vowel: [800, 1250, 2600] },
-      growl: { f0: 70 + Math.random() * 30, f1: 55, dur: 0.9 + Math.random() * 0.5, gain: 0.34, vowel: [450, 800, 2400] },
+      groan: { f0: 85 + Math.random() * 40, f1: 60, dur: 1.4 + Math.random() * 0.9, gain: 1.0, vowel: [520, 900, 2300] },
+      scream: { f0: 300 + Math.random() * 140, f1: 170, dur: 0.75 + Math.random() * 0.4, gain: 0.6, vowel: [800, 1250, 2600] },
+      growl: { f0: 70 + Math.random() * 30, f1: 55, dur: 0.9 + Math.random() * 0.5, gain: 0.8, vowel: [450, 800, 2400] },
     }[kind];
     const { dur } = spec;
 
-    // A un lado y lejos: paneo aleatorio y filtro de distancia.
+    // A un lado del búnker: paneo aleatorio y un filtro suave de distancia.
     const pan = ctx.createStereoPanner();
     pan.pan.value = (Math.random() * 2 - 1) * 0.85;
     const far = ctx.createBiquadFilter();
     far.type = 'lowpass';
-    far.frequency.value = 1800 + Math.random() * 2200;
+    far.frequency.value = 3800 + Math.random() * 2600;
     const out = ctx.createGain();
     out.connect(far).connect(pan).connect(this.sfxBus);
     const send = ctx.createGain();
-    send.gain.value = 1.4;
+    send.gain.value = 0.75;
     out.connect(send).connect(this.reverbSend);
 
     // Saturación para la garganta rota.
@@ -416,16 +416,16 @@ export class AudioEngine {
     }
     shaper.curve = curve;
     const voice = ctx.createGain();
-    voice.gain.value = 0.6;
+    voice.gain.value = 0.9;
     shaper.connect(voice);
     for (const [i, f] of spec.vowel.entries()) {
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass';
       bp.frequency.setValueAtTime(f, t);
       bp.frequency.linearRampToValueAtTime(f * (0.75 + Math.random() * 0.2), t + dur);
-      bp.Q.value = 6 + i * 2;
+      bp.Q.value = 3.5 + i * 1.5;
       const fg = ctx.createGain();
-      fg.gain.value = [1, 0.6, 0.25][i];
+      fg.gain.value = [1.4, 0.9, 0.4][i];
       voice.connect(bp).connect(fg).connect(out);
     }
 

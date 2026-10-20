@@ -370,7 +370,7 @@ export class Stage {
     // Reflejo especular falso para que se lea como cristal
     const shine = new THREE.Mesh(
       new THREE.SphereGeometry(1.105, 48, 24, 0.4, 0.5, 0.55, 0.45),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.09, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
     shine.position.y = globeY;
     g.add(shine);
@@ -383,7 +383,7 @@ export class Stage {
     const signTex = signTexture();
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(1.9, 0.475),
-      new THREE.MeshStandardMaterial({ map: signTex, emissiveMap: signTex, emissive: 0xffffff, emissiveIntensity: 1.5, roughness: 0.5 }),
+      new THREE.MeshStandardMaterial({ map: signTex, emissiveMap: signTex, emissive: 0xffffff, emissiveIntensity: 1.0, roughness: 0.5 }),
     );
     sign.position.set(0, 5.95, 0);
     g.add(sign);
@@ -497,7 +497,7 @@ export class Stage {
     // Interrogaciones luminosas (dos delante, una detrás, una por lado y una en la tapa)
     const qMat = new THREE.MeshBasicMaterial({
       map: this.tex.question,
-      color: new THREE.Color(1.6, 1.9, 2.0),
+      color: new THREE.Color(1.2, 1.45, 1.55),
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -646,7 +646,8 @@ export class Stage {
   buildPost() {
     const composer = new EffectComposer(this.renderer);
     composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1024, 576), 0.5, 0.45, 0.92);
+    // Bloom moderado: con más, neones y carteles se quemaban.
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1024, 576), 0.38, 0.4, 0.92);
     composer.addPass(this.bloom);
     composer.addPass(new OutputPass());
     this.finalPass = new ShaderPass({
@@ -916,10 +917,15 @@ export class Stage {
     }
     // Zombis de fondo: antes y después del sorteo, nunca durante.
     if ((this.mode === 'idle' || this.drawDone) && t > this.nextZombie) {
+      // Sin sonido activado todavía (falta el primer clic): reintenta en
+      // un segundo para que el primero suene nada más entrar.
+      if (!this.audio.ctx) this.nextZombie = t + 1;
+    }
+    if ((this.mode === 'idle' || this.drawDone) && t > this.nextZombie) {
       const kinds = ['groan', 'groan', 'growl', 'scream'];
       this.audio.zombie(kinds[Math.floor(Math.random() * kinds.length)]);
       if (Math.random() < 0.35) this.audio.zombie(kinds[Math.floor(Math.random() * 3)], 0.5 + Math.random() * 1.2);
-      this.nextZombie = t + 7 + Math.random() * 13;
+      this.nextZombie = t + 5 + Math.random() * 9;
     }
     let flash = 0;
     this.flashes = this.flashes.filter((f) => {
@@ -942,12 +948,12 @@ export class Stage {
     const c = new THREE.Color();
     for (let i = 0; i < 26; i++) {
       const on = Math.sin(t * chase - i * 0.9) > 0 ? 1 : 0.18;
-      c.setHSL(((i * 0.13 + t * 0.05) % 1 + 1) % 1, 0.9, 0.6).multiplyScalar(on * (this.blackout ? 0.05 : 3));
+      c.setHSL(((i * 0.13 + t * 0.05) % 1 + 1) % 1, 0.9, 0.6).multiplyScalar(on * (this.blackout ? 0.05 : 2));
       this.bulbs.setColorAt(i, c);
     }
     this.bulbs.instanceColor.needsUpdate = true;
-    this.sign.material.emissiveIntensity = this.blackout ? 0.05 : 1.4 + Math.sin(t * 3) * 0.2 + (Math.sin(t * 31) > 0.97 ? -1 : 0);
-    this.machineGlow.intensity = this.blackout ? 0 : 3 + this.agitate * 8;
+    this.sign.material.emissiveIntensity = this.blackout ? 0.05 : 0.95 + Math.sin(t * 3) * 0.15 + (Math.sin(t * 31) > 0.97 ? -1 : 0);
+    this.machineGlow.intensity = this.blackout ? 0 : 2 + this.agitate * 6;
 
     // Chicles de la bola: se agitan con la manivela
     const gb = this.globeBalls;
@@ -1469,7 +1475,7 @@ export class Stage {
     this.boxLight.intensity = 0;
     this.boxLight.color.set(0x7fe8ff);
     this.boxInner.material.color.setRGB(0.4, 1.4, 2.2);
-    this.qMat.color.setRGB(1.6, 1.9, 2.0);
+    this.qMat.color.setRGB(1.2, 1.45, 1.55);
     this.beam.material.uniforms.uColor.value.setRGB(0.35, 0.9, 1.0);
     this.finalPass.uniforms.uFlash.value = 0;
     this.finalPass.uniforms.uAberration.value = 0.0015;

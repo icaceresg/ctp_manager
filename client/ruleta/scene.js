@@ -240,7 +240,7 @@ export class Stage {
       // Luz cálida que se cuela entre los tablones
       const glow = new THREE.Mesh(
         new THREE.PlaneGeometry(5.2, 2.8),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.28, 0.05).multiplyScalar(0.9), fog: false }),
+        new THREE.MeshBasicMaterial({ map: this.tex.dot, color: new THREE.Color(1.0, 0.3, 0.06).multiplyScalar(1.1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
       );
       glow.position.set(wx, 2.7, z - 0.4);
       this.scene.add(glow);
@@ -1109,19 +1109,23 @@ export class Stage {
     tl.tween(3.0, 1.9, (v) => (this.crank.rotation.z = -v * Math.PI * 4), { e: ease.inOut });
     tl.tween(3.0, 0.3, (v) => (this.agitate = v), { e: ease.linear });
     tl.tween(4.8, 8.5, (v) => (this.agitate = 1 - v * 0.75), { e: ease.linear });
-    shot(4.6, 8.4, V(0.4, 3.2, 7.4), V(-0.9, 2.6, 0.6), ease.inOut);
+    shot(4.6, 8.4, V(0.5, 3.2, 8.0), V(-0.5, 2.6, 0.6), ease.inOut);
 
     // ---------- 4.6–12.5 s: salen los chicles ----------
-    const gums = shown.map((p) => {
+    const gums = shown.map((p, i) => {
       const g = this.makeGum(p);
       g.visible = false;
+      // Fila de abajo: nombre debajo; fila de arriba: encima. Así no se pisan.
+      const { label } = g.userData;
+      label.scale.multiplyScalar(0.78);
+      label.position.y = i % 2 ? 0.52 : -0.52;
       return g;
     });
     const exit = machineWorld(V(0, 1.52, 0.9));
     const trayP = machineWorld(V(0, 1.62, 1.12));
     const slots = shown.map((_, i) => {
-      const x = k > 1 ? lerp(-1.3, 1.9, i / (k - 1)) : 0.3;
-      return V(x, i % 2 ? 3.15 : 2.35, 1.9);
+      const x = k > 1 ? lerp(-1.6, 2.2, i / (k - 1)) : 0.3;
+      return V(x, i % 2 ? 3.3 : 2.3, 1.9);
     });
     const spawnEvery = k > 1 ? Math.min(1.0, 7.0 / (k - 1)) : 1;
     gums.forEach((g, i) => {

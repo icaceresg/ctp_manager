@@ -4,6 +4,8 @@ Backoffice privado de **CTP** para el staff, la gestión de competición y el ar
 
 El [centro operativo](docs/OPERATIONS_IMPLEMENTATION.md) reúne la jornada, el equipo, los expedientes y la preparación de contenidos, con conexión privada a CTP. La [activación en VPS](docs/DEPLOYMENT.md) y las escrituras externas requieren configuración explícita. No publica automáticamente en redes.
 
+Desde el 20 de octubre de 2026, el dominio público de Manager apunta a **producción**. El [runbook de producción y staff](docs/MANAGER_PRODUCTION_2026-10-20.md) recoge los servicios separados, los respaldos y las condiciones para conservar este despliegue. Las referencias a PRE del 15 de octubre son históricas.
+
 ## Reparto entre las tres herramientas
 
 - **Web CTP general:** interfaz de jugadores y clubes para participar, consultar calendario y resultados, aportar evidencias, abrir disputas y recibir notificaciones. El backend CTP compartido mantiene los datos y las reglas oficiales que utilizan ambas interfaces.
@@ -28,7 +30,7 @@ Debe mantenerse un único Panel por emisión. Manager no abre otra instancia del
 - **Decisiones:** revisar propuestas junto a su expediente o desde la bandeja común. Solo administración envía a CTP; no se confunde una solicitud con un cambio aplicado.
 - **Histórico:** búsqueda remota por tipo y fechas, páginas y detalle, incluso fuera de los partidos de la jornada.
 
-Estado verificado el **15 de octubre de 2026**: [Manager](https://manager.playctp.com) está conectado a **PRE**, con acceso mediante las cuentas de staff de CTP y escrituras habilitadas. Cada cambio oficial requiere una propuesta, envío explícito de administración y confirmación del backend; abrir o guardar un formulario no aplica la decisión. La [recepción QA de PRE](docs/MANAGER_PRE_QA_2026-10-15.md) recoge las pruebas multicuenta, las correcciones y sus límites. Producción conserva la landing de espera y OBS permanece desactivado.
+La [recepción QA de PRE del 15 de octubre](docs/MANAGER_PRE_QA_2026-10-15.md) es histórica. El dominio público usa ahora las cuentas y los datos oficiales de producción; el estado de PRE permanece separado. Cada cambio competitivo requiere una propuesta, envío explícito de administración y confirmación del backend; abrir o guardar un formulario no aplica la decisión. OBS permanece desactivado.
 
 ### Calendario de contenido
 - Vista **mensual** y **semanal**. Haz clic en un día para crear una publicación o arrastra una tarjeta para cambiarla de día.

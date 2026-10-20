@@ -1,5 +1,7 @@
 # CTP Manager en la VPS: PRE
 
+Este documento describe la instalación histórica de PRE. El dominio público apunta a **PROD** desde el 20 de octubre de 2026: usar el [runbook vigente](../../docs/MANAGER_PRODUCTION_2026-10-20.md), la unidad `ctp-manager-prod.service` y su ejemplo de entorno. Conservar PRE en su servicio y SQLite propios; no copiar su entorno sobre producción.
+
 Este paquete prepara un servicio Node independiente conectado a la API de
 `https://pre.playctp.com`. El dominio público del Manager es
 `https://manager.playctp.com`. No crea otra base competitiva, publica la web de

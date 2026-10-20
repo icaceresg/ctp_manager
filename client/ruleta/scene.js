@@ -1259,7 +1259,7 @@ export class Stage {
     tl.tween(burstAt, 0.8, (v) => (this.finalPass.uniforms.uFlash.value = 0.55 * (1 - v)), { e: ease.out });
     tl.tween(burstAt, 1.2, (v) => {
       this.beam.material.uniforms.uIntensity.value = lerp(1.6, 0.6, v);
-      this.boxLight.intensity = lerp(80, 35, v);
+      this.boxLight.intensity = lerp(80, 18, v);
       this.shake = 1.2 * (1 - v);
       this.qBoost = lerp(2, 1.2, v);
     }, { e: ease.out });
@@ -1284,7 +1284,7 @@ export class Stage {
       display.userData.mesh.rotation.y = this.elapsed * lerp(9, 0.6, v);
       display.userData.mesh.rotation.x = Math.sin(this.elapsed * 3) * 0.2;
     }, { e: ease.out });
-    shot(CYCLE_START - 1.0, LOCK - CYCLE_START + 1.0, V(2.35, 2.55, 5.0), V(2.9, 2.2, 0.2), ease.inOut);
+    shot(CYCLE_START - 1.0, LOCK - CYCLE_START + 1.0, V(2.3, 2.7, 5.8), V(2.9, 2.0, 0.2), ease.inOut);
 
     seq.forEach((p, i) => {
       const t0 = tickTimes[i];

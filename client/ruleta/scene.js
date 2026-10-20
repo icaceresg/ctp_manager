@@ -105,7 +105,7 @@ export class Stage {
     this.renderer = renderer;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0d0a0c, 0.026);
+    scene.fog = new THREE.FogExp2(0x0d0a0c, 0.018);
     this.scene = scene;
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -538,7 +538,7 @@ export class Stage {
     for (let i = 0; i < 16; i++) {
       const m = new THREE.Mesh(
         new THREE.PlaneGeometry(7, 3.2),
-        new THREE.MeshBasicMaterial({ map: this.tex.smoke, color: 0x4a3f58, transparent: true, opacity: 0.28, depthWrite: false }),
+        new THREE.MeshBasicMaterial({ map: this.tex.smoke, color: 0x4a3f58, transparent: true, opacity: 0.14, depthWrite: false }),
       );
       m.position.set((Math.random() - 0.5) * 20, 0.6 + Math.random() * 0.6, (Math.random() - 0.5) * 10 - 1);
       this.scene.add(m);
@@ -586,7 +586,7 @@ export class Stage {
   buildPost() {
     const composer = new EffectComposer(this.renderer);
     composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1024, 576), 0.6, 0.5, 0.9);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1024, 576), 0.5, 0.45, 0.92);
     composer.addPass(this.bloom);
     composer.addPass(new OutputPass());
     this.finalPass = new ShaderPass({

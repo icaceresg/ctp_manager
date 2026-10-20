@@ -621,15 +621,16 @@ export function buildWorld(stage) {
     screenTex.needsUpdate = true;
   };
   drawScreen(0);
-  const screenMesh = mesh(new THREE.PlaneGeometry(4.4, 2.2), new THREE.MeshBasicMaterial({ map: screenTex, color: new THREE.Color(1.3, 1.3, 1.3) }), -SIDE_X + 0.48, 3.7, -2.6, { ry: Math.PI / 2, cast: false });
-  mesh(new THREE.BoxGeometry(0.25, 2.5, 4.7), steel, -SIDE_X + 0.3, 3.7, -2.6);
+  const screenMesh = mesh(new THREE.PlaneGeometry(4.4, 2.2), new THREE.MeshBasicMaterial({ map: screenTex, color: new THREE.Color(1.3, 1.3, 1.3) }), -SIDE_X + 0.62, 3.7, -1.2, { ry: Math.PI / 2, cast: false });
+  // Por delante del pilar de la pared (z = -2), que antes la tapaba.
+  mesh(new THREE.BoxGeometry(0.25, 2.5, 4.7), steel, -SIDE_X + 0.47, 3.7, -1.2);
   const screenLight = new THREE.PointLight(0x3fd9ff, 6, 8, 1.6);
-  screenLight.position.set(-SIDE_X + 1.6, 3.7, -2.6);
+  screenLight.position.set(-SIDE_X + 1.8, 3.7, -1.2);
   scene.add(screenLight);
   let screenAccum = 0;
   updaters.push((t, dt) => {
     screenAccum += dt;
-    if (screenAccum > 1 / 30) {
+    if (screenAccum > 1 / (stage.screenFps || 30)) {
       screenAccum = 0;
       drawScreen(t);
     }
@@ -650,8 +651,9 @@ export function buildWorld(stage) {
     lamp.target = p;
     scene.add(lamp);
   };
-  addPoster('CTP CUP', 'ctp-cup.png', '#3fd9ff', -10.6, 3.0, BACK_Z + 0.42, 0);
-  addPoster('CTP MAJOR', 'ctp-major.png', '#ff2d6f', -6.9, 2.9, BACK_Z + 0.42, 0);
+  // CUP en la pared izquierda: en la del fondo la tapaban los contenedores.
+  addPoster('CTP CUP', 'ctp-cup.png', '#3fd9ff', -SIDE_X + 0.42, 3.0, 2.4, Math.PI / 2);
+  addPoster('CTP MAJOR', 'ctp-major.png', '#ff2d6f', -5.7, 2.9, BACK_Z + 0.42, 0);
   addPoster('CTP CHAMP', 'ctp-champ.png', '#d4a030', 10.6, 3.0, BACK_Z + 0.42, 0);
 
   // Pegatinas de las divisiones de Ranked en la pared derecha
@@ -935,6 +937,9 @@ export function buildWorld(stage) {
       }
     },
     bounds: { BACK_Z, FRONT_Z, SIDE_X, ROOF_Y },
+    // Luces de ambiente que se apagan en calidad baja (neones, fuegos y tubos
+    // siguen brillando; solo dejan de iluminar el entorno).
+    optionalLights: [...neons.map((n) => n.light), ...fires.map((f) => f.light), ...fireLights, ...tubes.map((tb) => tb.l), screenLight],
     screenMesh,
   };
 }

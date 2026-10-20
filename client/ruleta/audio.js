@@ -379,6 +379,110 @@ export class AudioEngine {
 
   // ---------- efectos ----------
 
+  /**
+   * Zombi lejano, sintetizado: voz rasposa (sierra con temblor y formantes
+   * de vocal) más ruido de garganta, distorsionada y con mucha reverb.
+   * kind: 'groan' (gemido largo), 'scream' (chillido) o 'growl' (gruñidos).
+   */
+  zombie(kind = 'groan', delay = 0) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = this.now + delay;
+    const spec = {
+      groan: { f0: 85 + Math.random() * 40, f1: 60, dur: 1.4 + Math.random() * 0.9, gain: 0.32, vowel: [520, 900, 2300] },
+      scream: { f0: 300 + Math.random() * 140, f1: 170, dur: 0.75 + Math.random() * 0.4, gain: 0.26, vowel: [800, 1250, 2600] },
+      growl: { f0: 70 + Math.random() * 30, f1: 55, dur: 0.9 + Math.random() * 0.5, gain: 0.34, vowel: [450, 800, 2400] },
+    }[kind];
+    const { dur } = spec;
+
+    // A un lado y lejos: paneo aleatorio y filtro de distancia.
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() * 2 - 1) * 0.85;
+    const far = ctx.createBiquadFilter();
+    far.type = 'lowpass';
+    far.frequency.value = 1800 + Math.random() * 2200;
+    const out = ctx.createGain();
+    out.connect(far).connect(pan).connect(this.sfxBus);
+    const send = ctx.createGain();
+    send.gain.value = 1.4;
+    out.connect(send).connect(this.reverbSend);
+
+    // Saturación para la garganta rota.
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 255) * 2 - 1;
+      curve[i] = Math.tanh(x * 3.2);
+    }
+    shaper.curve = curve;
+    const voice = ctx.createGain();
+    voice.gain.value = 0.6;
+    shaper.connect(voice);
+    for (const [i, f] of spec.vowel.entries()) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(f, t);
+      bp.frequency.linearRampToValueAtTime(f * (0.75 + Math.random() * 0.2), t + dur);
+      bp.Q.value = 6 + i * 2;
+      const fg = ctx.createGain();
+      fg.gain.value = [1, 0.6, 0.25][i];
+      voice.connect(bp).connect(fg).connect(out);
+    }
+
+    // Cuerdas vocales: dos sierras desafinadas con temblor irregular.
+    const pitch = ctx.createGain();
+    pitch.gain.value = spec.f0 * 0.06;
+    const jitter = ctx.createOscillator();
+    jitter.type = 'square';
+    jitter.frequency.value = 7 + Math.random() * 9;
+    jitter.connect(pitch);
+    const oscs = [0, 14].map((det) => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.detune.value = det;
+      o.frequency.setValueAtTime(spec.f0 * (kind === 'scream' ? 0.8 : 1), t);
+      if (kind === 'scream') o.frequency.exponentialRampToValueAtTime(spec.f0 * 1.15, t + dur * 0.25);
+      o.frequency.exponentialRampToValueAtTime(spec.f1, t + dur);
+      pitch.connect(o.frequency);
+      o.connect(shaper);
+      return o;
+    });
+
+    // Aire rasposo por los mismos formantes.
+    const rasp = ctx.createBufferSource();
+    rasp.buffer = this.noiseBuf;
+    rasp.loop = true;
+    const rf = ctx.createBiquadFilter();
+    rf.type = 'bandpass';
+    rf.frequency.value = kind === 'scream' ? 2200 : 1100;
+    rf.Q.value = 1.2;
+    const rg = ctx.createGain();
+    rg.gain.value = kind === 'scream' ? 0.5 : 0.35;
+    rasp.connect(rf).connect(rg).connect(shaper);
+
+    // Envolvente con tartamudeo (los gruñidos van a golpes).
+    const g = out.gain;
+    g.setValueAtTime(0.0001, t);
+    if (kind === 'growl') {
+      let k = t;
+      while (k < t + dur) {
+        const len = 0.12 + Math.random() * 0.2;
+        g.linearRampToValueAtTime(spec.gain, k + 0.03);
+        g.linearRampToValueAtTime(spec.gain * 0.15, k + len);
+        k += len + Math.random() * 0.08;
+      }
+    } else {
+      g.linearRampToValueAtTime(spec.gain, t + (kind === 'scream' ? 0.05 : 0.35));
+      g.setTargetAtTime(spec.gain * 0.7, t + 0.4, dur / 3);
+    }
+    g.exponentialRampToValueAtTime(0.0001, t + dur + 0.35);
+    const end = t + dur + 0.4;
+    for (const node of [...oscs, jitter, rasp]) {
+      node.start(t, node === rasp ? Math.random() * 2 : undefined);
+      node.stop(end);
+    }
+  }
+
   thunder(delay = 0) {
     if (!this.ctx) return;
     const t = this.now + delay;

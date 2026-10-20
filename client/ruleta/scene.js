@@ -83,6 +83,57 @@ const MB_ROT = -0.32;
 
 const IDLE_CAM = { pos: V(0.2, 3.3, 10.8), target: V(-0.1, 2.0, 0) };
 
+// Recorrido de cámara en reposo: enseña el búnker hasta que alguien gira.
+// Los planos "glide" salen de donde acabó el anterior (movimiento continuo);
+// el resto entra con un corte y un fundido a negro muy corto.
+const shot = (from, to, tf, tt, dur, glide = false) => ({ from: from && V(...from), to: to.isVector3 ? to : V(...to), tf: tf && V(...tf), tt: tt.isVector3 ? tt : V(...tt), dur, glide });
+const orbitShot = (center, r, y, a0, a1, dur) => ({ orbit: true, center: V(...center), r, y, a0, a1, dur });
+const TOUR = [
+  // Por debajo de las lámparas colgantes (la del centro cuelga en z = 11.5).
+  shot([-3.4, 4.3, 15.4], [2.4, 3.9, 13.6], [0, 3.4, -4], [0, 3.1, -3], 7), // plano general
+  shot(null, [1.3, 5.0, 1.6], null, [0.7, 5.6, -7.2], 6.5, true), // lona de PlayCTP
+  shot([-3.8, 3.1, -2.2], [-6.4, 3.0, -2.6], [-4.9, 2.9, -7.2], [-5.9, 2.9, -7.2], 6), // CTP MAJOR
+  shot([-8.6, 3.0, 5.2], [-8.4, 3.2, 2.0], [-12.6, 3.0, 3.0], [-12.6, 3.1, 2.0], 6), // CTP CUP
+  shot(null, [-8.6, 3.7, -1.0], null, [-12.5, 3.7, -1.2], 5.5, true), // pantalla LED
+  shot([7.6, 4.0, 4.4], [7.6, 3.8, -0.4], [12.6, 3.9, 2.6], [12.6, 3.9, 0.9], 6.5), // divisiones de Ranked
+  shot([7.0, 3.3, -3.2], [9.6, 3.2, -3.4], [8.6, 2.9, -7.2], [10.6, 3.0, -7.2], 6), // grafiti y CTP CHAMP
+  orbitShot([-3.3, 2.4, 0], 4.3, 3.1, 0.35, -0.75, 7), // máquina de chicles
+  orbitShot([2.9, 1.1, 0.15], 3.8, 2.0, 1.0, 0.05, 6.5), // caja del destino
+  shot([-4.2, 2.3, 6.4], [-6.4, 2.7, 6.9], [-10.4, 1.6, 9.0], [-10.0, 1.9, 10.6], 6), // contenedores y bidones
+  shot(null, IDLE_CAM.pos, null, IDLE_CAM.target, 7, true), // vuelta al plano principal
+];
+TOUR.forEach((sh, i) => {
+  if (!sh.glide) return;
+  const prev = TOUR[i - 1];
+  sh.from = prev.to;
+  sh.tf = prev.tt;
+});
+const TOUR_LENGTH = TOUR.reduce((sum, sh) => sum + sh.dur, 0);
+const FADE = 0.45;
+
+// Objetos temporales reutilizados en cada imagen (sin basura para el GC).
+const TMP = { color: new THREE.Color(), m4: new THREE.Matrix4(), q: new THREE.Quaternion(), eul: new THREE.Euler(), one: V(1, 1, 1), scale: V(1, 1, 1) };
+
+/**
+ * Calidad: "alta" o "baja". Se fuerza con ?calidad=baja|alta; si no, se
+ * decide por la GPU y el equipo, y baja sola si no llega a ~40 imágenes/s.
+ */
+function pickQuality(renderer) {
+  const forced = new URLSearchParams(location.search).get('calidad');
+  if (forced === 'baja' || forced === 'alta') return { level: forced, forced: true };
+  let gpu = '';
+  try {
+    const gl = renderer.getContext();
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+  } catch {
+    /* sin información de la GPU */
+  }
+  const weakGpu = /swiftshader|llvmpipe|softpipe|software|basic render|intel.*\b(hd|uhd) graphics|mali|adreno|powervr/i.test(gpu);
+  const weakPc = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+  return { level: weakGpu || weakPc ? 'baja' : 'alta', forced: false, gpu };
+}
+
 export class Stage {
   constructor(canvas, audio) {
     this.canvas = canvas;
@@ -96,7 +147,8 @@ export class Stage {
     this.shake = 0;
     this.agitate = 0;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // Sin antialias de contexto: todo pasa por el compositor, que no lo usa.
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
@@ -133,7 +185,13 @@ export class Stage {
     this.resize();
     window.addEventListener('resize', () => this.resize());
     this.nextLightning = 6 + Math.random() * 8;
-    renderer.setAnimationLoop(() => this.frame());
+    this.nextZombie = 4 + Math.random() * 5;
+    this.tourT = 0;
+    this.frameAcc = 0;
+    this.perf = { n: 0, sum: 0, warm: false };
+    this.quality = pickQuality(renderer);
+    if (this.quality.level === 'baja') this.applyLowQuality();
+    renderer.setAnimationLoop(() => this.tick());
   }
 
   // ======================================================================
@@ -186,6 +244,8 @@ export class Stage {
     });
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), mat);
     this.scene.add(this.sky);
+    // Después de lo opaco: solo se pinta el cielo que se ve por el boquete.
+    this.sky.renderOrder = 1;
     // Luna, visible por el boquete del techo
     const moon = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: this.tex.dot, color: new THREE.Color(1.6, 1.0, 0.85), fog: false, depthWrite: false }),
@@ -358,7 +418,7 @@ export class Stage {
 
     // Bombillas alrededor de la base de la bola y del cartel
     const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial(), 26);
-    const m4 = new THREE.Matrix4();
+    const m4 = TMP.m4;
     for (let i = 0; i < 18; i++) {
       const a = (i / 18) * Math.PI * 2;
       bulbs.setMatrixAt(i, m4.makeTranslation(Math.cos(a) * 0.86, 2.66, Math.sin(a) * 0.86));
@@ -564,7 +624,7 @@ export class Stage {
     const CN = 320;
     const conf = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.07, 0.13), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), CN);
     conf.frustumCulled = false;
-    const c = new THREE.Color();
+    const c = TMP.color;
     this.confetti = { mesh: conf, items: [] };
     for (let i = 0; i < CN; i++) {
       conf.setColorAt(i, c.set(i % 3 === 0 ? '#ffe9a8' : i % 3 === 1 ? '#d4a843' : GUM_COLORS[i % GUM_COLORS.length]).multiplyScalar(1.4));
@@ -753,19 +813,96 @@ export class Stage {
   // Bucle
   // ======================================================================
 
-  frame() {
-    const dt = this.fixedStep || Math.min(this.clock.getDelta(), 1 / 20);
+  /** Calidad baja: menos resolución, sin sombras y sin luces de ambiente. */
+  applyLowQuality() {
+    this.frameCap = 1 / 30;
+    this.screenFps = 12;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+    this.renderer.shadowMap.enabled = false;
+    for (const l of this.world.optionalLights) l.visible = false;
+    // Compensa las luces que se apagan para que no quede a oscuras.
+    this.hemi.intensity = 0.62;
+    this.scene.environmentIntensity = 0.34;
+    this.scene.traverse((o) => {
+      if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true;
+    });
+    this.resize();
+  }
+
+  /** Mide el rendimiento en reposo y rebaja la calidad si no llega. */
+  watchPerformance(step) {
+    const p = this.perf;
+    if (this.quality.forced || this.fixedStep || this.mode !== 'idle' || document.hidden) {
+      p.n = p.sum = 0;
+      return;
+    }
+    p.n++;
+    p.sum += step;
+    if (p.sum < 4) return;
+    const fps = p.n / p.sum;
+    p.n = p.sum = 0;
+    // La primera ventana incluye la compilación de shaders: no cuenta.
+    if (!p.warm) {
+      p.warm = true;
+      return;
+    }
+    if (this.quality.level === 'alta' && fps < 40) {
+      this.quality.level = 'baja';
+      this.applyLowQuality();
+    } else if (this.quality.level === 'baja' && fps < 24 && !this.quality.minimum) {
+      this.quality.minimum = true;
+      this.renderer.setPixelRatio(0.75);
+      this.resize();
+    }
+  }
+
+  tick() {
+    this.frameAcc += Math.min(this.clock.getDelta(), 0.5);
+    // En calidad baja se limita a 30 imágenes/s: más estable y menos calor.
+    if (this.frameCap && this.frameAcc < this.frameCap * 0.92) return;
+    const step = this.frameAcc;
+    this.frameAcc = 0;
+    this.watchPerformance(step);
+    this.frame(this.fixedStep || Math.min(step, 1 / 20));
+  }
+
+  /** Recorrido de reposo por el búnker (ver TOUR). */
+  updateTour(dt) {
+    this.tourT += dt;
+    let t = this.tourT % TOUR_LENGTH;
+    let i = 0;
+    while (t >= TOUR[i].dur) t -= TOUR[i++].dur;
+    const sh = TOUR[i];
+    const p = t / sh.dur;
+    const e = sh.glide ? ease.inOut(p) : p;
+    if (sh.orbit) {
+      const a = lerp(sh.a0, sh.a1, e);
+      this.cam.pos.set(sh.center.x + Math.sin(a) * sh.r, sh.y, sh.center.z + Math.cos(a) * sh.r);
+      this.cam.target.copy(sh.center);
+    } else {
+      this.cam.pos.lerpVectors(sh.from, sh.to, e);
+      this.cam.target.lerpVectors(sh.tf, sh.tt, e);
+    }
+    // Un poco de cámara al hombro.
+    const k = this.elapsed;
+    this.cam.pos.x += Math.sin(k * 0.7) * 0.05;
+    this.cam.pos.y += Math.sin(k * 0.9 + 1) * 0.04;
+    const next = TOUR[(i + 1) % TOUR.length];
+    let fade = 0;
+    if (!sh.glide) fade = Math.max(fade, 1 - t / FADE);
+    if (!next.glide) fade = Math.max(fade, 1 - (sh.dur - t) / FADE);
+    this.finalPass.uniforms.uFlashColor.value.setRGB(0, 0, 0);
+    this.finalPass.uniforms.uFlash.value = clamp01(fade);
+  }
+
+  frame(dt) {
     this.elapsed += dt;
     const t = this.elapsed;
 
     if (this.timeline) this.timeline.update(dt);
 
     // Cámara: en reposo, órbita lenta; en el sorteo la mueve la línea de tiempo.
-    if (this.mode === 'idle') {
-      const ip = IDLE_CAM.pos.clone().add(V(Math.sin(t * 0.08) * 1.6, Math.sin(t * 0.13) * 0.25, Math.cos(t * 0.08) * 0.4));
-      this.cam.pos.lerp(ip, 1 - Math.exp(-dt * 1.2));
-      this.cam.target.lerp(IDLE_CAM.target, 1 - Math.exp(-dt * 1.2));
-    }
+    if (this.mode === 'idle') this.updateTour(dt);
     const shake = this.shake;
     this.camera.position.copy(this.cam.pos).add(
       V(Math.sin(t * 37) * shake * 0.05, Math.sin(t * 43 + 1) * shake * 0.05, Math.sin(t * 29 + 2) * shake * 0.03),
@@ -776,6 +913,13 @@ export class Stage {
     if (this.mode === 'idle' && t > this.nextLightning) {
       this.lightning(0.7, true);
       this.nextLightning = t + 10 + Math.random() * 14;
+    }
+    // Zombis de fondo: antes y después del sorteo, nunca durante.
+    if ((this.mode === 'idle' || this.drawDone) && t > this.nextZombie) {
+      const kinds = ['groan', 'groan', 'growl', 'scream'];
+      this.audio.zombie(kinds[Math.floor(Math.random() * kinds.length)]);
+      if (Math.random() < 0.35) this.audio.zombie(kinds[Math.floor(Math.random() * 3)], 0.5 + Math.random() * 1.2);
+      this.nextZombie = t + 7 + Math.random() * 13;
     }
     let flash = 0;
     this.flashes = this.flashes.filter((f) => {
@@ -867,9 +1011,7 @@ export class Stage {
 
     // Confeti
     const cf = this.confetti;
-    const q = new THREE.Quaternion();
-    const eul = new THREE.Euler();
-    const one = V(1, 1, 1);
+    const { q, eul, one } = TMP;
     for (let i = 0; i < cf.items.length; i++) {
       const it = cf.items[i];
       if (it.life <= 0) {
@@ -892,7 +1034,7 @@ export class Stage {
         it.w.set(0, 0, 0);
       }
       q.setFromEuler(eul.set(it.r.x, it.r.y, it.r.z));
-      m4.compose(it.p, q, it.life > 0.6 ? one : one.clone().multiplyScalar(Math.max(0, it.life / 0.6)));
+      m4.compose(it.p, q, it.life > 0.6 ? one : TMP.scale.setScalar(Math.max(0, it.life / 0.6)));
       cf.mesh.setMatrixAt(i, m4);
     }
     cf.mesh.instanceMatrix.needsUpdate = true;
@@ -912,6 +1054,11 @@ export class Stage {
   playDraw(result) {
     if (this.mode !== 'idle') return Promise.resolve();
     this.mode = 'draw';
+    this.drawDone = false;
+    // Corte al plano principal: el recorrido puede estar en cualquier rincón.
+    this.cam.pos.copy(IDLE_CAM.pos);
+    this.cam.target.copy(IDLE_CAM.target);
+    this.finalPass.uniforms.uFlash.value = 0;
     const audio = this.audio;
     const { winner } = result;
     const all = result.participants;
@@ -1262,10 +1409,18 @@ export class Stage {
     tl.at(REVEAL + 0.4, () => audio.setIntensity(0));
     // Órbita alrededor del ganador
     const center = dispTop.clone();
+    const toMachine = Math.atan2(GM_POS.x - center.x, GM_POS.z - center.z);
     let orbit0;
-    tl.tween(REVEAL + 0.1, 30, (v, raw) => {
-      const a = orbit0 + raw * 30 * 0.12;
-      const r = lerp(5.4, 7.2, ease.out(clamp01(raw * 6)));
+    // Sin final: sigue girando hasta que se pulse «Otra vez».
+    const ORBIT_FOREVER = 1e7;
+    tl.tween(REVEAL + 0.1, ORBIT_FOREVER, (v, raw) => {
+      const s = raw * ORBIT_FOREVER;
+      const a = orbit0 + s * 0.12;
+      let r = lerp(5.4, 7.2, ease.out(clamp01(s / 5)));
+      // Al dar la vuelta completa se acerca a la caja junto a la máquina y
+      // ante la pared del fondo, para no atravesarlas.
+      r -= 2.6 * Math.max(0, Math.cos(a - toMachine)) ** 4;
+      if (Math.cos(a) < 0) r = Math.min(r, (center.z + 5.6) / -Math.cos(a));
       cam.pos.set(center.x + Math.sin(a) * r, center.y + 0.9, center.z + Math.cos(a) * r);
       cam.target.lerp(center.clone().add(V(0, 0.75, 0)), 0.1);
       display.position.copy(center).add(V(0, 0.25 + Math.sin(this.elapsed * 1.8) * 0.08, 0));
@@ -1284,6 +1439,8 @@ export class Stage {
     return new Promise((resolve) => {
       tl.at(REVEAL + 4.4, () => {
         cue('done', winner);
+        this.drawDone = true;
+        this.nextZombie = this.elapsed + 4 + Math.random() * 4;
         resolve();
       });
       this.cleanupDraw = () => {
@@ -1299,6 +1456,8 @@ export class Stage {
     this.cleanupDraw = null;
     this.timeline = null;
     this.mode = 'idle';
+    this.tourT = 0;
+    this.drawDone = false;
     this.shake = 0;
     this.agitate = 0;
     this.qBoost = 1;

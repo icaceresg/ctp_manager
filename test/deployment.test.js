@@ -29,6 +29,15 @@ test('el origen público es HTTPS exacto y no concede confianza a subdominios', 
   }
 });
 
+test('pre.manager es un origen propio y solo se conecta a la CTP de pruebas', () => {
+  const config = deploymentConfig({ PUBLIC_ORIGIN: 'https://pre.manager.playctp.com', CTP_AUTH_URL: 'https://pre.playctp.com', CTP_WEB_ORIGIN: 'https://pre.playctp.com' });
+  assert.equal(config.host, 'pre.manager.playctp.com');
+  assert.ok(requestBoundary(req({ host: 'pre.manager.playctp.com', origin: 'https://manager.playctp.com' }), config));
+  assert.throws(() => deploymentConfig({ PUBLIC_ORIGIN: 'https://pre.manager.playctp.com', CTP_AUTH_URL: 'https://playctp.com' }));
+  assert.throws(() => deploymentConfig({ PUBLIC_ORIGIN: 'https://pre.manager.playctp.com', CTP_WEB_ORIGIN: 'https://playctp.com' }));
+  assert.throws(() => deploymentConfig({ PUBLIC_ORIGIN: 'https://other.playctp.com' }));
+});
+
 test('localhost admite Vite declarado y bloquea CSRF y DNS rebinding', () => {
   const config = deploymentConfig({ PORT: '3210', DEV_WEB_PORT: '5173' });
   assert.equal(requestBoundary(req({ host: 'localhost:3210', origin: 'http://localhost:5173' }), config), null);

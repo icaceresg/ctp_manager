@@ -1,6 +1,7 @@
 import { HttpError, describeUser } from './auth.js';
 import { db } from './db.js';
-import { signManagerRequest, MANAGER_ORIGIN } from './bridge-signature.js';
+import { signManagerRequest } from './bridge-signature.js';
+import { MANAGER_PUBLIC_ORIGINS } from './config.js';
 import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './competition-contract.js';
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
@@ -64,8 +65,8 @@ export function integrationConfig(env = process.env) {
   const signingSecret = env.CTP_SIGNING_SECRET || '';
   if (signingSecret.length < 32 || /\s/.test(signingSecret) || signingSecret === token) throw new Error('CTP_SIGNING_SECRET requiere una clave independiente de al menos 32 caracteres sin espacios.');
   const writes = env.CTP_ENABLE_WRITES === 'true';
-  if (writes && env.PUBLIC_ORIGIN !== MANAGER_ORIGIN && !(loopback && env.CTP_ALLOW_LOCAL_WRITES === 'true')) {
-    throw new Error('Las escrituras oficiales requieren PUBLIC_ORIGIN=https://manager.playctp.com. Las pruebas locales necesitan un destino loopback y CTP_ALLOW_LOCAL_WRITES=true.');
+  if (writes && !MANAGER_PUBLIC_ORIGINS.includes(env.PUBLIC_ORIGIN) && !(loopback && env.CTP_ALLOW_LOCAL_WRITES === 'true')) {
+    throw new Error('Las escrituras oficiales requieren PUBLIC_ORIGIN=https://manager.playctp.com o https://pre.manager.playctp.com. Las pruebas locales necesitan un destino loopback y CTP_ALLOW_LOCAL_WRITES=true.');
   }
   const seconds = Number(env.CTP_SYNC_SECONDS || 0);
   if (!Number.isInteger(seconds) || (seconds !== 0 && seconds < 30) || seconds > 86400) throw new Error('CTP_SYNC_SECONDS debe ser 0 o entre 30 y 86400.');

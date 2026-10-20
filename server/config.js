@@ -21,7 +21,11 @@ export function deploymentConfig(env = process.env) {
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash || parsed.origin !== env.PUBLIC_ORIGIN.replace(/\/$/, '')) {
       throw new Error('PUBLIC_ORIGIN debe ser solo un origen HTTPS, sin ruta ni credenciales.');
     }
-    if (parsed.origin !== 'https://manager.playctp.com') throw new Error('El único origen público de Manager es https://manager.playctp.com.');
+    if (!MANAGER_PUBLIC_ORIGINS.includes(parsed.origin)) throw new Error(`El origen público de Manager debe ser ${MANAGER_PUBLIC_ORIGINS.join(' o ')}.`);
+    // pre.manager solo puede hablar con la CTP de pruebas, nunca con la real.
+    if (parsed.origin === PRE_MANAGER_ORIGIN && [env.CTP_AUTH_URL, env.CTP_WEB_ORIGIN].some((value) => value && value.replace(/\/$/, '') !== PRE_CTP_ORIGIN)) {
+      throw new Error(`${PRE_MANAGER_ORIGIN} solo se conecta a ${PRE_CTP_ORIGIN}.`);
+    }
     origin = parsed.origin;
   }
   // Ruleta del directo: segundo host explícito, con su propia cookie __Host-.
@@ -41,6 +45,11 @@ export function deploymentConfig(env = process.env) {
 }
 
 export const RULETA_PUBLIC_ORIGIN = 'https://ruleta.playctp.com';
+// PROD en manager; PRE en pre.manager. La firma del puente sigue usando
+// manager.playctp.com en los dos (es el origen que CTP espera).
+export const PRE_MANAGER_ORIGIN = 'https://pre.manager.playctp.com';
+export const PRE_CTP_ORIGIN = 'https://pre.playctp.com';
+export const MANAGER_PUBLIC_ORIGINS = Object.freeze(['https://manager.playctp.com', PRE_MANAGER_ORIGIN]);
 
 /** True when the request arrives on ruleta.playctp.com (only in public deployments). */
 export function isRuletaHost(req, config = DEPLOYMENT) {

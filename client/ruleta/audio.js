@@ -87,6 +87,7 @@ export class AudioEngine {
 
     this.noiseBuf = this.makeNoise(3);
     this.startDrone();
+    this.loadSamples();
   }
 
   impulse(seconds, decay) {
@@ -378,6 +379,85 @@ export class AudioEngine {
   }
 
   // ---------- efectos ----------
+
+  // ---------- audios propios (opcionales) ----------
+
+  /**
+   * Carga los audios listados en /ruleta-media/zombies/manifest.json:
+   * { "zombies": ["a.mp3", ...], "roundStart": "ronda.mp3" }.
+   * Sin manifiesto (o si falla algo) se usan los zombis sintetizados.
+   */
+  loadSamples(base = '/ruleta-media/zombies') {
+    if (this.samplesLoading) return this.samplesLoading;
+    this.samples = { zombies: [], roundStart: null };
+    const decode = async (name) => {
+      if (typeof name !== 'string' || !/^[\w.-]+\.(mp3|ogg|wav|m4a)$/i.test(name)) return null;
+      try {
+        const res = await fetch(`${base}/${name}`);
+        if (!res.ok) return null;
+        return await this.ctx.decodeAudioData(await res.arrayBuffer());
+      } catch {
+        return null;
+      }
+    };
+    this.samplesLoading = (async () => {
+      let manifest;
+      try {
+        const res = await fetch(`${base}/manifest.json`, { cache: 'no-cache' });
+        if (!res.ok) return;
+        manifest = await res.json();
+      } catch {
+        return;
+      }
+      const list = Array.isArray(manifest?.zombies) ? manifest.zombies.slice(0, 40) : [];
+      this.samples.zombies = (await Promise.all(list.map(decode))).filter(Boolean);
+      this.samples.roundStart = manifest?.roundStart ? await decode(manifest.roundStart) : null;
+    })();
+    return this.samplesLoading;
+  }
+
+  playSample(buffer, { delay = 0, gain = 0.9, pan = 0, rate = 1, send = 0.3 } = {}) {
+    if (!this.ctx || !buffer) return;
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    const p = ctx.createStereoPanner();
+    p.pan.value = pan;
+    src.connect(g).connect(p).connect(this.sfxBus);
+    const s = ctx.createGain();
+    s.gain.value = send;
+    g.connect(s).connect(this.reverbSend);
+    src.start(this.now + delay);
+  }
+
+  /** True si hay audios propios de zombis cargados. */
+  get hasZombieSamples() {
+    return Boolean(this.samples?.zombies.length);
+  }
+
+  /** Zombi de fondo: un audio propio al azar si hay; si no, uno sintetizado. */
+  ambientZombie(delay = 0) {
+    const list = this.samples?.zombies;
+    if (list?.length) {
+      let i;
+      do i = Math.floor(Math.random() * list.length);
+      while (list.length > 1 && i === this.lastSample);
+      this.lastSample = i;
+      // Pequeñas variaciones de tono y lado para que no suene siempre igual.
+      this.playSample(list[i], { delay, gain: 0.85, pan: (Math.random() * 2 - 1) * 0.6, rate: 0.95 + Math.random() * 0.1 });
+      return;
+    }
+    const kinds = ['groan', 'groan', 'growl', 'scream', 'snarl'];
+    this.zombie(kinds[Math.floor(Math.random() * kinds.length)], delay);
+  }
+
+  /** Sonido de inicio de ronda al empezar el sorteo (solo si hay audio propio). */
+  roundStart() {
+    if (this.samples?.roundStart) this.playSample(this.samples.roundStart, { gain: 1, send: 0.2 });
+  }
 
   /**
    * Zombi sintetizado al estilo de los mapas de zombis: garganta rota con

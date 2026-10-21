@@ -932,12 +932,11 @@ export class Stage {
       if (!this.audio.ctx) this.nextZombie = t + 1;
     }
     if ((this.mode === 'idle' || this.drawDone) && t > this.nextZombie) {
-      const kinds = ['groan', 'groan', 'growl', 'scream', 'snarl'];
-      const pick = () => kinds[Math.floor(Math.random() * kinds.length)];
-      this.audio.zombie(pick());
+      this.audio.ambientZombie();
       // A veces contesta otro desde el otro lado.
-      if (Math.random() < 0.4) this.audio.zombie(pick(), 0.4 + Math.random() * 1.1);
-      this.nextZombie = t + 5 + Math.random() * 9;
+      if (Math.random() < 0.3) this.audio.ambientZombie(0.8 + Math.random() * 1.4);
+      // Los audios reales duran más: algo más de espacio entre ellos.
+      this.nextZombie = t + (this.audio.hasZombieSamples ? 8 + Math.random() * 10 : 5 + Math.random() * 9);
     }
     let flash = 0;
     this.flashes = this.flashes.filter((f) => {
@@ -1150,6 +1149,7 @@ export class Stage {
     // ---------- 0 s: arranque ----------
     tl.at(0, () => {
       audio.setIntensity(1);
+      audio.roundStart();
       cue('caption', 'La máquina despierta…');
       show('LA MÁQUINA DESPIERTA', 'SORTEO EN DIRECTO', '#ff2d6f');
       this.lightning(1.2, true);

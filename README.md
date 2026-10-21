@@ -94,6 +94,7 @@ La [recepción QA de PRE del 15 de octubre](docs/MANAGER_PRE_QA_2026-10-15.md) e
 - Participan **las personas registradas en PlayCTP**, leídas por el puente firmado (`admin_query` → `users`): solo identificador, nombre y rol. Cargar o actualizar la lista requiere administración CTP; se guarda en el Manager para que el resto del staff pueda sortear con la última copia. Sin puente (desarrollo local) entran los usuarios del Manager.
 - Solo entra el staff de Manager, con la misma cuenta. `ruleta.playctp.com` tiene su propia cookie `__Host-` y solo expone su página, el login y `/api/ruleta/*`: el resto de la API no existe en ese host.
 - El ganador lo elige el servidor (`crypto.randomInt`) y cada sorteo queda en *Últimos sorteos*. Teclas: **Espacio** gira, **H** modo stream, **F** pantalla completa, **M** silencio.
+- Audios propios opcionales: deja los archivos (`.mp3`, `.ogg`, `.wav` o `.m4a`) en `client/public/ruleta-media/zombies/` con un `manifest.json` como `{"zombies": ["grito-1.mp3", "grito-2.mp3"], "roundStart": "ronda.mp3"}`. Los zombis suenan al azar antes y después del sorteo, y `roundStart` al empezarlo. Sin manifiesto se usan los zombis sintetizados. Usa solo audios con permiso para publicarlos.
 - En local: <http://localhost:3210/ruleta>. Despliegue: [infra/vps/README.md](infra/vps/README.md#ruleta-ruletaplayctpcom).
 
 ## Instalación

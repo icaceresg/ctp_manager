@@ -185,7 +185,7 @@ export class Stage {
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
-    this.nextLightning = 6 + Math.random() * 8;
+    this.nextLightning = 4 + Math.random() * 4;
     this.nextZombie = 4 + Math.random() * 5;
     this.tourT = 0;
     this.frameAcc = 0;
@@ -922,7 +922,7 @@ export class Stage {
       if (!this.audio.ctx) this.nextLightning = t + 1;
       else {
         this.lightning(1, true);
-        this.nextLightning = t + 12 + Math.random() * 14;
+        this.nextLightning = t + 6 + Math.random() * 7;
       }
     }
     // Zombis de fondo: antes y después del sorteo, nunca durante.

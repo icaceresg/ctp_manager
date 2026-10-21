@@ -599,12 +599,26 @@ export class AudioEngine {
   thunder(delay = 0) {
     if (!this.ctx) return;
     const t = this.now + delay;
-    this.noise(t, 0.18, { type: 'highpass', freq: 2200, gain: 0.9, a: 0.002 });
-    this.noise(t + 0.02, 0.6, { type: 'bandpass', freq: 600, q: 0.7, gain: 1.1, a: 0.01, sweepTo: 180 });
-    this.noise(t + 0.08, 4.2, { type: 'lowpass', freq: 420, sweepTo: 60, q: 0.6, gain: 1.6, a: 0.05 });
+    // Bus propio con más ganancia: el trueno tiene que mandar sobre todo.
+    if (!this.thunderBus) {
+      this.thunderBus = this.ctx.createGain();
+      this.thunderBus.gain.value = 2.4;
+      this.thunderBus.connect(this.master);
+    }
+    const dest = this.thunderBus;
+    this.noise(t, 0.2, { type: 'highpass', freq: 2000, gain: 1.0, a: 0.002, dest });
+    this.noise(t + 0.02, 0.7, { type: 'bandpass', freq: 650, q: 0.7, gain: 1.3, a: 0.01, sweepTo: 170, dest });
+    this.noise(t + 0.08, 4.6, { type: 'lowpass', freq: 460, sweepTo: 60, q: 0.6, gain: 1.8, a: 0.05, dest });
+    // Golpe grave que se nota en el pecho.
+    this.tone(t + 0.05, 70, 1.6, { glideTo: 32, gain: 0.9, a: 0.01, dest });
     for (let i = 0; i < 3; i++) {
       const at = t + 0.6 + i * (0.7 + Math.random() * 0.6);
-      this.noise(at, 1.6 + Math.random(), { type: 'lowpass', freq: 220 + Math.random() * 120, sweepTo: 55, q: 0.8, gain: 1.1 - i * 0.25, a: 0.25 });
+      this.noise(at, 1.8 + Math.random(), { type: 'lowpass', freq: 240 + Math.random() * 120, sweepTo: 55, q: 0.8, gain: 1.3 - i * 0.3, a: 0.25, dest });
+    }
+    // El zumbido de fondo se aparta un momento para que se oiga entero.
+    if (this.droneOut && !this.paused) {
+      this.droneOut.gain.setTargetAtTime(0.05, t, 0.05);
+      this.droneOut.gain.setTargetAtTime(0.16, t + 2.5, 0.8);
     }
   }
 

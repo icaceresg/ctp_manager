@@ -232,7 +232,7 @@ function containerTexture(color, label, seed) {
 }
 
 /** Lona con el logo de PlayCTP (se dibuja cuando carga la imagen). */
-function bannerTexture(logo) {
+function bannerTexture(logo, mark) {
   const [c, ctx] = canvas(1600, 800);
   const g = ctx.createLinearGradient(0, 0, 0, 800);
   g.addColorStop(0, '#15120e');
@@ -264,6 +264,21 @@ function bannerTexture(logo) {
   ctx.font = `700 40px ${DISPLAY}`;
   ctx.fillStyle = '#f2d88f';
   ctx.fillText('PLAYCTP.COM', 800, 712);
+  // Miami Heretics en las dos esquinas inferiores, sobre una placa clara.
+  if (mark) {
+    for (const x of [200, 1400]) {
+      ctx.fillStyle = '#ece3cf';
+      ctx.beginPath();
+      ctx.arc(x, 600, 118, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = '#d4a030';
+      ctx.stroke();
+      const w = 170;
+      const h = (w * mark.height) / mark.width;
+      ctx.drawImage(mark, x - w / 2, 600 - h / 2, w, h);
+    }
+  }
   // Desgaste
   const r = rng(12);
   for (let i = 0; i < 1800; i++) {
@@ -283,6 +298,26 @@ function bannerTexture(logo) {
 }
 
 /** Cartel enmarcado con un emblema de competición. */
+/** Placa crema con un logo centrado (para logos oscuros sobre paredes oscuras). */
+function sponsorTexture(img) {
+  const [c, ctx] = canvas(1200, 440);
+  ctx.fillStyle = '#ece3cf';
+  ctx.fillRect(0, 0, 1200, 440);
+  const r = rng(77);
+  for (let i = 0; i < 900; i++) {
+    ctx.fillStyle = `rgba(60,40,20,${r() * 0.18})`;
+    ctx.fillRect(r() * 1200, r() * 440, 1 + r() * 3, 1 + r() * 3);
+  }
+  ctx.strokeStyle = '#d4a030';
+  ctx.lineWidth = 12;
+  ctx.strokeRect(14, 14, 1172, 412);
+  if (img) {
+    const k = Math.min(1040 / img.width, 300 / img.height);
+    ctx.drawImage(img, 600 - (img.width * k) / 2, 220 - (img.height * k) / 2, img.width * k, img.height * k);
+  }
+  return tex(c);
+}
+
 function posterTexture(img, title, accent) {
   const [c, ctx] = canvas(512, 720);
   ctx.fillStyle = '#100d0b';
@@ -610,7 +645,7 @@ export function buildWorld(stage) {
     sctx.fillRect(0, 420, 1024, 92);
     sctx.font = `800 48px ${DISPLAY}`;
     sctx.fillStyle = '#120c02';
-    const ticker = '  EN DIRECTO  ·  PLAYCTP.COM  ·  CTP CUP  ·  CTP MAJOR  ·  CTP CHAMP  ·  RANKED  ·  ';
+    const ticker = '  EN DIRECTO  ·  PLAYCTP.COM  ·  MIAMI HERETICS  ·  CTP CUP  ·  CTP MAJOR  ·  CTP CHAMP  ·  RANKED  ·  ';
     const tw = sctx.measureText(ticker).width;
     const off = (t * 120) % tw;
     sctx.textAlign = 'left';
@@ -670,6 +705,12 @@ export function buildWorld(stage) {
 
   // Grafiti CTP y tiza del arma
   mesh(new THREE.PlaneGeometry(4.6, 2.3), new THREE.MeshStandardMaterial({ map: graffitiTexture(), transparent: true, roughness: 0.9, depthWrite: false }), 7.3, 2.8, BACK_Z + 0.42, { cast: false });
+  // Miami Heretics en la pared izquierda, sobre el contenedor de la CUP.
+  const hereticsT = sponsorTexture(null);
+  const hereticsMat = new THREE.MeshStandardMaterial({ map: hereticsT, roughness: 0.85, emissive: 0xffffff, emissiveMap: hereticsT, emissiveIntensity: 0.22 });
+  mesh(new THREE.BoxGeometry(0.06, 1.75, 4.55), posterFrame, -SIDE_X + 0.38, 4.8, 7.8);
+  mesh(new THREE.PlaneGeometry(4.4, 1.61), hereticsMat, -SIDE_X + 0.42, 4.8, 7.8, { ry: Math.PI / 2, cast: false });
+
   // Logo de Modern Warfare 4 en la pared derecha, sobre el contenedor de Ranked.
   const mw4 = loader.load(`${MEDIA}/mw4-logo.webp`);
   mw4.colorSpace = THREE.SRGBColorSpace;
@@ -880,8 +921,12 @@ export function buildWorld(stage) {
   let nextSpark = 3;
 
   // Carga de imágenes de marca (cuando llegan, se repintan las texturas)
-  Promise.all([loadImage(`${MEDIA}/logo.png`), ...posters.map((p) => loadImage(`${MEDIA}/${p.file}`))]).then(([logo, ...imgs]) => {
-    const bt = bannerTexture(logo);
+  Promise.all([loadImage(`${MEDIA}/logo.png`), loadImage(`${MEDIA}/miami-heretics-mark.webp`), loadImage(`${MEDIA}/miami-heretics.webp`), ...posters.map((p) => loadImage(`${MEDIA}/${p.file}`))]).then(([logo, mark, wordmark, ...imgs]) => {
+    const bt = bannerTexture(logo, mark);
+    const ht = sponsorTexture(wordmark);
+    hereticsMat.map = ht;
+    hereticsMat.emissiveMap = ht;
+    hereticsMat.needsUpdate = true;
     bannerMat.map = bt;
     bannerMat.emissiveMap = bt;
     bannerMat.needsUpdate = true;

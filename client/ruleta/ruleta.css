@@ -119,6 +119,39 @@ svg {
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 60px rgba(212, 168, 67, 0.08);
   text-align: center;
 }
+/* Logos PlayCTP × Miami Heretics. El de Heretics va sobre placa clara:
+   su verde no se lee sobre el fondo oscuro. */
+.partners {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 auto 4px;
+}
+.partners-x {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--muted);
+}
+.partner-logo {
+  height: 46px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: #ece3cf;
+}
+.splash-partners img {
+  height: clamp(36px, 5vw, 56px);
+}
+.splash-partners .partner-logo {
+  height: clamp(44px, 6vw, 68px);
+}
+.brand .brand-partner {
+  height: 36px;
+  padding: 3px;
+  border-radius: 50%;
+  background: #ece3cf;
+}
 .gate-logo {
   height: 46px;
   margin: 0 auto 4px;
@@ -676,7 +709,8 @@ body.show-winner .letterbox {
   .tool.sound input {
     display: none;
   }
-  .brand img {
+  .brand img,
+  .brand .brand-partner {
     height: 28px;
   }
   .brand-title {

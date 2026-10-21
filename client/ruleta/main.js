@@ -70,7 +70,7 @@ function renderLogin(error = '') {
   app.innerHTML = `
     <div class="gate">
       <form class="gate-card" id="login">
-        <img src="/brand/logo-ctp.svg" alt="PlayCTP" class="gate-logo" />
+        <div class="partners"><img src="/brand/logo-ctp.svg" alt="PlayCTP" class="gate-logo" /><span class="partners-x">×</span><img src="/ruleta-media/miami-heretics.webp" alt="Miami Heretics" class="partner-logo" /></div>
         <h1>La caja del destino</h1>
         <p class="muted">Solo staff de PlayCTP: entra con la misma cuenta que usas en <strong>manager.playctp.com</strong>.</p>
         ${provider === 'ctp'
@@ -98,7 +98,8 @@ function renderLogin(error = '') {
 function renderSplash() {
   app.innerHTML = `
     <button class="splash" id="enter">
-      <span class="splash-kicker">PlayCTP presenta</span>
+      <span class="partners splash-partners"><img src="/brand/logo-ctp.svg" alt="PlayCTP" /><span class="partners-x">×</span><img src="/ruleta-media/miami-heretics.webp" alt="Miami Heretics" class="partner-logo" /></span>
+      <span class="splash-kicker">PlayCTP y Miami Heretics presentan</span>
       <span class="splash-title">La caja<br/>del destino</span>
       <span class="splash-cta">Pulsa para entrar</span>
       <span class="splash-note">Con sonido · ideal a pantalla completa</span>
@@ -130,6 +131,7 @@ function renderStage() {
     <header class="hud hud-top">
       <div class="brand">
         <img src="/brand/logo-ctp.svg" alt="PlayCTP" />
+        <img src="/ruleta-media/miami-heretics-mark.webp" alt="Miami Heretics" class="brand-partner" />
         <div>
           <div class="brand-title">La caja del destino</div>
           <div class="brand-sub">Ruleta oficial PlayCTP</div>

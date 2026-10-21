@@ -101,6 +101,7 @@ const TOUR = [
   orbitShot([-3.3, 2.4, 0], 4.3, 3.1, 0.35, -0.75, 7), // máquina de chicles
   orbitShot([2.9, 1.1, 0.15], 3.8, 2.0, 1.0, 0.05, 6.5), // caja del destino
   shot([-4.2, 2.3, 6.4], [-6.4, 2.7, 6.9], [-10.4, 1.6, 9.0], [-10.0, 1.9, 10.6], 6), // contenedores y bidones
+  shot([-6.5, 4.2, 5.2], [-6.8, 4.5, 9.4], [-12.6, 4.8, 7.0], [-12.6, 4.8, 8.4], 6), // Miami Heretics
   shot(null, IDLE_CAM.pos, null, IDLE_CAM.target, 7, true), // vuelta al plano principal
 ];
 TOUR.forEach((sh, i) => {
@@ -1115,7 +1116,8 @@ export class Stage {
       acc += iv * scale;
     }
     tickTimes.push(LOCK);
-    const pool = all.length > 1 ? all : [winner];
+    // La caja solo baraja los nombres de los chicles que han salido antes.
+    const pool = shown.length > 1 ? shown : [winner];
     const seq = [];
     let prev = null;
     for (let i = 0; i < tickTimes.length - 1; i++) {

@@ -778,12 +778,15 @@ export class Stage {
 
   lightning(strength = 1, withThunder = true) {
     const now = this.elapsed;
+    // Varios latigazos y un resplandor que se apaga despacio (~1 s).
     const pattern = [
       [0, 1],
-      [0.07, 0.15],
-      [0.12, 0.8],
-      [0.22, 0.1],
-      [0.3, 0.55],
+      [0.08, 0.25],
+      [0.15, 0.9],
+      [0.28, 0.3],
+      [0.38, 0.75],
+      [0.6, 0.45],
+      [0.85, 0.25],
     ];
     for (const [dt, v] of pattern) this.flashes.push({ t: now + dt, v: v * strength });
     // El trueno llega casi a la vez para que se asocie al destello.
@@ -942,8 +945,8 @@ export class Stage {
     this.flashes = this.flashes.filter((f) => {
       const age = t - f.t;
       if (age < 0) return true;
-      flash = Math.max(flash, f.v * Math.exp(-age * 18));
-      return age < 0.5;
+      flash = Math.max(flash, f.v * Math.exp(-age * 7));
+      return age < 1.2;
     });
     this.flashLight.intensity = flash * 12;
     this.finalPass.uniforms.uLightning.value = flash * 0.42;

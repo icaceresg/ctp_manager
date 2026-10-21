@@ -595,30 +595,74 @@ export class AudioEngine {
     breath.stop(end);
   }
 
-  /** Trueno: chasquido seco, estallido y retumbe largo que va y viene. */
+  /**
+   * Trueno: crujido que rasga el cielo (chasquidos rápidos), estallido y un
+   * retumbe de ruido marrón que va y viene durante varios segundos.
+   */
   thunder(delay = 0) {
     if (!this.ctx) return;
+    const ctx = this.ctx;
     const t = this.now + delay;
-    // Bus propio con más ganancia: el trueno tiene que mandar sobre todo.
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    // Bus propio con más ganancia y mucha sala: el trueno tiene que mandar.
     if (!this.thunderBus) {
-      this.thunderBus = this.ctx.createGain();
+      this.thunderBus = ctx.createGain();
       this.thunderBus.gain.value = 2.4;
       this.thunderBus.connect(this.master);
+      const send = ctx.createGain();
+      send.gain.value = 0.5;
+      this.thunderBus.connect(send).connect(this.reverbSend);
+      // Ruido marrón (grave y redondo): la base del retumbe.
+      const len = ctx.sampleRate * 4;
+      this.brownBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = this.brownBuf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < len; i++) {
+        last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+        d[i] = last * 3.5;
+      }
     }
     const dest = this.thunderBus;
-    this.noise(t, 0.2, { type: 'highpass', freq: 2000, gain: 1.0, a: 0.002, dest });
-    this.noise(t + 0.02, 0.7, { type: 'bandpass', freq: 650, q: 0.7, gain: 1.3, a: 0.01, sweepTo: 170, dest });
-    this.noise(t + 0.08, 4.6, { type: 'lowpass', freq: 460, sweepTo: 60, q: 0.6, gain: 1.8, a: 0.05, dest });
-    // Golpe grave que se nota en el pecho.
-    this.tone(t + 0.05, 70, 1.6, { glideTo: 32, gain: 0.9, a: 0.01, dest });
-    for (let i = 0; i < 3; i++) {
-      const at = t + 0.6 + i * (0.7 + Math.random() * 0.6);
-      this.noise(at, 1.8 + Math.random(), { type: 'lowpass', freq: 240 + Math.random() * 120, sweepTo: 55, q: 0.8, gain: 1.3 - i * 0.3, a: 0.25, dest });
+
+    // 1. Crujido: chasquidos secos cada vez más graves durante medio segundo.
+    const cracks = 14 + Math.floor(Math.random() * 10);
+    for (let i = 0; i < cracks; i++) {
+      const at = t + (i / cracks) ** 1.6 * rnd(0.45, 0.7);
+      this.noise(at, rnd(0.015, 0.05), { type: 'bandpass', freq: rnd(1800, 4200) * (1 - i / cracks / 2), q: rnd(1, 3), gain: rnd(0.5, 1.1), a: 0.001, dest });
     }
-    // El zumbido de fondo se aparta un momento para que se oiga entero.
+    // 2. Estallido.
+    this.noise(t + 0.05, 0.9, { type: 'lowpass', freq: 1400, sweepTo: 200, q: 0.5, gain: 1.6, a: 0.008, dest });
+    this.tone(t + 0.06, 65, 1.8, { glideTo: 30, gain: 0.9, a: 0.01, dest });
+
+    // 3. Retumbe: ruido marrón con oleadas al azar, de 5 a 7 segundos.
+    const dur = rnd(5, 7);
+    const src = ctx.createBufferSource();
+    src.buffer = this.brownBuf;
+    src.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(420, t);
+    lp.frequency.exponentialRampToValueAtTime(110, t + dur);
+    const g = ctx.createGain();
+    const N = 48;
+    const swell = new Float32Array(N);
+    let v = 1;
+    for (let i = 0; i < N; i++) {
+      const p = i / (N - 1);
+      v = v * 0.6 + rnd(0.3, 1.4) * 0.4;
+      swell[i] = Math.max(0.0001, v * (1 - p) ** 1.4 * Math.min(1, p * 12) * 1.8);
+    }
+    swell[N - 1] = 0.0001;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.setValueCurveAtTime(swell, t + 0.1, dur);
+    src.connect(lp).connect(g).connect(dest);
+    src.start(t, Math.random() * 3);
+    src.stop(t + dur + 0.3);
+
+    // El zumbido de fondo se aparta para que se oiga entero.
     if (this.droneOut && !this.paused) {
       this.droneOut.gain.setTargetAtTime(0.05, t, 0.05);
-      this.droneOut.gain.setTargetAtTime(0.16, t + 2.5, 0.8);
+      this.droneOut.gain.setTargetAtTime(0.16, t + dur * 0.6, 0.8);
     }
   }
 

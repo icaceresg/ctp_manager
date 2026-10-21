@@ -1,0 +1,4 @@
+{
+  "zombies": ["zombi-40.mp3", "zombi-41.mp3", "grito.mp3", "grito-corto.mp3", "bye-bye.mp3", "osito-risa.mp3"],
+  "roundStart": "ronda.mp3"
+}

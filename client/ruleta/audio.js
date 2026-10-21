@@ -607,7 +607,7 @@ export class AudioEngine {
     // Bus propio con más ganancia y mucha sala: el trueno tiene que mandar.
     if (!this.thunderBus) {
       this.thunderBus = ctx.createGain();
-      this.thunderBus.gain.value = 2.4;
+      this.thunderBus.gain.value = 1.8;
       this.thunderBus.connect(this.master);
       const send = ctx.createGain();
       send.gain.value = 0.5;

@@ -142,7 +142,7 @@ export function CampaignEditor({ id }) {
         <label className="op-field"><span>Titular del correo (opcional)</span><input value={content.title} maxLength={200} onChange={event => updateContent({ title: event.target.value })} /></label>
       </fieldset>
       <EmailEditor key={`${variant}:${locale}:${readOnly}`} readOnly={readOnly} value={content.html} onChange={html => !readOnly && updateContent({ html })} mergeTags={CAMPAIGN_TAGS}
-        preview={{ subject: content.subject, title: content.title, preheader: content.preheader, action: draft.link ? 'Ver en CTP' : '', footer: 'Recibes novedades de CTP porque has aceptado nuestras comunicaciones comerciales. · Darse de baja' }} />
+        preview={{ subject: content.subject, title: content.title, preheader: content.preheader, action: draft.link ? 'Ver en CTP' : '', footer: 'Recibes novedades de CTP porque has aceptado nuestras comunicaciones comerciales.', unsubscribe: true }} />
       <TestSend kind="campaign" locale={locale} link={draft.link.trim() || null} content={() => ({ subject: content.subject, title: content.title, preheader: content.preheader, html: content.html })}
         note={`Se envía la variante ${variant} en ${localeName(locale)} tal como está ahora, sin guardar ni seguimiento.`} />
     </section>

@@ -10,6 +10,16 @@ export function rankedChatRequest(value){
  if(!message||Array.from(message).length>800||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(message))throw new HttpError(400,'Escribe un mensaje de entre 1 y 800 caracteres, sin caracteres de control.');
  return{request_id:value.request_id.toLowerCase(),message};
 }
+/** A manual Ranked decision: give the win to one team or cancel the match without XP changes. */
+export function rankedDecisionRequest(value){
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['decision','side','reason','request_id'].includes(key)))throw new HttpError(400,'La decisión no es válida.');
+ if(typeof value.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.request_id))throw new HttpError(400,'La referencia de la decisión no es válida.');
+ if(!['winner','cancel'].includes(value.decision))throw new HttpError(400,'Elige dar la victoria a un equipo o cancelar la partida.');
+ if(value.decision==='winner'?!['a','b'].includes(value.side):value.side!==undefined&&value.side!==null)throw new HttpError(400,'Selecciona el equipo ganador.');
+ const reason=typeof value.reason==='string'?value.reason.trim():'';
+ if(Array.from(reason).length<12||Array.from(reason).length>500||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(reason))throw new HttpError(400,'Escribe un motivo de entre 12 y 500 caracteres.');
+ return{request_id:value.request_id.toLowerCase(),decision:value.decision,side:value.decision==='winner'?value.side:null,reason};
+}
 // PostgreSQL length/left count Unicode code points rather than UTF-16 units.
 const text=(v,max)=>typeof v==='string'&&Array.from(v).length<=max?v:fail();
 const date=v=>typeof v==='string'&&v.length<=40&&Number.isFinite(Date.parse(v))?v:fail();

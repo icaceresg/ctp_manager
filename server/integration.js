@@ -6,7 +6,7 @@ import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './co
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
 import { rankedMonitorState } from './ranked-monitor-contract.js';
-import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor, rankedChatRequest, rankedLobbyChatReceipt } from './ranked-lobby-contract.js';
+import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor, rankedChatRequest, rankedLobbyChatReceipt, rankedDecisionRequest } from './ranked-lobby-contract.js';
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
@@ -374,12 +374,41 @@ export async function getRankedLobbyDetail(user,lobbyId,before=null) {
   lobbyId=rankedLobbyId(lobbyId);before=rankedChatCursor(before);
   const value=rankedLobbyDetail(await request({action:'ranked_lobby_detail',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,before}),lobbyId);
   if(!value)throw integrationError(404,'No se ha encontrado esta partida Ranked.');
-  return {...value,chat:{...value.chat,can_send:value.chat.can_send&&config.writes}};
+  return {...value,chat:{...value.chat,can_send:value.chat.can_send&&config.writes},can_decide:canDecideRanked(user)};
 }
 export async function sendRankedLobbyChat(user,lobbyId,body){
  requireRankedOperator(user);lobbyId=rankedLobbyId(lobbyId);const input=rankedChatRequest(body);
  if(!config.writes)throw integrationError(403,'Los envíos a CTP están desactivados.');
  return rankedLobbyChatReceipt(await request({action:'ranked_lobby_chat',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,...input}),lobbyId,input);
+}
+/** CTP administrators may give a Ranked win or cancel the match directly; CTP applies it at once. */
+const canDecideRanked=user=>Boolean(user?.is_admin&&(user.auth_mode!=='ctp'||user.ctp_role==='admin')&&config.writes
+ &&['admin.ranked.lobby.resolve','admin.ranked.lobby.cancel'].every(type=>integrationStatus().supported_actions.includes(type)));
+// The CTP command hash includes the version read before the first attempt; a retry must reuse it.
+const rankedDecisions=new Map();
+export async function decideRankedLobby(user,lobbyId,body){
+ requireRankedOperator(user);lobbyId=rankedLobbyId(lobbyId);const input=rankedDecisionRequest(body);
+ if(!canDecideRanked(user))throw integrationError(403,'Dar la victoria o cancelar una partida Ranked requiere administración CTP.');
+ const type=input.decision==='winner'?'admin.ranked.lobby.resolve':'admin.ranked.lobby.cancel';
+ const payload=input.decision==='winner'?{side:input.side,reason:input.reason}:{reason:input.reason};
+ const actor=getOperatorIdentity(user.id),key=`${actor}:${input.request_id}`;
+ let pending=rankedDecisions.get(key);
+ if(pending&&(pending.lobbyId!==lobbyId||pending.type!==type||JSON.stringify(pending.payload)!==JSON.stringify(payload)))throw integrationError(409,'Esta referencia ya se usó para otra decisión. Actualiza la partida.');
+ if(!pending){
+  const page=await request({action:'admin_query',actor_id:actor,resource:'ranked_lobbies',target_id:lobbyId,filters:{page:0,limit:1}});
+  const row=Array.isArray(page?.items)?page.items.find(item=>item?.id===lobbyId):null;
+  if(!row)throw integrationError(404,'No se ha encontrado esta partida Ranked.');
+  if(['closed','cancelled'].includes(row.status))throw integrationError(409,'La partida ya está cerrada.');
+  if(type==='admin.ranked.lobby.resolve'&&!['ready','reported','disputed'].includes(row.status))throw integrationError(409,'Solo se puede dar la victoria cuando los equipos y el mapa están asignados.');
+  if(!Number.isSafeInteger(row.manager_version))throw integrationError(502,'CTP no ha devuelto la versión de la partida.');
+  pending={lobbyId,type,payload,version:row.manager_version};
+  if(rankedDecisions.size>500)rankedDecisions.delete(rankedDecisions.keys().next().value);
+  rankedDecisions.set(key,pending);
+ }
+ const result=await request({action:'command',actor_id:actor,command_id:input.request_id,type,target_id:lobbyId,expected_version:pending.version,payload});
+ if(result?.applied!==true||result.command_id!==input.request_id||result.type!==type||result.target_id!==lobbyId)throw integrationError(502,'CTP no ha confirmado la decisión. Reintenta para comprobarla sin duplicarla.');
+ rankedDecisions.delete(key);
+ return{applied:true,lobby_id:lobbyId,request_id:input.request_id,decision:input.decision,side:input.side};
 }
 export async function getClubCandidates(user, query) {
   if (!user?.is_admin) throw integrationError(403, 'La creación manual de clubes requiere administración.');

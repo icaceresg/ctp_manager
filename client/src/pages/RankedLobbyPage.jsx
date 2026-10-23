@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Link,Navigate,useParams} from 'react-router-dom';
-import {ArrowLeft,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
+import {ArrowLeft,Gavel,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
 import {api} from '../api.js';
 import {useApp} from '../context.jsx';
 import {Spinner} from '../components/ui.jsx';
@@ -12,6 +12,39 @@ import './ranked-monitor.css';
 
 const STATUS={voting:'Sorteo de mapa',drafting:'Formando equipos',ready:'Lista para jugar',reported:'Confirmando resultado',disputed:'En revisión',closed:'Finalizada',cancelled:'Cancelada'};
 const team=side=>side==='a'?'Equipo A':side==='b'?'Equipo B':'Sin asignar';
+/** Manual arbitration: CTP closes the match at once with this winner (XP applied) or cancels it (no XP). */
+function RankedDecision({lobby,players,onApplied}){
+ const playable=['ready','reported','disputed'].includes(lobby.status);
+ const [decision,setDecision]=useState(playable?'a':'cancel'),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState('');
+ const pending=useRef(null),length=Array.from(reason.trim()).length;
+ const label=decision==='cancel'?'cancelar la partida sin cambios de XP':`dar la victoria al ${team(decision)}`;
+ async function submit(event){
+  event.preventDefault();if(busy||length<12||length>500)return;
+  if(!window.confirm(`¿Seguro que quieres ${label}? CTP lo aplicará al momento y no se puede deshacer desde Manager.`))return;
+  const input={decision:decision==='cancel'?'cancel':'winner',...(decision==='cancel'?{}:{side:decision}),reason:reason.trim()};
+  // Keep the reference while the input is unchanged, so an unconfirmed retry cannot apply twice.
+  if(!pending.current||JSON.stringify(pending.current.input)!==JSON.stringify(input))pending.current={input,request_id:crypto.randomUUID()};
+  setBusy(true);setError('');setDone('');
+  try{await api.post(`/operations/ranked/lobbies/${encodeURIComponent(lobby.id)}/decision`,{...input,request_id:pending.current.request_id});pending.current=null;setDone(decision==='cancel'?'Partida cancelada en CTP.':`Victoria registrada para el ${team(decision)}.`);onApplied();}
+  catch(cause){setError(cause.message||'No se ha confirmado la decisión. Reintenta para comprobarla sin duplicarla.');}
+  finally{setBusy(false);}
+ }
+ const names=side=>players.filter(p=>p.side===side).map(p=>p.username||'Jugador no disponible').join(', ');
+ return <section className="op-card"><div className="op-section-title"><div><h2><Gavel size={18}/> Decisión arbitral</h2><p>Cierra la partida a mano: da la victoria a un equipo (se aplican los XP) o cancélala (nadie gana ni pierde XP).</p></div></div>
+  <form className="rl-decision" onSubmit={submit}>
+   <fieldset disabled={busy}><legend>Decisión</legend>
+    {['a','b'].map(side=><label key={side} className="rl-decision-option"><input type="radio" name="ranked-decision" value={side} checked={decision===side} disabled={!playable} onChange={()=>setDecision(side)}/><span><strong>Victoria para el {team(side)}</strong><small className="muted">{names(side)||'Sin jugadores asignados'}</small></span></label>)}
+    <label className="rl-decision-option"><input type="radio" name="ranked-decision" value="cancel" checked={decision==='cancel'} onChange={()=>setDecision('cancel')}/><span><strong>Cancelar partida</strong><small className="muted">Sin ganador y sin cambios de XP.</small></span></label>
+   </fieldset>
+   {!playable&&<p className="muted rl-caption">La victoria solo se puede dar cuando los equipos y el mapa están asignados.</p>}
+   <label htmlFor="ranked-decision-reason">Motivo (lo verán los jugadores en el chat de la partida)</label>
+   <textarea id="ranked-decision-reason" rows={3} maxLength={1000} value={reason} disabled={busy} onChange={event=>{setReason(event.target.value);setDone('');}} placeholder="Explica la decisión…"/>
+   <div className="rl-chat-compose-actions"><span className="muted">{length}/500 caracteres · mínimo 12.</span><button className={`btn ${decision==='cancel'?'danger':'primary'}`} type="submit" disabled={busy||length<12||length>500}>{busy?'Aplicando…':decision==='cancel'?'Cancelar partida':`Dar victoria al ${team(decision)}`}</button></div>
+   {error&&<p className="op-error" role="alert">{error}</p>}
+   {done&&<p className="op-notice" role="status">{done}</p>}
+  </form>
+ </section>;
+}
 export default function RankedLobbyPage(){
  const {me}=useApp(),{lobbyId}=useParams();
  const allowed=canManageRanked(me),actorKey=`${me?.id}:${me?.ctp_user_id||''}:${me?.ctp_role||''}`,scope=`${actorKey}:${lobbyId}`;
@@ -60,7 +93,7 @@ export default function RankedLobbyPage(){
  return <div className="page wide op-page rm-page rl-page">
   <Link className="rl-back" to="/ranked/monitor"><ArrowLeft size={16}/> Volver al monitor de Ranked</Link>
   <header className="op-heading"><div><div className="op-eyebrow"><ShieldCheck size={15}/> SUPERVISIÓN DE PARTIDA</div><h1>{lobby?.map_name||'Partida Ranked'}</h1><p>{lobby?.queue_title||'Equipos, resultado y conversación de la partida.'}</p></div><button className="btn primary" disabled={busy||!validId} onClick={()=>void load()}><RefreshCw size={16} className={busy?'spin':''}/> Actualizar</button></header>
-  <p className="op-notice rl-readonly">Supervisión de la partida. Administración y arbitraje pueden escribir en el chat, también cuando la partida ha terminado. Esta vista no envía votos ni modifica resultados.</p>
+  <p className="op-notice rl-readonly">Supervisión de la partida. Administración y arbitraje pueden escribir en el chat, también cuando la partida ha terminado. Solo administración puede dar la victoria a un equipo o cancelar la partida.</p>
   {!validId&&<div className="op-error" role="alert">La referencia de la partida no es válida.</div>}
   {error&&<div className="op-error" role="alert">{error}{data?' Se conserva la última lectura correcta.':''}</div>}
   {!data?busy?<div className="op-loading"><Spinner/>Consultando la partida…</div>:null:<>
@@ -73,6 +106,7 @@ export default function RankedLobbyPage(){
     {result.resolution_truncated&&<p className="muted rl-caption">La resolución es extensa. Se muestran sus primeros 2.000 caracteres.</p>}
     <dl className="rl-times"><div><dt>Votos disponibles desde</dt><dd>{result.opens_at?dateTime(result.opens_at):'—'}</dd></div><div><dt>Decisión de la votación</dt><dd>{result.decides_at?dateTime(result.decides_at):'Sin primer voto'}</dd></div><div><dt>Suspensión sin votos</dt><dd>{result.suspends_at?dateTime(result.suspends_at):'—'}</dd></div></dl>
    </section>
+   {data.can_decide&&!['closed','cancelled'].includes(lobby.status)&&<RankedDecision key={scope} lobby={lobby} players={data.players} onApplied={()=>{setBefore(null);void load();}}/>}
    <section className="rl-teams" aria-label="Equipos de la partida">{['a','b',null].map(side=>{const players=data.players.filter(p=>p.side===side);if(side===null&&!players.length)return null;return <article key={side||'pending'} className={`op-card rl-team team-${side||'pending'}`}><h2><Users size={18}/> {team(side)} <span className="muted">{players.length}</span></h2>{players.length?<ol>{players.map(player=><li key={player.slot}><strong>{player.username||'Jugador no disponible'}</strong><span>{player.is_captain?'Capitán · ':''}{player.result_vote?`Votó ${team(player.result_vote)}`:'Sin voto de resultado'}</span></li>)}</ol>:<Empty title="Sin jugadores asignados">El equipo se mostrará al formarse.</Empty>}</article>;})}</section>
    <section className="op-card"><div className="op-section-title"><div><h2><MessageSquare size={18}/> Chat de la partida</h2><p>Conversación compartida de esta partida. Los mensajes se muestran como texto.</p></div><div className="op-actions">{before&&<button className="btn" disabled={busy} onClick={()=>setBefore(null)}>Últimos mensajes</button>}<button className="btn" disabled={busy||!data.chat.has_more} onClick={()=>setBefore(data.chat.next_before)}>Mensajes anteriores</button></div></div>
     <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><strong>{message.is_system?'CTP':message.username||'Jugador no disponible'}{message.author_role&&<small className="rl-staff-role">{message.author_role==='admin'?'Administración':'Árbitro'}</small>}</strong><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes en esta página">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>

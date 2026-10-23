@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
-import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedLobbyDetail, sendRankedLobbyChat, getClubCandidates, getProViewState } from '../integration.js';
+import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedLobbyDetail, sendRankedLobbyChat, decideRankedLobby, getClubCandidates, getProViewState } from '../integration.js';
 import { canManageRanked } from '../../shared/access.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
@@ -44,6 +44,10 @@ integrationRouter.get('/operations/ranked/lobbies/:id',requireAuth,requireRanked
 integrationRouter.post('/operations/ranked/lobbies/:id/chat',requireAuth,requireRanked,async(req,res)=>{
  if(Object.keys(req.query).length)throw new HttpError(400,'La solicitud del mensaje no admite parámetros.');
  res.json(await sendRankedLobbyChat(req.user,req.params.id,req.body));
+});
+integrationRouter.post('/operations/ranked/lobbies/:id/decision',requireAuth,requireRanked,async(req,res)=>{
+ if(Object.keys(req.query).length)throw new HttpError(400,'La decisión no admite parámetros.');
+ res.json(await decideRankedLobby(req.user,req.params.id,req.body));
 });
 integrationRouter.get('/operations/clubs/candidates', requireAuth, requireAdmin, async (req, res) => res.json(await getClubCandidates(req.user, req.query.query)));
 integrationRouter.post('/operations/clubs/create', requireAuth, requireAdmin, (req, res) => res.json(prepareManualClubCommand(req.user, req.body)));

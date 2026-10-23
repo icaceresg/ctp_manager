@@ -1,0 +1,33 @@
+[Unit]
+Description=CTP Manager PRE aggregate traffic and VPS observer
+After=docker.service ctp-edge-guard-pre.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+SupplementaryGroups=ctp-manager-pre caddy
+ExecStart=/usr/bin/python3 /opt/ctp-manager/pre-metrics/collect.py
+TimeoutStartSec=45
+Nice=10
+CPUQuota=25%
+MemoryMax=256M
+TasksMax=24
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadWritePaths=/var/lib/ctp-manager-pre-metrics
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=multi-user.target

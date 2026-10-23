@@ -1,0 +1,11 @@
+[Unit]
+Description=Sample CTP metrics for the PRE Manager once per minute
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=60s
+AccuracySec=3s
+Unit=ctp-manager-pre-metrics.service
+
+[Install]
+WantedBy=timers.target

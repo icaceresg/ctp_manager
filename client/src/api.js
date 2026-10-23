@@ -2,8 +2,8 @@
 
 export const UNAUTHORIZED_EVENT = 'mrm:unauthorized';
 
-async function request(method, url, body) {
-  const options = { method, headers: {}, credentials: 'same-origin' };
+async function request(method, url, body, requestOptions = {}) {
+  const options = { method, headers: {}, credentials: 'same-origin', signal: requestOptions.signal };
   if (body instanceof FormData) {
     options.body = body;
   } else if (body !== undefined) {
@@ -14,7 +14,8 @@ async function request(method, url, body) {
   let res;
   try {
     res = await fetch(`/api${url}`, options);
-  } catch {
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
     throw new Error('No se puede contactar con el servidor de CTP Manager.');
   }
 
@@ -31,7 +32,7 @@ async function request(method, url, body) {
 }
 
 export const api = {
-  get: (url) => request('GET', url),
+  get: (url, options) => request('GET', url, undefined, options),
   post: (url, body) => request('POST', url, body),
   put: (url, body) => request('PUT', url, body),
   patch: (url, body) => request('PATCH', url, body),

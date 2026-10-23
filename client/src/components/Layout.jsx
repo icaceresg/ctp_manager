@@ -13,7 +13,7 @@ export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
 }
 
-const ICONS = { jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, estadisticas: ChartNoAxesCombined, clubes: BadgeCheck, discord: MessageSquare, disciplina: Gavel, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
+const ICONS = { jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, estadisticas: ChartNoAxesCombined, metrics: ChartNoAxesCombined, clubes: BadgeCheck, discord: MessageSquare, disciplina: Gavel, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
 
 function PendingBadge() {
   const { data: withResources } = useData(() => api.get('/contents?with_resources=1'));
@@ -37,7 +37,7 @@ export function Layout() {
   useEffect(() => {
     window.scrollTo(0, 0);
     document.getElementById('manager-content')?.focus({ preventScroll: true });
-    const title = managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me)).find(item => item.to === location.pathname)?.title
+    const title = managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname).find(item => item.to === location.pathname)?.title
       || (location.pathname.startsWith('/operaciones/partidos/') ? 'Ficha de partido' : location.pathname.startsWith('/crm/') ? 'CRM y correos' : location.pathname === '/cuenta' ? 'Mi cuenta' : 'Área de trabajo');
     document.title = `${title} · CTP Manager`;
   }, [location.pathname]);
@@ -47,7 +47,7 @@ export function Layout() {
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
   }, [menuOpen]);
-  const items = [...managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me)), ruletaNavigation(window.location.hostname)];
+  const items = [...managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname), ruletaNavigation(window.location.hostname)];
   const groups = [...new Set(items.map(item => item.group))];
   const roleNames = me.is_admin ? 'Administrador' : me.roles.map((r) => r.name).join(' · ') || 'Sin rol';
 

@@ -7,3 +7,5 @@ output/
 validation.local/
 .playwright-cli/
 *.log
+__pycache__/
+*.py[cod]

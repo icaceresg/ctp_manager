@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
-import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getClubCandidates, getProViewState } from '../integration.js';
+import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getClubCandidates, getProViewState } from '../integration.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
@@ -32,6 +32,7 @@ integrationRouter.get('/operations/competition', requireAuth, allow('operaciones
 integrationRouter.get('/operations/history', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getOperationHistory(req.user, req.query)));
 integrationRouter.get('/operations/matches/:id/guard',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getGuardState(req.user,req.params.id)));
 integrationRouter.get('/operations/ranked', requireAuth, requireAdmin, async (req, res) => res.json(await getRankedState(req.user)));
+integrationRouter.get('/operations/ranked/monitor', requireAuth, requireAdmin, async (req, res) => res.json(await getRankedMonitor(req.user)));
 integrationRouter.get('/operations/clubs/candidates', requireAuth, requireAdmin, async (req, res) => res.json(await getClubCandidates(req.user, req.query.query)));
 integrationRouter.post('/operations/clubs/create', requireAuth, requireAdmin, (req, res) => res.json(prepareManualClubCommand(req.user, req.body)));
 integrationRouter.post('/operations/ranked/commands', requireAuth, requireAdmin, async (req, res) => {

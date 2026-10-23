@@ -1,0 +1,13 @@
+.rm-definition { font-size: 12px; line-height: 1.6; }
+.rm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.rm-dot.is-stale { background: var(--warning); }
+.rm-filter { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.rm-filter select { width: auto !important; max-width: 260px; }
+.rm-statuses { display: flex; gap: 12px; flex-wrap: wrap; }
+.rm-statuses > span { display: flex; align-items: center; gap: 12px; padding: 9px 13px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.rm-history { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 20px; }
+.rm-history > div { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
+.rm-history strong { font: 700 30px/1.1 var(--font-display); }
+.rm-history span { font-size: 12px; }
+.rm-id { font-family: var(--font-mono); }
+@media(max-width: 600px) { .rm-page .op-connection { flex-wrap: wrap; } .rm-page .op-connection-mode { margin-left: 16px; } .rm-filter { width: 100%; } .rm-filter select { flex: 1; } }

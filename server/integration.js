@@ -5,6 +5,7 @@ import { MANAGER_PUBLIC_ORIGINS } from './config.js';
 import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './competition-contract.js';
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
+import { rankedMonitorState } from './ranked-monitor-contract.js';
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
@@ -347,6 +348,11 @@ export async function getRankedState(user) {
   if (!user?.is_admin) throw integrationError(403, 'La programación de Ranked requiere administración.');
   if (!integrationStatus().supported_actions.includes('ranked.season.schedule')) throw integrationError(503, 'El puente CTP todavía no tiene habilitadas las seasons de Ranked.');
   return rememberRankedState(rankedState(await request({ action: 'ranked_state', actor_id: getOperatorIdentity(user.id) })));
+}
+export async function getRankedMonitor(user) {
+  if (!user?.id) throw integrationError(401, 'Necesitas iniciar sesión.');
+  if (!user.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'La monitorización de Ranked requiere administración.');
+  return rankedMonitorState(await request({action: 'ranked_monitor', actor_id: getOperatorIdentity(user.id)}));
 }
 export async function getClubCandidates(user, query) {
   if (!user?.is_admin) throw integrationError(403, 'La creación manual de clubes requiere administración.');

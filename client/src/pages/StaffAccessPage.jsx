@@ -54,7 +54,7 @@ export function StaffAccessPage() {
   return <div className="page" style={{ maxWidth: 1100 }}>
     <header className="page-header"><div><h1>Usuarios y funciones</h1><p>Asigna herramientas al staff con su misma cuenta CTP. Los administradores están protegidos.</p></div><button className="btn" disabled={loading} onClick={reload}><RefreshCw size={16}/>Actualizar</button></header>
     <form className="input-group" onSubmit={event => { event.preventDefault(); change('q', search.trim()); }} style={{ maxWidth: 600, marginBottom: 20 }}>
-      <input className="input" aria-label="Buscar cuentas CTP" placeholder="Buscar usuario o gamertag…" maxLength={120} value={search} onChange={event => setSearch(event.target.value)}/><button className="btn" disabled={loading}>Buscar</button>
+      <input className="input" aria-label="Buscar cuentas CTP" placeholder="Buscar usuario, gamertag o correo completo…" maxLength={120} value={search} onChange={event => setSearch(event.target.value)}/><button className="btn" disabled={loading}>Buscar</button>
     </form>
     {error && <p role="alert" className="muted">{error.message} <button className="btn" onClick={reload}>Reintentar</button></p>}
     {loading && !data ? <Spinner/> : data ? <>

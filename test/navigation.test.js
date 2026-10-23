@@ -21,6 +21,12 @@ test('admin tools occur once and navigation targets remain unique', () => {
   assert.equal(items.filter(item => item.id === 'integracion').length, 1);
 });
 
+test('Ranked supervision adds only the monitor without granting admin tools', () => {
+  const items = managerNavigation(() => false, false, false, true);
+  assert.deepEqual(items.map(item => item.id), ['ranked-monitor']);
+  assert.equal(items[0].to, '/ranked/monitor');
+});
+
 test('coordination receives only delegated user management in addition to its own tools', () => {
   const normal = managerNavigation(value => ['operaciones', 'tablero', 'disponibilidad'].includes(value), false);
   const delegated = managerNavigation(value => ['operaciones', 'tablero', 'disponibilidad'].includes(value), false, true);

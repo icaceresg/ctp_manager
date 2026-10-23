@@ -194,12 +194,13 @@ test('central administrators use the same staff directory without an administrat
 
 test('the roulette tags everyone with Manager access and follows staff changes at once', async () => {
   const { listParticipants } = await import('../server/ruleta.js');
-  const admins = await signIn('admin');
   const coordination = await signIn('coord');
-  const person = async (id) => (await listParticipants(admins.user)).people.find(item => item.key === id);
+  const person = async (id) => (await listParticipants()).people.find(item => item.key === id);
   targetConfirmed = true;
   try {
-    await listParticipants(admins.user, { force: true });
+    // Nobody presses anything: the first read loads the list with a stored admin identity.
+    await listParticipants();
+    assert.equal(observed.at(-1).actor_id, `ctp:${admin}`);
     assert.equal((await person(admin)).role, 'admin');
     assert.deepEqual(await person(target), { key: target, name: 'Registered player', role: 'player' });
     assert.equal((await api(coordination, 'PATCH', `/staff-access/${target}`, { staff_kind: 'caster', enabled: true })).status, 200);
@@ -211,6 +212,10 @@ test('the roulette tags everyone with Manager access and follows staff changes a
     // Deactivating someone in Manager removes their access, so the tag goes too.
     db.prepare('UPDATE users SET active=0 WHERE ctp_user_id=?').run(admin);
     assert.equal((await person(admin)).role, 'player');
+    // Without an active administrator, coordination's identity keeps the list loading by itself.
+    db.prepare("DELETE FROM settings WHERE key='ruleta_refreshed_at'").run();
+    await listParticipants();
+    assert.equal(observed.at(-1).actor_id, `ctp:${coordinator}`);
   } finally {
     db.prepare('UPDATE users SET active=1 WHERE ctp_user_id=?').run(admin);
     targetConfirmed = false;

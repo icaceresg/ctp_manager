@@ -14,7 +14,7 @@ const audio = new AudioEngine();
 let stage = null;
 let me = null;
 let participants = [];
-let roster = null; // { source, can_refresh, warning, truncated, total, refreshed_at }
+let roster = null; // { source, warning, truncated, total, refreshed_at }
 let provider = 'local';
 let excluded = new Set(loadExcluded());
 let drawing = false;
@@ -206,7 +206,6 @@ function renderStage() {
       </div>
       <p class="muted small" id="roster-info"></p>
       <p class="muted small">Desmarca a quien no deba entrar en este sorteo.</p>
-      ${me?.is_admin && roster?.source !== 'manager' ? '<button class="btn-ghost" id="refresh-list">Actualizar lista desde CTP</button>' : ''}
       <input class="search" id="people-search" placeholder="Buscar…" />
       <div class="drawer-actions">
         <button class="link" id="all-on">Todos</button>
@@ -340,19 +339,6 @@ function wireStage() {
     renderPeople();
     updateCount();
   });
-  $('#refresh-list')?.addEventListener('click', async (e) => {
-    e.target.disabled = true;
-    e.target.textContent = 'Cargando desde CTP…';
-    try {
-      applyRoster(await api('POST', '/ruleta/participants/refresh'));
-      toast(`Lista actualizada: ${participants.length.toLocaleString('es-ES')} personas.`);
-    } catch (err) {
-      toast(err.message);
-    }
-    renderPeople();
-    updateCount();
-    renderRosterInfo();
-  });
   $('#btn-mute').addEventListener('click', toggleMute);
   $('#vol').addEventListener('input', (e) => {
     audio.setVolume(Number(e.target.value));
@@ -439,7 +425,10 @@ function reloadRoster() {
       if (drawing) return;
       applyRoster(data);
       updateCount();
-      if ($('#drawer-people')?.classList.contains('open')) renderPeople();
+      if ($('#drawer-people')?.classList.contains('open')) {
+        renderPeople();
+        renderRosterInfo();
+      }
     })
     .catch(() => {});
 }
@@ -507,7 +496,7 @@ function renderRosterInfo() {
   if (!roster) return;
   const when = roster.refreshed_at ? new Date(roster.refreshed_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '—';
   el.textContent = roster.source === 'ctp'
-    ? `${participants.length.toLocaleString('es-ES')} personas registradas en PlayCTP · lista del ${when}${roster.truncated ? ' (recortada)' : ''}${roster.warning ? ` · ${roster.warning}` : ''}`
+    ? `${participants.length.toLocaleString('es-ES')} personas registradas en PlayCTP · se actualiza sola (última lectura: ${when})${roster.truncated ? ' (recortada)' : ''}${roster.warning ? ` · ${roster.warning}` : ''}`
     : `${participants.length} usuarios del Manager (modo local, sin conexión con CTP).`;
 }
 
@@ -530,7 +519,7 @@ async function boot() {
   } catch (err) {
     if (err.status === 401) return renderLogin();
     participants = [];
-    roster = { error: err.message, can_refresh: Boolean(me?.is_admin) };
+    roster = { error: err.message };
   }
   watchRoster();
   renderSplash();

@@ -11,7 +11,7 @@ import '@fontsource/saira-condensed/800.css';
 import '@fontsource/jetbrains-mono/500.css';
 import { UNAUTHORIZED_EVENT, api } from './api.js';
 import { AppProvider } from './context.jsx';
-import { canManageStaff } from '../../shared/access.js';
+import { canManageStaff, canManageRanked } from '../../shared/access.js';
 import { Layout } from './components/Layout.jsx';
 import { EmptyState, Spinner } from './components/ui.jsx';
 import { Login } from './pages/Login.jsx';
@@ -121,8 +121,8 @@ function App() {
           <Route path="usuarios" element={canManageStaff(me) ? <UsersPage /> : <Navigate to={home} replace />} />
           <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />
-          <Route path="ranked/monitor" element={me.is_admin ? <RankedMonitorPage /> : <Navigate to={home} replace />} />
-          <Route path="ranked/partidas/:lobbyId" element={me.is_admin ? <RankedLobbyPage /> : <Navigate to={home} replace />} />
+          <Route path="ranked/monitor" element={canManageRanked(me) ? <RankedMonitorPage /> : <Navigate to={home} replace />} />
+          <Route path="ranked/partidas/:lobbyId" element={canManageRanked(me) ? <RankedLobbyPage /> : <Navigate to={home} replace />} />
           <Route path="crm" element={me.is_admin ? <Navigate to="/crm/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="crm/:section" element={me.is_admin ? <CrmPage /> : <Navigate to={home} replace />} />
           <Route path="crm/:section/:id" element={me.is_admin ? <CrmPage /> : <Navigate to={home} replace />} />

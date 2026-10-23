@@ -6,6 +6,7 @@ import { useApp } from '../context.jsx';
 import { Spinner } from '../components/ui.jsx';
 import { Badge, DataTable, Empty } from '../operations/ui.jsx';
 import { dateTime } from '../operations/model.js';
+import { canManageRanked } from '../../../shared/access.js';
 import '../operations/operations.css';
 import './ranked-monitor.css';
 
@@ -15,12 +16,13 @@ const duration = value => value == null ? '—' : value < 60 ? `${Math.round(val
 
 export default function RankedMonitorPage() {
   const {me} = useApp();
+  const allowed=canManageRanked(me),actorKey=`${me?.id}:${me?.ctp_user_id||''}:${me?.ctp_role||''}`;
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [automatic, setAutomatic] = useState(true), [queue, setQueue] = useState(''), [status, setStatus] = useState('');
   const [clock, setClock] = useState(Date.now());
   const request = useRef(0), inFlight = useRef(false);
   const load = useCallback(async () => {
-    if (!me?.is_admin || inFlight.current) return;
+    if (!allowed || inFlight.current) return;
     inFlight.current = true;
     const serial = ++request.current;
     setBusy(true);
@@ -32,15 +34,15 @@ export default function RankedMonitorPage() {
     } finally {
       if (request.current === serial) { inFlight.current = false; setBusy(false); }
     }
-  }, [me?.is_admin]);
-  useEffect(() => { void load(); return () => { ++request.current; inFlight.current = false; }; }, [load]);
+  }, [allowed,actorKey]);
+  useEffect(() => { setData(null);setError('');void load(); return () => { ++request.current; inFlight.current = false; }; }, [load]);
   useEffect(() => {
     const timer = setInterval(() => {setClock(Date.now()); if (automatic && !document.hidden) void load();}, 15000);
     const visible = () => {if (automatic && !document.hidden) void load();};
     document.addEventListener('visibilitychange', visible);
     return () => {clearInterval(timer); document.removeEventListener('visibilitychange', visible);};
   }, [automatic, load]);
-  if (!me?.is_admin) return <Navigate to="/operaciones/jornada" replace/>;
+  if (!allowed) return <Navigate to="/operaciones/jornada" replace/>;
   const stale = data && clock - Date.parse(data.observed_at) > 45000;
   const lobbies = data?.active_lobbies.filter(row => (!queue || row.queue_id === queue) && (!status || row.status === status)) || [];
   const queues = data?.queues.filter(row => !queue || row.id === queue) || [];

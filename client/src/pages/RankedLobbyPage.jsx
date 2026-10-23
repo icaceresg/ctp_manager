@@ -1,11 +1,12 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Link,Navigate,useParams} from 'react-router-dom';
-import {ArrowLeft,MessageSquare,RefreshCw,ShieldCheck,Users} from 'lucide-react';
+import {ArrowLeft,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
 import {api} from '../api.js';
 import {useApp} from '../context.jsx';
 import {Spinner} from '../components/ui.jsx';
 import {Badge,Empty} from '../operations/ui.jsx';
 import {dateTime} from '../operations/model.js';
+import {canManageRanked} from '../../../shared/access.js';
 import '../operations/operations.css';
 import './ranked-monitor.css';
 
@@ -13,27 +14,53 @@ const STATUS={voting:'Sorteo de mapa',drafting:'Formando equipos',ready:'Lista p
 const team=side=>side==='a'?'Equipo A':side==='b'?'Equipo B':'Sin asignar';
 export default function RankedLobbyPage(){
  const {me}=useApp(),{lobbyId}=useParams();
+ const allowed=canManageRanked(me),actorKey=`${me?.id}:${me?.ctp_user_id||''}:${me?.ctp_role||''}`,scope=`${actorKey}:${lobbyId}`;
  const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[before,setBefore]=useState(null);
+ const [draft,setDraft]=useState(''),[sending,setSending]=useState(false),[sendError,setSendError]=useState(''),[sent,setSent]=useState(false);
+ const pendingMessage=useRef(null),sendInFlight=useRef(false),currentScope=useRef(scope);currentScope.current=scope;
  const serial=useRef(0),inFlight=useRef(false),chatBox=useRef(null),scrollToLatest=useRef(true);
  const validId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lobbyId||'');
  const load=useCallback(async()=>{
-  if(!me?.is_admin||!validId||inFlight.current)return;
+  if(!allowed||!validId||inFlight.current)return;
   inFlight.current=true;const request=++serial.current;setBusy(true);
   const box=chatBox.current;scrollToLatest.current=!before&&(!box||box.scrollHeight-box.scrollTop-box.clientHeight<80);
   try{const next=await api.get(`/operations/ranked/lobbies/${encodeURIComponent(lobbyId)}${before?'?before='+encodeURIComponent(before):''}`);if(serial.current===request){setData(next);setError('');}}
   catch(cause){if(serial.current===request){setError(cause.message);if([401,403,404].includes(cause.status))setData(null);}}
   finally{if(serial.current===request){inFlight.current=false;setBusy(false);}}
- },[me?.is_admin,lobbyId,before,validId]);
+ },[allowed,actorKey,lobbyId,before,validId]);
  useEffect(()=>{setData(null);setError('');void load();return()=>{++serial.current;inFlight.current=false;};},[load]);
  useEffect(()=>{setBefore(null);},[lobbyId]);
+ useEffect(()=>{currentScope.current=scope;setDraft('');setSendError('');setSent(false);setSending(false);pendingMessage.current=null;sendInFlight.current=false;return()=>{currentScope.current=null;};},[scope]);
  useEffect(()=>{const visible=()=>{if(!document.hidden)void load();};const timer=setInterval(visible,15000);document.addEventListener('visibilitychange',visible);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',visible);};},[load]);
  useEffect(()=>{if(scrollToLatest.current&&chatBox.current)chatBox.current.scrollTop=chatBox.current.scrollHeight;},[data]);
- if(!me?.is_admin)return <Navigate to="/operaciones/jornada" replace/>;
+ async function sendMessage(event){
+  event.preventDefault();const message=draft.trim(),originScope=scope;
+  if(!allowed||!data?.chat.can_send||sendInFlight.current||!message||Array.from(message).length>800)return;
+  sendInFlight.current=true;setSending(true);setSendError('');setSent(false);
+  try{
+   if(pendingMessage.current?.scope!==originScope||pendingMessage.current.message!==message)pendingMessage.current={scope:originScope,message,request_id:crypto.randomUUID()};
+   const input=pendingMessage.current;
+   const receipt=await api.post(`/operations/ranked/lobbies/${encodeURIComponent(lobbyId)}/chat`,{message:input.message,request_id:input.request_id});
+   if(currentScope.current!==originScope)return;
+   if(receipt?.lobby_id!==lobbyId||receipt.request_id!==input.request_id||receipt.message?.message!==message||receipt.message.is_system!==false)throw new Error('No se ha podido verificar la confirmación del mensaje.');
+   pendingMessage.current=null;setDraft('');setSent(true);setBefore(null);scrollToLatest.current=true;
+   // A verified receipt is real data. Retire reads started before this write.
+   ++serial.current;inFlight.current=false;setBusy(false);
+   setData(previous=>{
+    if(!previous||previous.lobby.id!==lobbyId||before)return previous;
+    const all=[...previous.chat.messages.filter(item=>item.id!==receipt.message.id),receipt.message].sort((a,b)=>BigInt(a.id)<BigInt(b.id)?-1:1),messages=all.slice(-50),has_more=previous.chat.has_more||all.length>50;
+    return{...previous,chat:{...previous.chat,messages,has_more,next_before:has_more?messages[0].id:null}};
+   });
+   if(!before)void load();
+  }catch(cause){if(currentScope.current===originScope){setSendError(cause.message||'No se ha confirmado el envío. Reintenta para comprobarlo sin duplicarlo.');if([401,403,404].includes(cause.status)){setData(null);setDraft('');pendingMessage.current=null;}}}
+  finally{if(currentScope.current===originScope){sendInFlight.current=false;setSending(false);}}
+ }
+ if(!allowed)return <Navigate to="/operaciones/jornada" replace/>;
  const lobby=data?.lobby,result=data?.result;
  return <div className="page wide op-page rm-page rl-page">
   <Link className="rl-back" to="/ranked/monitor"><ArrowLeft size={16}/> Volver al monitor de Ranked</Link>
   <header className="op-heading"><div><div className="op-eyebrow"><ShieldCheck size={15}/> SUPERVISIÓN DE PARTIDA</div><h1>{lobby?.map_name||'Partida Ranked'}</h1><p>{lobby?.queue_title||'Equipos, resultado y conversación de la partida.'}</p></div><button className="btn primary" disabled={busy||!validId} onClick={()=>void load()}><RefreshCw size={16} className={busy?'spin':''}/> Actualizar</button></header>
-  <p className="op-notice rl-readonly">Solo lectura. Esta vista no entra en la partida ni envía mensajes, votos o resultados.</p>
+  <p className="op-notice rl-readonly">Supervisión de la partida. Administración y arbitraje pueden escribir en el chat, también cuando la partida ha terminado. Esta vista no envía votos ni modifica resultados.</p>
   {!validId&&<div className="op-error" role="alert">La referencia de la partida no es válida.</div>}
   {error&&<div className="op-error" role="alert">{error}{data?' Se conserva la última lectura correcta.':''}</div>}
   {!data?busy?<div className="op-loading"><Spinner/>Consultando la partida…</div>:null:<>
@@ -48,7 +75,14 @@ export default function RankedLobbyPage(){
    </section>
    <section className="rl-teams" aria-label="Equipos de la partida">{['a','b',null].map(side=>{const players=data.players.filter(p=>p.side===side);if(side===null&&!players.length)return null;return <article key={side||'pending'} className={`op-card rl-team team-${side||'pending'}`}><h2><Users size={18}/> {team(side)} <span className="muted">{players.length}</span></h2>{players.length?<ol>{players.map(player=><li key={player.slot}><strong>{player.username||'Jugador no disponible'}</strong><span>{player.is_captain?'Capitán · ':''}{player.result_vote?`Votó ${team(player.result_vote)}`:'Sin voto de resultado'}</span></li>)}</ol>:<Empty title="Sin jugadores asignados">El equipo se mostrará al formarse.</Empty>}</article>;})}</section>
    <section className="op-card"><div className="op-section-title"><div><h2><MessageSquare size={18}/> Chat de la partida</h2><p>Conversación compartida de esta partida. Los mensajes se muestran como texto.</p></div><div className="op-actions">{before&&<button className="btn" disabled={busy} onClick={()=>setBefore(null)}>Últimos mensajes</button>}<button className="btn" disabled={busy||!data.chat.has_more} onClick={()=>setBefore(data.chat.next_before)}>Mensajes anteriores</button></div></div>
-    <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><strong>{message.is_system?'CTP':message.username||'Jugador no disponible'}</strong><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes en esta página">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>
+    <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><strong>{message.is_system?'CTP':message.username||'Jugador no disponible'}{message.author_role&&<small className="rl-staff-role">{message.author_role==='admin'?'Administración':'Árbitro'}</small>}</strong><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes en esta página">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>
+    {data.chat.can_send?<form className="rl-chat-compose" onSubmit={sendMessage}>
+     <label htmlFor="ranked-staff-message">Mensaje de {me.ctp_role==='referee'?'arbitraje':'administración'}</label>
+     <textarea id="ranked-staff-message" rows={3} maxLength={1600} value={draft} disabled={sending} onChange={event=>{setDraft(event.target.value);setSent(false);}} aria-describedby="ranked-chat-help" placeholder="Escribe a los jugadores de esta partida…"/>
+     <div className="rl-chat-compose-actions"><span id="ranked-chat-help" className="muted">{new Intl.NumberFormat('es-ES').format(Array.from(draft.trim()).length)}/800 caracteres. Lo verán los jugadores de esta partida.</span><button className="btn primary" type="submit" disabled={sending||!draft.trim()||Array.from(draft.trim()).length>800}><Send size={15}/>{sending?'Enviando…':'Enviar mensaje'}</button></div>
+     {sendError&&<p className="op-error" role="alert">{sendError} Si el envío no se ha confirmado, reintenta el mismo texto para comprobarlo sin duplicarlo.</p>}
+     {sent&&<p className="op-notice" role="status">Mensaje confirmado en el chat de la partida.</p>}
+    </form>:<p className="muted rl-caption">El envío de mensajes no está disponible para esta cuenta o todavía no se ha habilitado en CTP.</p>}
    </section>
    <section className="op-card"><div className="op-section-title"><div><h2>Sorteos de mapa</h2><p>Historial de esta partida, incluidos los mapas omitidos.</p></div></div>{data.map_draws.length?<ol className="rl-draws">{data.map_draws.map(draw=><li key={draw.revision}><strong>{draw.map_name}</strong><span>{draw.skipped_at?'Omitido':'Asignado'}</span><time dateTime={draw.drawn_at}>{dateTime(draw.drawn_at)}</time></li>)}</ol>:<p className="muted">El mapa todavía no se ha sorteado.</p>}</section>
   </>}

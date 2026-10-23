@@ -51,3 +51,10 @@ export function isStaffUser(user) {
 export function canAccess(user, section) {
   return Boolean(user && (user.is_admin || user.sections?.includes(section)));
 }
+
+/** Ranked supervision is limited to the current CTP game role, not local sections. */
+export function canManageRanked(user) {
+  if (!user) return false;
+  if (user.auth_mode === 'ctp') return Boolean(user.ctp_user_id && (user.ctp_role === 'referee' || user.ctp_role === 'admin' && user.is_admin));
+  return Boolean(user.is_admin);
+}

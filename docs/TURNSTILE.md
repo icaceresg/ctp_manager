@@ -4,6 +4,8 @@ Manager usa la cuenta CTP y la clave pública `anon` del mismo entorno. El naveg
 
 La configuración pública `/api/auth/config` devuelve únicamente `provider` y `captcha: { required, siteKey }`, sin caché. El login principal y el de ruleta esperan esta configuración; si la verificación es obligatoria, un fallo de carga o un token ausente, caducado o utilizado impide el envío. Cada fallo de login requiere otro token. El servidor limita el token a 2048 caracteres y conserva un error seguro `captcha_failed`, separado de las credenciales incorrectas. Refresh y las comprobaciones de identidad mantienen su contrato anterior.
 
+Los formularios locales y el alta local no montan el widget. Si se reutiliza el controlador en modo local, el llamador debe indicar `expectedProvider: 'local'`; únicamente se acepta la configuración `provider: 'local', captcha: { required: false, siteKey: null }`. El valor esperado predeterminado es `ctp`: una respuesta local, desconocida o incompleta no puede desactivar la verificación de un formulario CTP.
+
 ## Preparar PRE antes de activar CAPTCHA en CTP Auth
 
 1. Autorizar `pre.manager.playctp.com` en el **mismo widget PRE** cuya clave secreta utiliza GoTrue PRE. Usar su clave pública; crear otro widget con otra clave secreta no sirve para este servicio compartido. El código también cubre el login de ruleta cuando se despliegue en su entorno correspondiente.

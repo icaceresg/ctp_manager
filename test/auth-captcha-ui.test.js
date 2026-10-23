@@ -43,6 +43,39 @@ test('CTP stays closed while config is loading and never loads Cloudflare when d
   h.controller.destroy();
 });
 
+test('explicit local controller accepts only disabled local schema and never loads Cloudflare', async () => {
+  const h = harness({ expectedProvider: 'local', fetchConfig: async () => ({ provider: 'local', captcha: { required: false, siteKey: null } }) });
+  await h.controller.ready;
+  assert.equal(captchaCanSubmit(h.state()), true);
+  assert.equal(h.controller.consume(), '');
+  assert.equal(h.loads, 0);
+  assert.deepEqual(h.widgets, []);
+  h.controller.reset();
+  assert.equal(captchaCanSubmit(h.state()), true);
+  h.controller.destroy();
+});
+
+test('provider mismatches and malformed disabled schemas cannot downgrade a CTP controller', async () => {
+  for (const [expectedProvider, config] of [
+    ['ctp', { provider: 'local', captcha: { required: false, siteKey: null } }],
+    ['local', { provider: 'ctp', captcha: { required: false, siteKey: null } }],
+    ['local', { provider: 'local', captcha: { required: true, siteKey: null } }],
+    ['local', { provider: 'local', captcha: { required: false } }],
+    ['local', { provider: 'local', captcha: { required: false, siteKey: 'public-test-sitekey' } }],
+    ['local', { provider: 'unknown', captcha: { required: false, siteKey: null } }],
+    ['unknown', { provider: 'unknown', captcha: { required: false, siteKey: null } }],
+    ['ctp', { provider: 'ctp', captcha: { required: false } }],
+    ['ctp', { provider: 'ctp', captcha: { required: false, siteKey: 42 } }],
+  ]) {
+    const h = harness({ expectedProvider, fetchConfig: async () => config });
+    await h.controller.ready;
+    assert.equal(captchaCanSubmit(h.state()), false);
+    assert.throws(() => h.controller.consume(), /verificación/);
+    assert.equal(h.loads, 0);
+    h.controller.destroy();
+  }
+});
+
 test('missing, malformed or unavailable public configuration fails closed', async () => {
   for (const config of [null, { provider: 'local', captcha: { required: false } }, { provider: 'ctp', captcha: {} },
     { provider: 'ctp', captcha: { required: true, siteKey: null } },

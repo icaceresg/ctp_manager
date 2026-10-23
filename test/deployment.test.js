@@ -104,6 +104,11 @@ after(async () => {
 });
 
 test('proxy HTTPS usa cookie segura y API privada sin caché', async () => {
+  const config = await request('GET', '/api/auth/config');
+  assert.equal(config.status, 200);
+  assert.equal(config.headers['cache-control'], 'no-store');
+  assert.deepEqual(config.data, { provider: 'local', captcha: { required: false, siteKey: null } });
+  // This actual local-mode password login intentionally has no CAPTCHA token.
   const response = await request('POST', '/api/auth/login', { username: 'admin', password: 'local-test-password' }, { Origin: 'https://manager.playctp.com' });
   assert.equal(response.status, 200);
   const cookie = response.headers['set-cookie'][0];

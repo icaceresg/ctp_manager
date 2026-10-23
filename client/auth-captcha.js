@@ -47,7 +47,7 @@ async function publicConfig() {
 
 // Shared by the React Manager and the standalone ruleta login. Tokens stay in
 // memory and are consumed before the request: a failed request needs a new one.
-export function createLoginCaptcha({ element, onChange, fetchConfig = publicConfig, loadApi = loadTurnstile, schedule = setTimeout, cancel = clearTimeout }) {
+export function createLoginCaptcha({ element, onChange, expectedProvider = 'ctp', fetchConfig = publicConfig, loadApi = loadTurnstile, schedule = setTimeout, cancel = clearTimeout }) {
   let active = true;
   let generation = 0;
   let api;
@@ -79,13 +79,20 @@ export function createLoginCaptcha({ element, onChange, fetchConfig = publicConf
     try {
       const config = await fetchConfig();
       if (!currentAttempt()) return;
-      if (config?.provider !== 'ctp' || typeof config?.captcha?.required !== 'boolean') throw new Error('invalid_config');
+      // The caller selects its provider, never the unauthenticated response.
+      // A CTP form must not become a local/no-CAPTCHA form on a config mismatch.
+      if (!['ctp', 'local'].includes(expectedProvider) || !config || typeof config !== 'object' || Array.isArray(config)
+        || config.provider !== expectedProvider || !config.captcha || typeof config.captcha !== 'object' || Array.isArray(config.captcha)
+        || typeof config.captcha.required !== 'boolean') throw new Error('invalid_config');
+      const siteKey = config.captcha.siteKey;
+      if (config.provider === 'local') {
+        if (config.captcha.required || siteKey !== null) throw new Error('invalid_local_config');
+      } else if ((siteKey !== null && (typeof siteKey !== 'string' || !/^[a-zA-Z0-9_-]{10,100}$/.test(siteKey)))
+        || config.captcha.required && !siteKey) throw new Error('invalid_sitekey');
       if (!config.captcha.required) {
         update({ loading: false, required: false });
         return;
       }
-      const siteKey = config.captcha.siteKey;
-      if (typeof siteKey !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(siteKey)) throw new Error('invalid_sitekey');
       const loadedApi = await loadApi();
       if (!currentAttempt()) return;
       api = loadedApi;
@@ -145,7 +152,7 @@ export function createLoginCaptcha({ element, onChange, fetchConfig = publicConf
   };
 }
 
-export function mountLoginCaptcha(container, onChange) {
+export function mountLoginCaptcha(container, onChange, { expectedProvider = 'ctp' } = {}) {
   const section = document.createElement('div');
   section.className = 'auth-captcha';
   const label = document.createElement('span');
@@ -164,7 +171,7 @@ export function mountLoginCaptcha(container, onChange) {
   retry.hidden = true;
   section.append(label, widget, status, retry);
   container.replaceChildren(section);
-  const controller = createLoginCaptcha({ element: widget, onChange: (state) => {
+  const controller = createLoginCaptcha({ element: widget, expectedProvider, onChange: (state) => {
     section.hidden = !state.loading && !state.required;
     status.textContent = state.error || (state.loading ? CAPTCHA_MESSAGES.loading : state.token ? '' : CAPTCHA_MESSAGES.required);
     retry.hidden = !state.error;

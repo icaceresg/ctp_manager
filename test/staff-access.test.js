@@ -32,8 +32,8 @@ const row = id => ({
   avatar: null, role: roles.get(id) === 'admin' ? 'admin' : roles.get(id) === 'referee' ? 'referee' : 'player',
   staff_kind: grants.get(id) ?? null, staff_enabled: grants.has(id), staff_updated_at: grants.has(id) ? '2026-10-20T12:00:00Z' : null,
   email_confirmed: id !== target || targetConfirmed,
-  // An accidental extra field at the bridge must never reach this browser API.
-  email: 'never-forward@example.invalid', access_token: 'fixture-private-provider-token',
+  // The email is shown on purpose; an accidental extra field such as a token must never reach this browser API.
+  email: id === target ? 'player@example.invalid' : 'staff@example.invalid', access_token: 'fixture-private-provider-token',
 });
 globalThis.fetch = async (url, init) => {
   assert.equal(new URL(url).origin, 'https://pre.playctp.com');
@@ -116,12 +116,15 @@ test('directory and acknowledgements expose only validated bounded fields', () =
   const query = staffDirectoryQuery({});
   const result = staffDirectoryResponse({ items: [row(target)], total: 1, offset: 0, limit: 25 }, query);
   assert.equal(result.items[0].email_confirmed, false);
-  assert.equal(JSON.stringify(result).includes('never-forward'), false);
+  // The account email is shown to staff managers (CTP migration 220); other private bridge fields are not.
+  assert.equal(result.items[0].email, 'player@example.invalid');
   assert.equal(JSON.stringify(result).includes('access_token'), false);
   for (const value of [
     { items: [row(target), row(target)], total: 2, offset: 0, limit: 25 },
     { items: [{ ...row(target), staff_kind: 'admin' }], total: 1, offset: 0, limit: 25 },
     { items: [{ ...row(target), email_confirmed: undefined }], total: 1, offset: 0, limit: 25 },
+    { items: [{ ...row(target), email: 42 }], total: 1, offset: 0, limit: 25 },
+    { items: [{ ...row(target), email: `${'x'.repeat(320)}@example.invalid` }], total: 1, offset: 0, limit: 25 },
     { items: Array(26).fill(row(target)), total: 26, offset: 0, limit: 25 },
     { items: [], total: 0, offset: 25, limit: 25 },
   ]) assert.throws(() => staffDirectoryResponse(value, query), { status: 502 });
@@ -143,7 +146,8 @@ test('coordinator lists registered accounts and assigns every non-admin role thr
   assert.equal(directory.status, 200);
   assert.deepEqual(directory.data.items.map(item => item.id), [admin, target]);
   assert.equal(directory.data.items[1].email_confirmed, false);
-  assert.equal(JSON.stringify(directory).includes('never-forward'), false);
+  assert.equal(directory.data.items[1].email, 'player@example.invalid');
+  assert.equal(JSON.stringify(directory).includes('fixture-private-provider-token'), false);
   assert.equal(observed.at(-1).actor_id, `ctp:${coordinator}`);
   for (const kind of STAFF_KINDS.map(item => item.id)) {
     const changed = await api(session, 'PATCH', `/staff-access/${target}`, { staff_kind: kind, enabled: true });

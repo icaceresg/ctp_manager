@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAdmin, requireAuth, HttpError } from '../auth.js';
 import { canManageStaff } from '../../shared/access.js';
 import { getStaffDirectory, setStaffAccess } from '../integration.js';
+import { rememberStaffAccess, rememberStaffDirectory } from '../ruleta.js';
 import {
   createRole,
   createUser,
@@ -19,8 +20,18 @@ const staffManager = (req, res, next) => {
   if (!canManageStaff(req.user)) throw new HttpError(403, 'La gestión de staff requiere administración o coordinación de CTP.');
   next();
 };
-adminRouter.get('/staff-access', requireAuth, staffManager, async (req, res) => res.json(await getStaffDirectory(req.user, req.query)));
-adminRouter.patch('/staff-access/:id', requireAuth, staffManager, async (req, res) => res.json(await setStaffAccess(req.user, req.params.id, req.body)));
+// Lo que se lee o cambia aquí se apunta también en la copia de la ruleta,
+// para que el distintivo de staff cambie sin esperar a la siguiente recarga.
+adminRouter.get('/staff-access', requireAuth, staffManager, async (req, res) => {
+  const directory = await getStaffDirectory(req.user, req.query);
+  rememberStaffDirectory(directory.items);
+  res.json(directory);
+});
+adminRouter.patch('/staff-access/:id', requireAuth, staffManager, async (req, res) => {
+  const change = await setStaffAccess(req.user, req.params.id, req.body);
+  rememberStaffAccess(change);
+  res.json(change);
+});
 adminRouter.use('/users', requireAuth, requireAdmin);
 adminRouter.use('/roles', requireAuth, requireAdmin);
 

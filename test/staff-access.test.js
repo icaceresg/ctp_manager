@@ -26,11 +26,12 @@ const originalFetch = globalThis.fetch;
 const roles = new Map([[admin, 'admin'], [coordinator, 'operations'], [caster, 'caster'], [target, null]]);
 const grants = new Map();
 const observed = [];
+let targetConfirmed = false;
 const row = id => ({
   id, username: id === admin ? 'Protected Admin' : id === coordinator ? 'Coordinator' : id === caster ? 'Caster' : 'Registered player',
   avatar: null, role: roles.get(id) === 'admin' ? 'admin' : roles.get(id) === 'referee' ? 'referee' : 'player',
   staff_kind: grants.get(id) ?? null, staff_enabled: grants.has(id), staff_updated_at: grants.has(id) ? '2026-10-20T12:00:00Z' : null,
-  email_confirmed: id !== target,
+  email_confirmed: id !== target || targetConfirmed,
   // An accidental extra field at the bridge must never reach this browser API.
   email: 'never-forward@example.invalid', access_token: 'fixture-private-provider-token',
 });
@@ -189,4 +190,29 @@ test('central administrators use the same staff directory without an administrat
   assert.equal(observed.at(-1).actor_id, `ctp:${admin}`);
   assert.equal((await api(session, 'PATCH', `/staff-access/${admin}`, { staff_kind: null, enabled: false })).status, 403);
   assert.equal(roles.get(admin), 'admin');
+});
+
+test('the roulette tags everyone with Manager access and follows staff changes at once', async () => {
+  const { listParticipants } = await import('../server/ruleta.js');
+  const admins = await signIn('admin');
+  const coordination = await signIn('coord');
+  const person = async (id) => (await listParticipants(admins.user)).people.find(item => item.key === id);
+  targetConfirmed = true;
+  try {
+    await listParticipants(admins.user, { force: true });
+    assert.equal((await person(admin)).role, 'admin');
+    assert.deepEqual(await person(target), { key: target, name: 'Registered player', role: 'player' });
+    assert.equal((await api(coordination, 'PATCH', `/staff-access/${target}`, { staff_kind: 'caster', enabled: true })).status, 200);
+    assert.deepEqual(await person(target), { key: target, name: 'Registered player', role: 'staff', staff_kind: 'caster' });
+    assert.equal((await api(coordination, 'PATCH', `/staff-access/${target}`, { staff_kind: 'referee', enabled: true })).status, 200);
+    assert.equal((await person(target)).role, 'referee');
+    assert.equal((await api(coordination, 'PATCH', `/staff-access/${target}`, { staff_kind: null, enabled: false })).status, 200);
+    assert.equal((await person(target)).role, 'player');
+    // Deactivating someone in Manager removes their access, so the tag goes too.
+    db.prepare('UPDATE users SET active=0 WHERE ctp_user_id=?').run(admin);
+    assert.equal((await person(admin)).role, 'player');
+  } finally {
+    db.prepare('UPDATE users SET active=1 WHERE ctp_user_id=?').run(admin);
+    targetConfirmed = false;
+  }
 });

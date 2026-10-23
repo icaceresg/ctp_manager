@@ -42,24 +42,27 @@ test('cada host público solo acepta peticiones de su propia página', () => {
   assert.equal(isRuletaHost(fakeReq({ host: 'manager.playctp.com' }), config), false);
 });
 
-test('la lista de CTP recorre todas las páginas y solo conserva id, nombre y rol', async () => {
+test('la lista de CTP recorre el directorio de staff y solo conserva id, nombre y acceso a Manager', async () => {
   const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-  const all = Array.from({ length: 230 }, (_, i) => ({ id: id(i + 1), username: `Jugador ${i + 1}`, role: i === 0 ? 'admin' : 'player', email: 'x@y.z', points: 5 }));
+  const all = Array.from({ length: 230 }, (_, i) => ({
+    id: id(i + 1), username: `Jugador ${i + 1}`, avatar: 'https://x/y.png', role: i === 0 ? 'admin' : 'player',
+    staff_kind: i === 1 ? 'caster' : null, staff_enabled: i === 1, staff_updated_at: null, email_confirmed: true,
+  }));
   const seen = [];
   const request = async (body) => {
     seen.push(body);
-    const { page, limit } = body.filters;
-    const items = all.slice(page * limit, page * limit + limit);
-    return { resource: 'users', items, total: all.length, has_more: (page + 1) * limit < all.length, page, limit };
+    const { offset, limit } = body.payload;
+    return { items: all.slice(offset, offset + limit), total: all.length, offset, limit };
   };
   const result = await collectRegisteredPlayers(request, 'ctp:actor');
   assert.equal(result.people.length, 230);
   assert.equal(result.total, 230);
   assert.equal(result.truncated, false);
   assert.equal(seen.length, 3);
-  assert.ok(seen.every((b) => b.action === 'admin_query' && b.resource === 'users' && b.actor_id === 'ctp:actor' && b.filters.limit === 100));
-  assert.deepEqual(Object.keys(result.people[0]).sort(), ['ctp_id', 'name', 'role']);
+  assert.ok(seen.every((b) => b.action === 'admin_service' && b.service === 'staff' && b.actor_id === 'ctp:actor' && b.payload.action === 'list' && b.payload.limit === 100));
+  assert.deepEqual(Object.keys(result.people[0]).sort(), ['ctp_id', 'email_confirmed', 'name', 'role', 'staff_enabled', 'staff_kind']);
   assert.equal(result.people[0].role, 'admin');
+  assert.deepEqual([result.people[1].staff_kind, result.people[1].staff_enabled], ['caster', true]);
 
   const capped = await collectRegisteredPlayers(request, 'ctp:actor', { maxPages: 2 });
   assert.equal(capped.people.length, 200);

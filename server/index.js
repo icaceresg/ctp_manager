@@ -27,6 +27,9 @@ app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Referrer-Policy', 'same-origin');
   res.set('X-Frame-Options', 'DENY');
+  // No script-src/frame-src/connect-src restriction is added here: Cloudflare's
+  // widget loads at challenges.cloudflare.com without changing frame-ancestors
+  // or imposing new network restrictions on the existing Manager/OBS clients.
   res.set('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
   if (req.path.startsWith('/api/')) res.set('Cache-Control', 'no-store');
   if (DEPLOYMENT.publicDeployment) res.set('Strict-Transport-Security', 'max-age=31536000');
@@ -39,7 +42,7 @@ app.use((req, res, next) => {
   }
   // ruleta.playctp.com solo expone la página de la ruleta y lo que ella usa:
   // el resto de la API de Manager no existe en ese host.
-  if (isRuletaHost(req) && req.path.startsWith('/api/') && !/^\/api\/(auth\/(status|login|logout)|ruleta(\/|$))/.test(req.path)) {
+  if (isRuletaHost(req) && req.path.startsWith('/api/') && !/^\/api\/(auth\/(status|config|login|logout)(\/|$)|ruleta(\/|$))/.test(req.path)) {
     return res.status(404).json({ error: 'Ruta no encontrada.' });
   }
   next();
@@ -70,7 +73,7 @@ app.use((req, res, next) => {
 app.use((err, req, res, next) => {
   if (err instanceof HttpError) {
     if (err.status === 429 && Number.isSafeInteger(err.retryAfterSeconds) && err.retryAfterSeconds > 0) res.set('Retry-After', String(err.retryAfterSeconds));
-    return res.status(err.status).json({ error: err.message });
+    return res.status(err.status).json({ error: err.message, ...(err.code === 'captcha_failed' ? { code: 'captcha_failed' } : {}) });
   }
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON no válido.' });
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'La solicitud supera el tamaño permitido.' });

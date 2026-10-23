@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { publicCtpAuthConfig } from '../ctp-auth.js';
 import {
   changeOwnPassword,
   createSession,
@@ -17,6 +18,11 @@ import {
 
 export const authRouter = Router();
 
+authRouter.get('/auth/config', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(publicCtpAuthConfig(AUTH_CONFIG));
+});
+
 authRouter.get('/auth/status', async (req, res) => {
   const user = await currentUser(req);
   res.json({ setup: CTP_AUTH_ENABLED || hasUsers(), authenticated: Boolean(user), user,
@@ -31,7 +37,7 @@ authRouter.post('/auth/setup', (req, res) => {
 });
 
 authRouter.post('/auth/login', async (req, res) => {
-  if (CTP_AUTH_ENABLED) return res.json({ ok: true, user: await loginCtp(req.body?.email ?? req.body?.username, req.body?.password, res, req.socket.remoteAddress) });
+  if (CTP_AUTH_ENABLED) return res.json({ ok: true, user: await loginCtp(req.body?.email ?? req.body?.username, req.body?.password, res, req.socket.remoteAddress, req.body?.captchaToken) });
   const user = login(req.body?.username, req.body?.password, req.socket.remoteAddress);
   createSession(res, user.id);
   res.json({ ok: true, user: describeUser(user) });

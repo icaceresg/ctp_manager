@@ -207,6 +207,7 @@ export async function requireAuth(req, res, next) {
 
 function ctpError(error) {
   if (!(error instanceof CtpAuthError)) return new HttpError(503, 'No se puede verificar tu cuenta CTP. Vuelve a intentarlo.');
+  if (error.message === 'captcha_failed') return Object.assign(new HttpError(400, 'Completa de nuevo la verificación de seguridad.'), { code: 'captcha_failed' });
   const messages = { 401: 'Correo o contraseña incorrectos, o sesión CTP caducada.', 403: 'Manager es exclusivo del staff autorizado de CTP.', 429: 'Demasiados intentos. Espera antes de volver a intentarlo.', 503: 'CTP no está disponible. No se ha concedido acceso.' };
   return new HttpError(error.status, messages[error.status] || messages[503]);
 }
@@ -240,14 +241,14 @@ function mirrorCtpIdentity(identity) {
   });
 }
 
-export async function loginCtp(email, password, res, peer) {
+export async function loginCtp(email, password, res, peer, captchaToken) {
   if (!CTP_AUTH_ENABLED) throw new HttpError(403, 'El acceso con cuenta CTP no está habilitado.');
   if (typeof email !== 'string' || email.length > 254 || typeof password !== 'string' || password.length > 1024) throw new HttpError(401, 'Correo o contraseña incorrectos.');
   const key = String(email || '').trim().toLowerCase();
   const attempt = reserveLogin(key, peer);
   let success = false, credentialFailure = false;
   try {
-    const tokens = await ctp.login(email, password);
+    const tokens = await ctp.login(email, password, captchaToken);
     const identity = await ctp.identity(tokens);
     const user = mirrorCtpIdentity(identity);
     const opaque = crypto.randomBytes(32).toString('base64url');

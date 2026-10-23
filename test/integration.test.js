@@ -7,6 +7,8 @@ import http from 'node:http';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { monitorFixture } from './fixtures/ranked-monitor.js';
+import { lobbyFixture, lobbyId } from './fixtures/ranked-lobby.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-integration-'));
@@ -155,6 +157,8 @@ before(async () => {
       response.end(JSON.stringify({ ok: false, code: 'forbidden', error: token })); return;
     }
     if (mode === 'malformed') { response.end(JSON.stringify({ ok: true, data: { matches: 'bad' } })); return; }
+    if (parsed.action === 'ranked_monitor') { response.end(JSON.stringify({ok:true,data:{...monitorFixture(),secret:token}}));return; }
+    if (parsed.action === 'ranked_lobby_detail') {const data=parsed.target_id===lobbyId?lobbyFixture():{schema_version:1,found:false,lobby_id:parsed.target_id};if(data.chat)data.chat.can_send=true;data.secret=token;response.end(JSON.stringify({ok:true,data}));return;}
     if (parsed.action === 'club_candidates') { response.end(JSON.stringify({ ok: true, data: clubCandidates })); return; }
     if (parsed.action === 'case_context') { response.end(JSON.stringify({ ok: true, data: { incident_id: parsed.target_id, messages: [{ id: 'message-1', author_name: 'Jugador', text: 'Necesitamos ayuda', created_at: '2026-09-29T10:00:00Z', source: 'ticket', is_staff: false, private_token: token }], next_cursor: null, web_path: '/app/retos/test' } })); return; }
     response.end(JSON.stringify({ ok: true, data: parsed.action === 'snapshot' ? snapshot : { applied: true, command_id: mode === 'wrong_ack' ? 'another-command' : parsed.command_id, type: parsed.type, target_id: parsed.target_id, ...(parsed.type?.startsWith('sanction.') ? { version: 1, source_version: 1 } : {}) } }));
@@ -399,4 +403,46 @@ test('la sanción cruza el adaptador con alcance explícito y solo el ACK cambia
   assert.equal(sent.actor_id, operatorId); assert.deepEqual(sent.payload.scopes, ['ranked']);
   const official = (await api('GET', '/operations/bootstrap')).data.sanctions.find((s) => s.id === draft.data.id);
   assert.equal(official.official, true); assert.equal(official.source, 'ctp'); assert.equal(official.source_version, 1);
+});
+
+test('local QA monitor requires an admin and only sends the signed read action with its own actor', async () => {
+  mode='ok';
+  let before=observed.length;
+  assert.equal((await api('GET','/operations/ranked/monitor',undefined,'')).status,401);
+  assert.equal(observed.length,before);
+  const result=await api('GET','/operations/ranked/monitor?actor_id=forged');
+  assert.equal(result.status,200);assert.deepEqual(result.data,monitorFixture());
+  assert.deepEqual(observed.at(-1),{action:'ranked_monitor',actor_id:operatorId});
+  assert.equal(observed.length,before+1);assert.equal(JSON.stringify(result.data).includes(token),false);
+  const role=(await api('POST','/roles',{name:'MONITOR REFEREE',staff_kind:'referee',sections:['arbitraje']})).data;
+  assert.equal((await api('POST','/users',{username:'monitor-referee',password:'monitor-test-password',role_ids:[role.id]})).status,201);
+  const session=(await api('POST','/auth/login',{username:'monitor-referee',password:'monitor-test-password'},'')).cookie;
+  before=observed.length;
+  assert.equal((await api('GET','/operations/ranked/monitor',undefined,session)).status,403);
+  assert.equal(observed.length,before);
+  mode='outage';const failure=await api('GET','/operations/ranked/monitor');
+  assert.equal(failure.status,502);assert.equal(JSON.stringify(failure.data).includes(token),false);
+  mode='ok';
+});
+
+test('Ranked lobby local QA validates queries before transport and projects private chat',async()=>{
+ mode='ok';let before=observed.length;
+ assert.equal((await api('GET',`/operations/ranked/lobbies/${lobbyId}`,undefined,'')).status,401);assert.equal(observed.length,before);
+ for(const route of['/operations/ranked/lobbies/invalid',`/operations/ranked/lobbies/${lobbyId}?before=0`,`/operations/ranked/lobbies/${lobbyId}?actor_id=forged`,`/operations/ranked/lobbies/${lobbyId}?before=1&before=2`])assert.equal((await api('GET',route)).status,400);
+ assert.equal(observed.length,before);
+ const read=await api('GET',`/operations/ranked/lobbies/${lobbyId}?before=9223372036854775807`);assert.equal(read.status,200);assert.equal(read.data.players.length,8);assert.equal(read.data.chat.messages[0].id,'9007199254740993');assert.equal(JSON.stringify(read.data).includes(token),false);
+ assert.deepEqual(observed.at(-1),{action:'ranked_lobby_detail',actor_id:operatorId,target_id:lobbyId,before:'9223372036854775807'});
+ assert.equal((await api('GET','/operations/ranked/lobbies/20000000-0000-4000-8000-000000000099')).status,404);
+ const role=(await api('POST','/roles',{name:'DETAIL REFEREE',staff_kind:'referee',sections:['arbitraje']})).data;
+ assert.equal((await api('POST','/users',{username:'detail-referee',password:'detail-test-password',role_ids:[role.id]})).status,201);
+ const session=(await api('POST','/auth/login',{username:'detail-referee',password:'detail-test-password'},'')).cookie;
+ before=observed.length;assert.equal((await api('GET',`/operations/ranked/lobbies/${lobbyId}`,undefined,session)).status,403);assert.equal(observed.length,before);
+ mode='forbidden';const denied=await api('GET',`/operations/ranked/lobbies/${lobbyId}`);assert.equal(denied.status,403);assert.equal(JSON.stringify(denied.data).includes(token),false);mode='ok';
+});
+
+test('disabled Manager writes mask the remote chat capability and block sending before transport',async()=>{
+ await start(false);mode='ok';
+ const detail=await api('GET',`/operations/ranked/lobbies/${lobbyId}`);assert.equal(detail.status,200);assert.equal(detail.data.chat.can_send,false);
+ const count=observed.length,reply=await api('POST',`/operations/ranked/lobbies/${lobbyId}/chat`,{message:'Not sent',request_id:'30000000-0000-4000-8000-000000000001'});
+ assert.equal(reply.status,403);assert.equal(observed.length,count);
 });

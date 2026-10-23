@@ -138,7 +138,7 @@ function normalize(kind, input) {
       mode:label(m.mode,100),status:label(m.status,60),score_a:numeric(m.score_a),score_b:numeric(m.score_b),
     }):[],
   };
-  if (kind === 'incident') return {...base,match_id:input.match_id?id(input.match_id):null,kind:label(input.kind||'support',30),title:label(input.title,300),status:({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[input.status]||label(input.status || 'open',80),source_status:label(input.status,80),reason:label(input.reason,8000),created_at:input.created_at || now(),priority:input.priority==='urgent'?'urgent':'normal',resolution:label(input.resolution,8000),web_path:safePath(input.web_path)};
+  if (kind === 'incident') return {...base,match_id:input.match_id?id(input.match_id):null,kind:label(input.kind||'support',30),title:label(input.title,300),status:({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[input.status]||label(input.status || 'open',80),source_status:label(input.status,80),reason:label(input.reason,8000),created_at:input.created_at || now(),priority:input.priority==='urgent'?'urgent':'normal',resolution:label(input.resolution,8000),web_path:safePath(input.web_path),reporter_id:label(input.reporter_id,160),reporter_name:label(input.reporter_name,100),assigned_name:label(input.assigned_name,100),awaiting_staff:input.awaiting_staff===true,last_message_at:typeof input.last_message_at==='string'?input.last_message_at.slice(0,64):null};
   if (kind === 'stat') return {...base,match_id:id(input.match_id),status:label(input.status,60),revision:numeric(input.revision),corrected_from_id:label(input.corrected_from_id,160),correction_reason:label(input.correction_reason,500),review_note:label(input.review_note,500),created_at:input.created_at||null,reviewed_at:input.reviewed_at||null,map_number:numeric(input.map_number),map_name:label(input.map_name,100),mode:label(input.mode,100),objective_label:label(input.objective_label,100),players:Array.isArray(input.players)?input.players.slice(0,100).map(normalizePlayer):[]};
   if (kind === 'club') return {...base,name:label(input.name,160),verified:input.verified===true,pass_active:input.pass_active===true,status:label(input.status,80)};
   if (kind === 'delivery') return {...base,status:label(input.status,60),kind:label(input.kind,100),error:label(input.error,1000),match_id:input.match_id?id(input.match_id):null};
@@ -644,6 +644,20 @@ export function prepareAdministrationCommand(user, input = {}) {
     const kind = creation ? 'administration_create' : 'administration';
     const command = queue(type, kind, item, payload, user);
     return { command, resource: save(kind, { ...item, pending_command_id: command.id }, item.source) };
+  });
+}
+
+/** A direct ticket action already applied in CTP; mirror it so the inbox reflects it before the next feed. */
+export function rememberTicketThread(thread,actorUser=null) {
+  return tx(()=>{
+    let item;try{item=record('incident',thread.ticket.id,true);}catch{return thread;/* Not in the local feed yet. */}
+    const t=thread.ticket,last=thread.messages.at(-1);
+    save('incident',{...item,
+      status:({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[t.status]||t.status,
+      source_status:t.status,reporter_id:t.author.id||item.reporter_id||null,reporter_name:t.author.username,assigned_name:t.assigned?.username||null,
+      awaiting_staff:last?!last.is_staff:false,last_message_at:last?.created_at||item.last_message_at||null,
+      ...(actorUser?{assignee_id:actorUser.id}:{})},item.source);
+    return thread;
   });
 }
 

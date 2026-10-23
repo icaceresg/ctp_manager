@@ -6,7 +6,7 @@ import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClu
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
 import { HttpError } from '../auth.js';
-import { getCaseData,getOfficialIncident } from '../integration.js';
+import { getCaseData,getOfficialIncident,getTicketThread,ticketAction } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
 
 export const integrationRouter = Router();
@@ -29,6 +29,8 @@ integrationRouter.use('/operations/integration', requireAuth);
 integrationRouter.get('/operations/integration', allow('operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones'), (req, res) => res.json(integrationStatus()));
 integrationRouter.post('/operations/integration/sync', allow('operaciones'), async (req, res) => res.json(await syncOperations()));
 integrationRouter.post('/operations/integration/commands/:id/send', requireAdmin, async (req, res) => res.json(await sendOperationCommand(req.params.id)));
+integrationRouter.get('/operations/tickets/:id',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getTicketThread(req.user,req.params.id)));
+integrationRouter.post('/operations/tickets/:id/actions',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await ticketAction(req.user,req.params.id,req.body||{})));
 integrationRouter.get('/operations/incidents/:id/context', requireAuth, allow('arbitraje'), async (req, res) => res.json(await getIncidentContext(req.user, req.params.id, req.query.cursor)));
 integrationRouter.get('/operations/competition', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getCompetitionData(req.user, req.query)));
 integrationRouter.get('/operations/history', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getOperationHistory(req.user, req.query)));

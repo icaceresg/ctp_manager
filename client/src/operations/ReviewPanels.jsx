@@ -10,6 +10,7 @@ import { dateTime, label, matchName, playersForMap } from './model.js';
 import { IncidentInbox } from './IncidentInbox.jsx';
 import { elapsedLabel, incidentNextAction } from './staffModel.js';
 import { DecisionPanel } from './DecisionPanel.jsx';
+import { TicketChat } from './TicketChat.jsx';
 
 export function IncidentsPanel({ data, mutate, me, reload }) {
   const [params, setParams] = useSearchParams();
@@ -38,14 +39,14 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
       {error && <p className="op-error" role="alert">{error}</p>}
       {incident && <section className="op-card op-case-focus"><div className="op-section-title"><div><div className="op-eyebrow">EXPEDIENTE · {incident.id.slice(0, 8)}</div><h2>{incident.title}</h2></div><div className="op-actions"><Badge value={incident.status} /><button className="btn ghost icon sm" aria-label="Información del expediente" title="Información del expediente" onClick={() => setInfoOpen(true)}><Info size={17} /></button></div></div>
         <p className="op-text op-case-reason">{incident.reason}</p>
-        <div className="op-case-essentials"><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} /><span>{data.staff.find((s) => s.id === incident.assignee_id)?.name || 'Sin asignar'}</span>{incident.priority === 'urgent' && <strong className="op-urgent">Urgente</strong>}</div>
+        <div className="op-case-essentials"><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} />{incident.reporter_name && <span>Creada por <strong>{incident.reporter_name}</strong></span>}<span>{incident.assigned_name || data.staff.find((s) => s.id === incident.assignee_id)?.name || 'Sin asignar'}</span>{incident.awaiting_staff && <strong className="op-urgent">Nuevo mensaje</strong>}{incident.priority === 'urgent' && <strong className="op-urgent">Urgente</strong>}</div>
         <div className="op-case-next"><strong>{incidentNextAction(incident)}</strong><span>Abierto hace {elapsedLabel(incident.created_at)}</span></div>
         {incident.status === 'resolution_pending' && <p className="op-notice">Resolución preparada. Falta la confirmación de CTP para cerrar el expediente oficial.</p>}
         {!closed && <div className="op-case-actions">{incident.assignee_id !== me.id && <ActionButton run={() => update({ status: 'investigating', assignee_id: me.id })}>Asumir caso</ActionButton>}<button className="btn primary" onClick={() => openDialog('resolve')}><FileCheck2 size={15} /> Preparar resolución</button><details className="op-case-more"><summary>Más acciones</summary><div><button className="btn" onClick={() => openDialog('manage')}>Cambiar seguimiento</button><button className="btn" onClick={() => openDialog('note')}><LockKeyhole size={14} /> Añadir nota</button></div></details></div>}
         <DecisionPanel data={data} reload={reload} resourceType="incident" resourceId={incident.id} />
-        <OfficialIncidentStatus incident={incident} data={data} reload={reload} mutate={mutate} />
+        {incident.source === 'ctp' && incident.kind !== 'ranked' ? <TicketChat incident={incident} reload={reload} /> : <OfficialIncidentStatus incident={incident} data={data} reload={reload} mutate={mutate} />}
         {incident.resolution && <details className="op-case-panel"><summary>Resolución registrada</summary><blockquote className="op-quote">{incident.resolution}</blockquote></details>}
-        {incident.source === 'ctp' && <details className="op-case-panel"><summary>Conversación con jugadores</summary><CaseConversation key={incident.id} incident={incident} configured={data.connection?.configured} /></details>}
+        {incident.source === 'ctp' && incident.kind === 'ranked' && <details className="op-case-panel"><summary>Conversación con jugadores</summary><CaseConversation key={incident.id} incident={incident} configured={data.connection?.configured} /></details>}
         <details className="op-case-panel"><summary>Notas del expediente · {(detail?.notes || incident.notes || []).length}</summary>
           {(detail?.notes || incident.notes || []).length ? <ol className="op-notes">{(detail?.notes || incident.notes).map((n) => <li key={n.id}><div className="op-note-heading"><strong>{n.author_name || n.actor_name || 'Staff'}</strong><Badge value={n.visibility === 'internal' ? 'draft' : n.delivery_status || 'pending'}>{n.visibility === 'internal' ? 'Interna' : n.delivery_status === 'delivered' ? 'Enviada a CTP' : 'Respuesta a CTP · pendiente'}</Badge></div><p>{n.text}</p><small>{dateTime(n.created_at)}</small></li>)}</ol> : <p className="muted">Sin notas todavía.</p>}
         </details>

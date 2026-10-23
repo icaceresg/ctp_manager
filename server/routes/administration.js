@@ -3,6 +3,7 @@ import { requireAuth,requireAdmin } from '../auth.js';
 import { queryAdministration,proposeAdministration } from '../administration.js';
 import { integrationServicesStatus,ownerAction,uploadAdministrationImage } from '../administration-services.js';
 import { crmAction } from '../crm.js';
+import { getCtpUserProfile,updateCtpUserProfile } from '../integration.js';
 
 export const administrationRouter=Router();
 administrationRouter.use('/administration',requireAuth,requireAdmin);
@@ -11,4 +12,6 @@ administrationRouter.post('/administration/commands',(req,res)=>res.json(propose
 administrationRouter.get('/administration/integrations',async(req,res)=>res.json(await integrationServicesStatus(req.user)));
 administrationRouter.post('/administration/integrations/twitch',async(req,res)=>res.json(await ownerAction(req)));
 administrationRouter.post('/administration/crm',async(req,res)=>res.json(await crmAction(req.user,req.body||{})));
+administrationRouter.get('/administration/users/:id',async(req,res)=>res.json(await getCtpUserProfile(req.user,req.params.id)));
+administrationRouter.patch('/administration/users/:id',async(req,res)=>res.json(await updateCtpUserProfile(req.user,req.params.id,req.body||{})));
 administrationRouter.post('/administration/images',async(req,res)=>res.json(await uploadAdministrationImage(req.user,req.body)));

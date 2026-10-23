@@ -26,6 +26,7 @@ export default function AdministrationPage(){
   const definition=SECTIONS.find(item=>item[0]===section);
   const [search,setSearch]=useState(params.get('q')||'');
   const [dialog,setDialog]=useState(null);
+  const [editing,setEditing]=useState(null);
   const variant=params.get('view');
   const resource=section==='mapas'&&variant==='modes'?'modes':section==='ranked'&&variant==='lobbies'?'ranked_lobbies':definition?.[2]||'summary';
   const page=Math.max(0,Number(params.get('page'))||0);
@@ -38,7 +39,7 @@ export default function AdministrationPage(){
     return {...result,operations,request_key:requestKey};
   },[resource,page,query,gameId]);
   const data=loaded?.request_key===requestKey?loaded:null;
-  useEffect(()=>{setSearch(query);setDialog(null);},[section,query,variant]);
+  useEffect(()=>{setSearch(query);setDialog(null);setEditing(null);},[section,query,variant]);
   const change=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set(key,String(value)):next.delete(key);if(key!=='page')next.delete('page');return next;},{replace:true});
   if(!me?.is_admin)return <Navigate to="/operaciones/jornada" replace/>;
   if(!definition)return <Navigate to="/administracion/resumen" replace/>;
@@ -51,7 +52,7 @@ export default function AdministrationPage(){
   const propose=(type,row,extra={})=>setDialog({type,row,extra});
   const actionButton=(title,type,row,extra={})=><button type="button" className="btn" disabled={loading||Boolean(error)||!Number.isInteger(row.manager_version)||(type==='admin.ranked.queue.open'&&!(row.map_count>0))} title={type==='admin.ranked.queue.open'&&!(row.map_count>0)?'Añade al menos un mapa activo de Hardpoint antes de abrir la cola.':undefined} onClick={()=>propose(type,row,extra)}>{title}</button>;
   const columns={
-    users:[{key:'username',title:'Cuenta',render:r=><div><strong>{r.username}</strong>{r.email&&<><br/><small>{r.email}</small></>}<br/><small>{r.platform||'Sin plataforma'}</small></div>},{key:'role',title:'Rol',render:r=>ROLE[r.role]||r.role},{key:'points',title:'Puntos'},{key:'record',title:'V / D',render:r=>`${r.wins??0} / ${r.losses??0}`},{key:'actions',title:'Permisos',render:r=>r.role==='admin'?<Badge value="active">Administrador CTP</Badge>:<Link className="btn" to={`/usuarios?q=${encodeURIComponent(r.username)}`}>Asignar función de staff</Link>}],
+    users:[{key:'username',title:'Cuenta',render:r=><div><strong>{r.username}</strong>{r.email&&<><br/><small>{r.email}</small></>}<br/><small>{[r.gamertag,r.platform||'Sin plataforma'].filter(Boolean).join(' · ')}</small></div>},{key:'role',title:'Rol',render:r=>ROLE[r.role]||r.role},{key:'points',title:'Puntos'},{key:'record',title:'V / D',render:r=>`${r.wins??0} / ${r.losses??0}`},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><button type="button" className="btn" onClick={()=>setEditing(r.id)}>Editar datos</button>{r.role==='admin'?<Badge value="active">Administrador CTP</Badge>:<Link className="btn" to={`/usuarios?q=${encodeURIComponent(r.username)}`}>Asignar función de staff</Link>}</div>}],
     teams:[{key:'name',title:'Club',render:r=><div style={{display:'flex',alignItems:'center',gap:10}}>{safeImage(r.logo)&&<img alt="" src={r.logo} width="36" height="36" style={{objectFit:'contain'}}/>}<div><strong>{r.name}</strong><br/><small>{r.tag}</small></div></div>},{key:'leader',title:'Responsable',render:r=>r.leader_name||r.leader_username||'Sin identificar'},{key:'points',title:'Puntos'},{key:'verified',title:'Verificación',render:r=><Badge value={r.verified||r.is_verified?'approved':'pending'}/>},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><Link className="btn" to={`/operaciones/clubes?club=${encodeURIComponent(r.id)}`}>Identidad y revisión</Link><button className="btn" onClick={()=>propose('admin.entitlement.grant',null,{team:r})}>Conceder acceso</button></div>}],
     entitlements:[{key:'team',title:'Club',render:r=>r.team_name||r.club_name||r.team_id},{key:'kind',title:'Acceso',render:r=>ACCESS[r.kind]||r.kind},{key:'season',title:'Season',render:r=>r.season||r.season_label||'Circuito'},{key:'status',title:'Estado',render:r=><Badge value={r.revoked_at||r.status==='revoked'?'revoked':'active'}/>},{key:'created_at',title:'Concedido',render:r=>dateTime(r.created_at)},{key:'actions',title:'Acciones',render:r=>!r.revoked_at&&r.status!=='revoked'&&actionButton('Retirar acceso','admin.entitlement.revoke',r)}],
     modes:[{key:'name',title:'Modo',render:r=><strong>{r.name}</strong>},{key:'game',title:'Juego',render:r=>gameName(data,r.game_id)},{key:'status',title:'Estado',render:r=><Badge value={r.active?'active':'paused'}/>},{key:'sort_order',title:'Orden'},{key:'actions',title:'Acciones',render:r=><div className="op-actions">{actionButton('Editar','admin.mode.update',r)}<button className="btn" aria-label={`Subir ${r.name}`} onClick={()=>propose('admin.mode.update',r,{move:-1})}><ArrowUp size={15}/></button><button className="btn" aria-label={`Bajar ${r.name}`} onClick={()=>propose('admin.mode.update',r,{move:1})}><ArrowDown size={15}/></button>{actionButton('Eliminar','admin.mode.delete',r)}</div>}],
@@ -83,7 +84,40 @@ export default function AdministrationPage(){
       {commands.length>0&&<DecisionPanel data={{...data.operations,commands}} reload={reload} onChanged={reload}/>}
     </>:!error&&<Empty title="Sin datos disponibles">Actualiza para volver a consultar CTP.</Empty>}
     {dialog&&<AdministrationDialog key={`${dialog.type}:${dialog.row?.id||'new'}`} action={dialog} data={data} onClose={()=>setDialog(null)} prepare={prepare}/>}
+    {editing&&<UserProfileDialog key={editing} id={editing} onClose={()=>setEditing(null)} onSaved={()=>{toast('Datos de la cuenta actualizados en CTP.');reload();}}/>}
   </div>;
+}
+
+const PLATFORMS=[['PC','PC'],['PlayStation','PlayStation'],['Xbox','Xbox'],['Switch','Switch'],['Movil','Móvil'],['Otra','Otra']];
+const PROFILE_FIELDS=['username','email','gamertag','activision_id','platform','discord','twitter','bio','birthdate'];
+/** Direct, versioned correction of a CTP account; CTP validates and audits each change. */
+function UserProfileDialog({id,onClose,onSaved}){
+  const {data:profile,loading,error,reload}=useData(()=>api.get(`/administration/users/${id}`),[id]);
+  if(!profile)return <FormDialog title="Editar datos de la cuenta" onClose={onClose} submitLabel="Guardar cambios" submit={()=>{throw new Error(error?'Vuelve a cargar la cuenta.':'Espera a que se cargue la cuenta.');}}>
+    {loading?<p role="status"><Spinner/> Cargando cuenta…</p>:<p className="op-error" role="alert">{error?.message||'No se ha podido cargar la cuenta.'}<button className="btn" type="button" onClick={reload}>Reintentar</button></p>}
+  </FormDialog>;
+  return <FormDialog title="Editar datos de la cuenta" onClose={onClose} submitLabel="Guardar cambios" help="Los cambios se aplican en CTP al guardar y quedan registrados en la auditoría. El rol se gestiona desde la asignación de staff." submit={async body=>{
+    const changes={};
+    for(const field of PROFILE_FIELDS){const value=(body[field]??'').trim();if(value!==(profile[field]??''))changes[field]=value;}
+    if(!Object.keys(changes).length)throw new Error('No hay cambios que guardar.');
+    if(changes.email&&body.confirm_email!=='on')throw new Error('Confirma el cambio de correo de acceso.');
+    await api.patch(`/administration/users/${id}`,{expected_version:profile.manager_version,changes});
+    onSaved();
+  }}>
+    <p><strong>{profile.username}</strong> · {ROLE[profile.role]||profile.role} · alta {dateTime(profile.created_at)}</p>
+    <div className="op-form-grid">
+      <Field label="Nombre de usuario" hint="Entre 3 y 20 caracteres. También sirve para iniciar sesión."><input name="username" required minLength={3} maxLength={20} defaultValue={profile.username}/></Field>
+      <Field label="Correo de acceso" hint={profile.email_confirmed?'Correo verificado.':'Correo sin verificar.'}><input name="email" type="email" required maxLength={254} defaultValue={profile.email||''}/></Field>
+      <Field label="Gamertag"><input name="gamertag" required maxLength={50} defaultValue={profile.gamertag}/></Field>
+      <Field label="ActivisionID" hint="Formato Nombre#1234567. Déjalo vacío para quitarlo."><input name="activision_id" maxLength={40} pattern="[^#\s][^#]{1,23}#[0-9]{4,10}" defaultValue={profile.activision_id||''}/></Field>
+      <Field label="Plataforma"><select name="platform" defaultValue={profile.platform}>{PLATFORMS.map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></Field>
+      <Field label="Fecha de nacimiento"><input name="birthdate" type="date" min="1900-01-01" defaultValue={profile.birthdate||''}/></Field>
+      <Field label="Discord"><input name="discord" maxLength={100} defaultValue={profile.discord||''}/></Field>
+      <Field label="X (Twitter)" hint="Sin @."><input name="twitter" maxLength={50} defaultValue={profile.twitter||''}/></Field>
+    </div>
+    <Field label="Biografía"><textarea name="bio" rows={3} maxLength={500} defaultValue={profile.bio||''}/></Field>
+    <label className="op-check"><input type="checkbox" name="confirm_email"/> Si cambio el correo, el jugador pasará a iniciar sesión con el nuevo inmediatamente.</label>
+  </FormDialog>;
 }
 
 function safeImage(value){if(typeof value!=='string')return false;try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password;}catch{return false;}}

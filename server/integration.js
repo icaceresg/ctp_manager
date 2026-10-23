@@ -14,6 +14,7 @@ import { PRO_VIEW_ACTION, proViewSettings, proViewState } from './pro-view-contr
 import { canManageStaff, canManageRanked } from '../shared/access.js';
 import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse } from './staff-access-contract.js';
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
+import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import { collectRegisteredPlayers } from './ruleta-contract.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
@@ -94,7 +95,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  if (body.action !== 'admin_service' || !['twitch','crm'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  if (body.action !== 'admin_service' || !['twitch','crm','users'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
   try {
@@ -108,6 +109,10 @@ async function ownerServiceFailure(body, response) {
     const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (body.service === 'crm') {
       const message = typeof error?.crm_error === 'string' && Object.hasOwn(CRM_ERRORS, error.crm_error) ? CRM_ERRORS[error.crm_error] : null;
+      return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
+    }
+    if (body.service === 'users') {
+      const message = typeof error?.profile_error === 'string' && Object.hasOwn(USER_PROFILE_ERRORS, error.profile_error) ? USER_PROFILE_ERRORS[error.profile_error] : null;
       return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
     }
     if (error?.code !== 'provider_error') return null;
@@ -527,6 +532,20 @@ export async function setStaffAccess(user, userId, body) {
   const payload = staffAccessPayload(userId, body);
   const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'staff', payload });
   return staffAccessResponse(result, payload);
+}
+
+/** Administrators read and correct a CTP account's own profile data. */
+export async function getCtpUserProfile(user, id) {
+  if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'Esta sección requiere administración CTP.');
+  const payload = { action: 'get', user_id: userProfileId(id) };
+  return userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
+}
+
+export async function updateCtpUserProfile(user, id, body) {
+  if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'Esta sección requiere administración CTP.');
+  if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  const payload = userProfilePayload(id, body);
+  return userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
 }
 
 /** Optional read polling only; writes always require a deliberate authenticated request. */

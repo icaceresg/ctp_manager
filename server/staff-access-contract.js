@@ -35,10 +35,10 @@ export function staffDirectoryResponse(value, query) {
   const items = value.items.map(row => {
     if (!object(row) || !uuid(row.id) || seen.has(row.id) || typeof row.username !== 'string' || row.username.length > 100
       || !['player', 'referee', 'admin'].includes(row.role) || row.staff_kind !== null && !kinds.has(row.staff_kind)
-      || typeof row.staff_enabled !== 'boolean' || typeof row.email_confirmed !== 'boolean' || row.staff_updated_at !== null && typeof row.staff_updated_at !== 'string') invalid();
+      || typeof row.staff_enabled !== 'boolean' || typeof row.email_confirmed !== 'boolean' || row.email != null && (typeof row.email !== 'string' || row.email.length > 320) || row.staff_updated_at !== null && typeof row.staff_updated_at !== 'string') invalid();
     seen.add(row.id);
     return { id: row.id, username: row.username, role: row.role, staff_kind: row.staff_kind,
-      staff_enabled: row.staff_enabled, staff_updated_at: row.staff_updated_at, email_confirmed: row.email_confirmed };
+      staff_enabled: row.staff_enabled, staff_updated_at: row.staff_updated_at, email: row.email ?? null, email_confirmed: row.email_confirmed };
   });
   return { items, total: value.total, offset: query.offset, limit: query.limit };
 }

@@ -54,13 +54,13 @@ export function StaffAccessPage() {
   return <div className="page" style={{ maxWidth: 1100 }}>
     <header className="page-header"><div><h1>Usuarios y funciones</h1><p>Asigna herramientas al staff con su misma cuenta CTP. Los administradores están protegidos.</p></div><button className="btn" disabled={loading} onClick={reload}><RefreshCw size={16}/>Actualizar</button></header>
     <form className="input-group" onSubmit={event => { event.preventDefault(); change('q', search.trim()); }} style={{ maxWidth: 600, marginBottom: 20 }}>
-      <input className="input" aria-label="Buscar cuentas CTP" placeholder="Buscar usuario, gamertag o correo completo…" maxLength={120} value={search} onChange={event => setSearch(event.target.value)}/><button className="btn" disabled={loading}>Buscar</button>
+      <input className="input" aria-label="Buscar cuentas CTP" placeholder="Buscar usuario, gamertag o correo…" maxLength={120} value={search} onChange={event => setSearch(event.target.value)}/><button className="btn" disabled={loading}>Buscar</button>
     </form>
     {error && <p role="alert" className="muted">{error.message} <button className="btn" onClick={reload}>Reintentar</button></p>}
     {loading && !data ? <Spinner/> : data ? <>
       <p className="muted">{data.total} cuentas · página {page + 1}</p>
       <div className="card table-card"><table className="data-table"><thead><tr><th>Cuenta CTP</th><th>Función</th><th>Acceso</th><th aria-label="Acciones"/></tr></thead><tbody>
-        {data.items.map(account => <tr key={account.id}><td><strong>{account.username}</strong>{!account.email_confirmed && <div className="muted small">Correo pendiente de confirmar</div>}</td>
+        {data.items.map(account => <tr key={account.id}><td><strong>{account.username}</strong>{account.email && <div className="muted small">{account.email}</div>}{!account.email_confirmed && <div className="muted small">Correo pendiente de confirmar</div>}</td>
           <td>{account.role === 'admin' ? 'Administrador CTP' : label(currentKind(account))}</td><td>{account.role === 'admin' || currentKind(account) ? 'Habilitado' : 'Sin acceso'}</td>
           <td style={{ textAlign: 'right' }}>{account.role === 'admin' ? <span className="muted">Cuenta protegida</span> : <button className="btn ghost sm" disabled={loading || Boolean(error)} onClick={() => setEditing(account)}><Pencil size={14}/>Cambiar función</button>}</td></tr>)}
       </tbody></table>{!data.items.length && <EmptyState icon={Users} title="No hay cuentas que coincidan"/>}</div>

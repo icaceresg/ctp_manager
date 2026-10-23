@@ -8,6 +8,13 @@ Todas las rutas se montan bajo `/api`, requieren sesión y aplican permisos en s
 - `GET /operations/matches/:id`: `{match, incidents, assignments, statistics, notes, production, audit}`; mismas restricciones. Solo notas públicas para personal ajeno a arbitraje, notas internas nunca a casters/comunicación.
 - `GET /operations/incidents/:id`: `{incident,notes,audit}` restringido a arbitraje. `staff` contiene `{id,name,username,sections,availability:[{date,status,note}]}`. Solo administración recibe además `integration_actor_id`, UUID para vincular al operador en CTP. La disponibilidad solo se entrega a la propia persona y a coordinación (`operaciones`)/administración. No se incluyen contraseñas ni sesiones. Un recurso retirado de un feed completo deja de ser accesible aunque su historial siga conservado en la base local.
 
+## Supervisión de Ranked
+
+- `GET /operations/ranked/monitor` y `GET /operations/ranked/lobbies/:id?before=<id>` requieren el rol real de CTP `admin` o `referee`. Una sección local de arbitraje no concede acceso. El detalle pagina hasta 50 mensajes y entrega `chat.can_send`; si la capacidad está ausente o las escrituras de Manager están desactivadas, vale `false`.
+- `POST /operations/ranked/lobbies/:id/chat` acepta únicamente `{message,request_id}`: texto de 1 a 800 caracteres Unicode y UUID estable por intento lógico. Está disponible en todos los estados de partida si CTP concede `ranked.chat`. No admite parámetros de consulta, identidad ni rol del cliente.
+- Manager deriva `actor_id` de la sesión y firma la acción `ranked_lobby_chat` con el lobby, texto y UUID. CTP revalida cuenta, rol y vínculo activo. El recibo debe confirmar la misma partida, UUID y texto antes de mostrarse como enviado; reintentar el mismo UUID/texto recupera el resultado sin duplicarlo. Solo se añade un mensaje: no se envían votos ni se cambian resultados, XP o colas.
+- Los mensajes nuevos de staff incluyen `author_role: "admin" | "referee"`, registrado al enviarlos. Los mensajes anteriores, de jugadores o de sistema mantienen `null`. Nunca se deduce una insignia del rol actual del autor.
+
 ## Expedientes (`arbitraje`)
 
 - `POST /operations/incidents`: `{match_id,title,reason,priority:"normal"|"urgent"}` crea expediente interno.

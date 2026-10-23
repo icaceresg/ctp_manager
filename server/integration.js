@@ -6,12 +6,12 @@ import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './co
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
 import { rankedMonitorState } from './ranked-monitor-contract.js';
-import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor } from './ranked-lobby-contract.js';
+import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor, rankedChatRequest, rankedLobbyChatReceipt } from './ranked-lobby-contract.js';
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
 import { PRO_VIEW_ACTION, proViewSettings, proViewState } from './pro-view-contract.js';
-import { canManageStaff } from '../shared/access.js';
+import { canManageStaff, canManageRanked } from '../shared/access.js';
 import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse } from './staff-access-contract.js';
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { collectRegisteredPlayers } from './ruleta-contract.js';
@@ -351,17 +351,24 @@ export async function getRankedState(user) {
   return rememberRankedState(rankedState(await request({ action: 'ranked_state', actor_id: getOperatorIdentity(user.id) })));
 }
 export async function getRankedMonitor(user) {
-  if (!user?.id) throw integrationError(401, 'Necesitas iniciar sesión.');
-  if (!user.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'La monitorización de Ranked requiere administración.');
+  requireRankedOperator(user);
   return rankedMonitorState(await request({action: 'ranked_monitor', actor_id: getOperatorIdentity(user.id)}));
 }
+function requireRankedOperator(user){
+ if(!user?.id)throw integrationError(401,'Necesitas iniciar sesión.');
+ if(!canManageRanked(user)||(user.auth_mode!=='ctp'&&config.configured&&!config.localTestMode))throw integrationError(403,'La supervisión de Ranked requiere ser administrador o árbitro de CTP.');
+}
 export async function getRankedLobbyDetail(user,lobbyId,before=null) {
-  if(!user?.id)throw integrationError(401,'Necesitas iniciar sesión.');
-  if(!user.is_admin||(user.auth_mode==='ctp'&&user.ctp_role!=='admin'))throw integrationError(403,'El detalle de Ranked requiere administración.');
+  requireRankedOperator(user);
   lobbyId=rankedLobbyId(lobbyId);before=rankedChatCursor(before);
   const value=rankedLobbyDetail(await request({action:'ranked_lobby_detail',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,before}),lobbyId);
   if(!value)throw integrationError(404,'No se ha encontrado esta partida Ranked.');
-  return value;
+  return {...value,chat:{...value.chat,can_send:value.chat.can_send&&config.writes}};
+}
+export async function sendRankedLobbyChat(user,lobbyId,body){
+ requireRankedOperator(user);lobbyId=rankedLobbyId(lobbyId);const input=rankedChatRequest(body);
+ if(!config.writes)throw integrationError(403,'Los envíos a CTP están desactivados.');
+ return rankedLobbyChatReceipt(await request({action:'ranked_lobby_chat',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,...input}),lobbyId,input);
 }
 export async function getClubCandidates(user, query) {
   if (!user?.is_admin) throw integrationError(403, 'La creación manual de clubes requiere administración.');

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
-import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedLobbyDetail, getClubCandidates, getProViewState } from '../integration.js';
+import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedLobbyDetail, sendRankedLobbyChat, getClubCandidates, getProViewState } from '../integration.js';
+import { canManageRanked } from '../../shared/access.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
@@ -9,6 +10,7 @@ import { getCaseData,getOfficialIncident } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
 
 export const integrationRouter = Router();
+const requireRanked=(req,res,next)=>canManageRanked(req.user)?next():res.status(403).json({error:'La supervisión de Ranked requiere ser administrador o árbitro de CTP.'});
 integrationRouter.get('/operations/pro-view', requireAuth, allow('realizacion'), async (req, res) => res.json(await getProViewState(req.user)));
 integrationRouter.post('/operations/pro-view/commands', requireAuth, allow('realizacion'), async (req, res) => {
   const state = await getProViewState(req.user);
@@ -32,10 +34,14 @@ integrationRouter.get('/operations/competition', requireAuth, allow('operaciones
 integrationRouter.get('/operations/history', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getOperationHistory(req.user, req.query)));
 integrationRouter.get('/operations/matches/:id/guard',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getGuardState(req.user,req.params.id)));
 integrationRouter.get('/operations/ranked', requireAuth, requireAdmin, async (req, res) => res.json(await getRankedState(req.user)));
-integrationRouter.get('/operations/ranked/monitor', requireAuth, requireAdmin, async (req, res) => res.json(await getRankedMonitor(req.user)));
-integrationRouter.get('/operations/ranked/lobbies/:id',requireAuth,requireAdmin,async(req,res)=>{
+integrationRouter.get('/operations/ranked/monitor', requireAuth, requireRanked, async (req, res) => res.json(await getRankedMonitor(req.user)));
+integrationRouter.get('/operations/ranked/lobbies/:id',requireAuth,requireRanked,async(req,res)=>{
   if(Object.keys(req.query).some(key=>key!=='before'))throw new HttpError(400,'La consulta del chat no es válida.');
   res.json(await getRankedLobbyDetail(req.user,req.params.id,req.query.before));
+});
+integrationRouter.post('/operations/ranked/lobbies/:id/chat',requireAuth,requireRanked,async(req,res)=>{
+ if(Object.keys(req.query).length)throw new HttpError(400,'La solicitud del mensaje no admite parámetros.');
+ res.json(await sendRankedLobbyChat(req.user,req.params.id,req.body));
 });
 integrationRouter.get('/operations/clubs/candidates', requireAuth, requireAdmin, async (req, res) => res.json(await getClubCandidates(req.user, req.query.query)));
 integrationRouter.post('/operations/clubs/create', requireAuth, requireAdmin, (req, res) => res.json(prepareManualClubCommand(req.user, req.body)));

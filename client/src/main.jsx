@@ -25,6 +25,7 @@ import { BoardPage } from './pages/BoardPage.jsx';
 import { OperationsPage } from './operations/OperationsPage.jsx';
 import AdministrationPage from './pages/AdministrationPage.jsx';
 import RankedMonitorPage from './pages/RankedMonitorPage.jsx';
+import RankedLobbyPage from './pages/RankedLobbyPage.jsx';
 import CrmPage from './pages/CrmPage.jsx';
 import { OP_SECTIONS } from './operations/model.js';
 import { canAccess } from '../../shared/access.js';
@@ -121,6 +122,7 @@ function App() {
           <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />
           <Route path="ranked/monitor" element={me.is_admin ? <RankedMonitorPage /> : <Navigate to={home} replace />} />
+          <Route path="ranked/partidas/:lobbyId" element={me.is_admin ? <RankedLobbyPage /> : <Navigate to={home} replace />} />
           <Route path="crm" element={me.is_admin ? <Navigate to="/crm/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="crm/:section" element={me.is_admin ? <CrmPage /> : <Navigate to={home} replace />} />
           <Route path="crm/:section/:id" element={me.is_admin ? <CrmPage /> : <Navigate to={home} replace />} />

@@ -96,6 +96,28 @@ class TrafficTests(unittest.TestCase):
         self.assertEqual(state["environments"]["pre"]["completeFrom"], NOW)
         self.assertTrue(delta["pre"]["gap"])
 
+    def test_ordinary_partial_eof_line_does_not_create_a_rate_gap(self):
+        self.path.write_bytes(encoded(event()))
+        _, state, _ = self.collect()
+        pending = encoded(event(NOW + 59, status=503))
+        with self.path.open("ab") as output:
+            output.write(encoded(event(NOW + 50)))
+            output.write(pending[:80])
+        result, state, delta = self.collect(state, NOW + 60)
+        self.assertEqual(delta["pre"], {"requests": 1, "errors5xx": 0, "gap": False})
+        self.assertFalse(state["environments"]["pre"]["backlog"])
+        self.assertLess(state["environments"]["pre"]["offset"], self.path.stat().st_size)
+        # Also exercise upgrade from the deployed state lacking the new flag.
+        del state["environments"]["pre"]["backlog"]
+        with self.path.open("ab") as output:
+            output.write(pending[80:])
+            output.write(encoded(event(NOW + 100)))
+        result, state, delta = self.collect(state, NOW + 120)
+        self.assertEqual(delta["pre"], {"requests": 2, "errors5xx": 1, "gap": False})
+        self.assertEqual(result["pre"]["requests24h"], 4)
+        self.assertEqual(self.collect(state, NOW + 180)[2]["pre"],
+                         {"requests": 0, "errors5xx": 0, "gap": False})
+
     def test_eight_mebibyte_read_ceiling_is_enforced(self):
         self.path.write_bytes(b"x" * (traffic.MAX_BYTES + 5) + b"\n" + encoded(event()))
         read_sizes = []
@@ -128,6 +150,44 @@ class TrafficTests(unittest.TestCase):
         self.assertEqual(result["pre"]["requests24h"], 1)
         self.assertTrue(delta["pre"]["gap"])
 
+    def test_record_arriving_after_observation_cutoff_is_deferred_without_false_gap(self):
+        self.path.write_bytes(encoded(event()))
+        _, state, _ = self.collect()
+        completed = encoded(event(NOW + 59))
+        future = encoded(event(NOW + 60.05, status=503,
+                               uri="/ranked?token=private-deferred-token"))
+        before = self.path.stat().st_size
+        with self.path.open("ab") as output:
+            output.write(completed + future)
+        result, state, delta = self.collect(state, NOW + 60)
+        self.assertEqual(delta["pre"], {"requests": 1, "errors5xx": 0, "gap": False})
+        self.assertEqual(result["pre"]["requests24h"], 2)
+        self.assertEqual(state["environments"]["pre"]["offset"], before + len(completed))
+        self.assertTrue(state["environments"]["pre"]["deferred"])
+        self.assertFalse(state["environments"]["pre"]["backlog"])
+        self.assertNotIn("private-deferred-token", json.dumps([result, state, delta]))
+        self.assertNotIn("198.51.100.99", json.dumps(state))
+        with self.path.open("ab") as output:
+            output.write(encoded(event(NOW + 100)))
+        result, state, delta = self.collect(state, NOW + 120)
+        self.assertEqual(delta["pre"], {"requests": 2, "errors5xx": 1, "gap": False})
+        self.assertFalse(state["environments"]["pre"]["deferred"])
+        self.assertEqual(result["pre"]["requests24h"], 4)
+        self.assertEqual(self.collect(state, NOW + 180)[2]["pre"],
+                         {"requests": 0, "errors5xx": 0, "gap": False})
+
+    def test_excessively_future_record_does_not_block_valid_following_lines(self):
+        self.path.write_bytes(encoded(event()))
+        _, state, _ = self.collect()
+        with self.path.open("ab") as output:
+            output.write(encoded(event(NOW + 71)))
+            output.write(encoded(event(NOW + 59)))
+        result, state, delta = self.collect(state, NOW + 60)
+        self.assertTrue(delta["pre"]["gap"])
+        self.assertEqual(delta["pre"]["requests"], 1)
+        self.assertFalse(state["environments"]["pre"]["deferred"])
+        self.assertEqual(state["environments"]["pre"]["offset"], self.path.stat().st_size)
+
     def test_appended_backlog_drains_without_skipping_records(self):
         self.path.write_bytes(b"")
         _, state, _ = self.collect(budget=700)
@@ -136,10 +196,14 @@ class TrafficTests(unittest.TestCase):
         for _ in range(10):
             result, state, delta = self.collect(state, budget=700)
             total += delta["pre"]["requests"]
+            # Even the final catch-up sample must not become a current rate.
+            self.assertTrue(delta["pre"]["gap"])
             if state["environments"]["pre"]["offset"] == self.path.stat().st_size:
                 break
         self.assertEqual(total, 9)
         self.assertEqual(result["pre"]["requests24h"], 9)
+        self.assertFalse(state["environments"]["pre"]["backlog"])
+        self.assertFalse(self.collect(state, budget=700)[2]["pre"]["gap"])
 
     def test_rotation_preserves_observed_totals_and_marks_coverage_gap(self):
         self.path.write_bytes(encoded(event(NOW - 86500)) + encoded(event()))
@@ -152,6 +216,21 @@ class TrafficTests(unittest.TestCase):
         self.assertEqual(delta["pre"], {"requests": 1, "errors5xx": 1, "gap": True})
         self.assertTrue(result["pre"]["partial"])
         self.assertEqual(state["environments"]["pre"]["completeFrom"], NOW + 10)
+
+    def test_legacy_small_complete_backlog_is_not_mistaken_for_an_eof_fragment(self):
+        self.path.write_bytes(b"")
+        _, state, _ = self.collect(budget=700)
+        self.path.write_bytes(encoded(event(NOW - 600)) * 6)
+        _, state, delta = self.collect(state, budget=700)
+        self.assertTrue(delta["pre"]["gap"])
+        del state["environments"]["pre"]["backlog"]
+        self.assertLess(state["environments"]["pre"]["size"] - state["environments"]["pre"]["offset"],
+                        traffic.MAX_LINE_BYTES)
+        result, state, delta = self.collect(state, NOW + 60)
+        self.assertGreater(delta["pre"]["requests"], 0)
+        self.assertTrue(delta["pre"]["gap"])
+        self.assertEqual(result["pre"]["requests24h"], 6)
+        self.assertFalse(self.collect(state, NOW + 120)[2]["pre"]["gap"])
 
     def test_copytruncate_smaller_file_detected(self):
         self.path.write_bytes(encoded(event()) * 3)
@@ -176,7 +255,7 @@ class TrafficTests(unittest.TestCase):
     def test_malformed_long_lines_and_nonfinite_values_are_safe(self):
         raw = b'{bad-json-secret}\n' + b'x' * (traffic.MAX_LINE_BYTES + 5) + b'\n'
         invalid = [[], {"ts": float("nan")}, event(duration=float("inf")),
-                   event(status=999), event(timestamp=NOW + 10), event(timestamp=10 ** 1000)]
+                   event(status=999), event(timestamp=NOW + 11), event(timestamp=10 ** 1000)]
         self.path.write_bytes(raw + b"".join(encoded(item) for item in invalid) + encoded(event()))
         result, state, delta = self.collect()
         self.assertEqual(result["pre"]["requests24h"], 2)  # invalid duration does not erase a valid request

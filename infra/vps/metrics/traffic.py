@@ -38,6 +38,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_LINE_BYTES = 64 * 1024
+DEFER_FUTURE_SECONDS = 10
 MAX_COUNTER = (1 << 53) - 1
 RETENTION_SECONDS = 24 * 60 * 60
 LATENCY_BOUNDS_MS = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000,
@@ -130,10 +131,16 @@ def _sanitize_state(value, now):
     coverage = coverage if _number(coverage) and 0 <= coverage <= now else None
     complete = value.get("completeFrom", coverage)
     complete = complete if _number(complete) and 0 <= complete <= now else None
+    # Older state did not distinguish an EOF fragment from a byte-budget stop.
+    # A sub-line remainder alone is not evidence of historical backfill.
+    backlog = value.get("backlog") is True if "backlog" in value else (
+        _file_integer(value.get("size")) - _file_integer(value.get("offset")) >= MAX_LINE_BYTES)
     return {"device": _file_integer(value.get("device")), "inode": _file_integer(value.get("inode")),
             "offset": _file_integer(value.get("offset")), "size": _file_integer(value.get("size")),
             "coverageFrom": coverage, "completeFrom": complete,
             "droppingLine": value.get("droppingLine") is True,
+            "backlog": backlog,
+            "deferred": value.get("deferred") is True,
             "unavailable": value.get("unavailable") is True,
             "buckets": buckets}
 
@@ -223,7 +230,7 @@ def _record(line, now):
         return None
     timestamp, status = value.get("ts"), value.get("status")
     request = value.get("request")
-    if (not _number(timestamp) or not 0 <= timestamp <= now
+    if (not _number(timestamp) or not 0 <= timestamp <= now + DEFER_FUTURE_SECONDS
             or not isinstance(status, int) or isinstance(status, bool) or not 100 <= status <= 599
             or not isinstance(request, dict)):
         return None
@@ -316,13 +323,15 @@ def _consume(path, cursor, now, budget):
                 return False, delta
             initial = cursor["coverageFrom"] is None
             resumed = cursor["unavailable"]
-            old_backlog = cursor["offset"] < cursor["size"] or cursor["droppingLine"]
+            old_deferred = cursor["deferred"]
+            old_unread_length = max(0, cursor["size"] - cursor["offset"])
+            old_backlog = cursor["backlog"] or cursor["droppingLine"]
             rotated = not initial and (cursor["device"] != info.st_dev or cursor["inode"] != info.st_ino
                                         or info.st_size < cursor["offset"] or info.st_size < cursor["size"])
             if initial or rotated:
                 cursor.update(device=info.st_dev, inode=info.st_ino, offset=0, size=info.st_size,
                               coverageFrom=now if initial else cursor["coverageFrom"],
-                              completeFrom=now, droppingLine=False)
+                              completeFrom=now, droppingLine=False, deferred=False)
             start = cursor["offset"]
             clipped = (initial or rotated) and info.st_size > budget
             if clipped:
@@ -331,6 +340,16 @@ def _consume(path, cursor, now, budget):
             cursor["size"] = info.st_size
             source.seek(start)
             data = source.read(min(budget, max(0, info.st_size - start)))
+            # A complete line already inside the previous file length proves
+            # backfill, including legacy cursors that lacked the backlog flag.
+            # A newly completed EOF fragment has its newline beyond that length.
+            old_backlog = old_backlog or (not initial and not rotated and not old_deferred and
+                data.find(b"\n", 0, min(len(data), old_unread_length)) >= 0)
+            # Only unread bytes beyond this read constitute a bounded backlog.
+            # A short trailing JSON fragment at the observed EOF is normal while
+            # Caddy writes; it is consumed once after its newline arrives.
+            cursor["backlog"] = start + len(data) < info.st_size
+            cursor["deferred"] = False
             cursor["unavailable"] = False
     except (OSError, ValueError, TypeError):
         # No raw OS exception or configured path is propagated to the output.
@@ -359,6 +378,7 @@ def _consume(path, cursor, now, budget):
                 gap = True
                 offset = start + len(data)
             break
+        line_start = position
         line = data[position:end]
         position = end + 1
         offset = start + position
@@ -371,6 +391,14 @@ def _consume(path, cursor, now, budget):
         if item is None:
             gap = True
             continue
+        if item["ts"] > now:
+            # A valid Caddy entry can arrive after the collector captured now,
+            # but before fstat/read. Re-read it next time without raw state or
+            # counting a historical backlog. Far-future records are rejected
+            # by _record so a bad timestamp cannot pin the cursor indefinitely.
+            offset = start + line_start
+            cursor["deferred"] = True
+            break
         first_timestamp = item["ts"] if first_timestamp is None else min(first_timestamp, item["ts"])
         if int(item["ts"] // 60) < int((now - RETENTION_SECONDS) // 60):
             continue
@@ -384,7 +412,7 @@ def _consume(path, cursor, now, budget):
             cursor["completeFrom"] = first_timestamp
     if gap:
         cursor["completeFrom"] = now
-    delta["gap"] = bool(initial or old_backlog or gap or cursor["offset"] < cursor["size"] or cursor["droppingLine"])
+    delta["gap"] = bool(initial or old_backlog or gap or cursor["backlog"] or cursor["droppingLine"])
     return True, delta
 
 
@@ -396,8 +424,12 @@ def collect_traffic(paths: dict, state: dict, now: float, max_bytes=MAX_BYTES):
     incomplete line are retained; overlong lines are discarded using a boolean
     cursor flag. At most 1,441 minute buckets and the fixed family/histogram
     dimensions survive. Persist state only after accepting the whole result.
-    A delta's ``gap`` is true for initial/backlog/rotated/incomplete/unavailable
-    reads, so history must not derive current request rates from that sample.
+    A delta's ``gap`` is true for initial/budget-backlog/rotated/unavailable or
+    corrupt/overlong reads. An ordinary unfinished EOF line is not a rate gap:
+    it is counted in the next interval once complete, never twice. The final
+    catch-up read of a bounded backlog still has gap=true.
+    Valid records at most 10 seconds ahead of now are similarly deferred at
+    their line offset; a private boolean distinguishes them from old backfill.
     """
     if not _number(now) or not 0 <= now <= 253402300799:
         raise ValueError("Invalid metrics observation time")

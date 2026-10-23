@@ -6,11 +6,17 @@
 //  - Con el puente CTP configurado: usuarios registrados en CTP. La lista solo
 //    la puede recargar un administrador CTP (es lo que permite el puente) y se
 //    guarda aquí, así el resto del staff puede sortear con la última copia.
+//    Quién sale como staff se calcula en cada lectura con el mismo criterio de
+//    acceso a Manager: rol CTP o permiso de la página de staff (que se apunta
+//    aquí en cuanto se cambia), salvo que Manager desactive a la persona o le
+//    quite todos sus roles.
 //  - Sin puente (desarrollo local): los usuarios activos del propio Manager.
 import crypto from 'node:crypto';
 import { db, tx } from './db.js';
 import { HttpError } from './auth.js';
 import { ctpBridgeConfigured, getRegisteredPlayers } from './integration.js';
+import { ruletaPerson } from './ruleta-contract.js';
+import { STAFF_KINDS } from '../shared/access.js';
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS ruleta_people (
@@ -28,6 +34,14 @@ db.exec(`
     created_at   INTEGER NOT NULL
   );
 `);
+// Las copias anteriores solo guardaban el rol CTP: se añaden los datos de
+// acceso a Manager y se fuerza una recarga para no seguir con la lista antigua.
+for (const [column, definition] of [['staff_kind', "TEXT NOT NULL DEFAULT ''"], ['staff_enabled', 'INTEGER NOT NULL DEFAULT 0'], ['email_confirmed', 'INTEGER NOT NULL DEFAULT 0']]) {
+  if (!db.prepare('PRAGMA table_info(ruleta_people)').all().some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ruleta_people ADD COLUMN ${column} ${definition}`);
+    db.prepare("DELETE FROM settings WHERE key='ruleta_refreshed_at'").run();
+  }
+}
 
 const REFRESH_MS = 10 * 60 * 1000;
 const setting = (key) => db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value ?? null;
@@ -43,8 +57,58 @@ function localPeople() {
     .sort(byName);
 }
 
+const STAFF_KIND_IDS = STAFF_KINDS.map((kind) => kind.id);
+
+/** Cuentas CTP a las que Manager ha quitado el acceso: desactivadas o sin ningún rol de staff. */
+function revokedInManager() {
+  const withRoles = new Set(
+    db.prepare(`SELECT DISTINCT ur.user_id FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE r.staff_kind IN (${STAFF_KIND_IDS.map(() => '?').join(',')})`)
+      .all(...STAFF_KIND_IDS)
+      .map((r) => r.user_id),
+  );
+  return new Set(
+    db.prepare('SELECT id, ctp_user_id, ctp_role, active FROM users WHERE ctp_user_id IS NOT NULL').all()
+      .filter((u) => !u.active || (u.ctp_role !== 'admin' && !withRoles.has(u.id)))
+      .map((u) => u.ctp_user_id.toLowerCase()),
+  );
+}
+
+/** Rol con el que sale en la ruleta: el mismo criterio con el que CTP deja entrar en Manager. */
+function effectiveRole(p, revoked) {
+  if (revoked.has(p.ctp_id)) return { role: 'player' };
+  if (p.role === 'admin') return { role: 'admin' };
+  if (p.role === 'referee') return { role: 'referee', staff_kind: 'referee' };
+  if (p.staff_enabled && p.email_confirmed && p.staff_kind) return { role: p.staff_kind === 'referee' ? 'referee' : 'staff', staff_kind: p.staff_kind };
+  return { role: 'player' };
+}
+
 function cachedPeople() {
-  return db.prepare('SELECT ctp_id, name, role FROM ruleta_people').all().map((p) => ({ key: p.ctp_id, name: p.name, role: p.role })).sort(byName);
+  const revoked = revokedInManager();
+  return db
+    .prepare('SELECT ctp_id, name, role, staff_kind, staff_enabled, email_confirmed FROM ruleta_people')
+    .all()
+    .map((p) => ({ key: p.ctp_id, name: p.name, ...effectiveRole(p, revoked) }))
+    .sort(byName);
+}
+
+/** Filas del directorio de staff recién leídas en Manager: ponen al día la copia de la ruleta. */
+export function rememberStaffDirectory(items = []) {
+  const update = db.prepare('UPDATE ruleta_people SET role=?, staff_kind=?, staff_enabled=?, email_confirmed=? WHERE ctp_id=?');
+  tx(() => {
+    for (const row of items) {
+      const person = ruletaPerson(row);
+      if (person) update.run(person.role, person.staff_kind, person.staff_enabled ? 1 : 0, person.email_confirmed ? 1 : 0, person.ctp_id);
+    }
+  });
+}
+
+/** Cambio de acceso confirmado por CTP en la página de staff (mismas reglas que manager_set_staff_access). */
+export function rememberStaffAccess(change) {
+  const id = String(change?.id || '').toLowerCase();
+  const current = db.prepare('SELECT role FROM ruleta_people WHERE ctp_id=?').get(id);
+  if (!current || current.role === 'admin') return;
+  const role = change.enabled && change.staff_kind === 'referee' ? 'referee' : 'player';
+  db.prepare('UPDATE ruleta_people SET role=?, staff_kind=?, staff_enabled=? WHERE ctp_id=?').run(role, change.staff_kind || '', change.enabled ? 1 : 0, id);
 }
 
 async function refreshFromCtp(user) {
@@ -52,8 +116,8 @@ async function refreshFromCtp(user) {
     .then(({ people, total, truncated }) => {
       tx(() => {
         db.prepare('DELETE FROM ruleta_people').run();
-        const insert = db.prepare('INSERT INTO ruleta_people(ctp_id,name,role) VALUES(?,?,?)');
-        for (const p of people) insert.run(p.ctp_id, p.name, p.role);
+        const insert = db.prepare('INSERT INTO ruleta_people(ctp_id,name,role,staff_kind,staff_enabled,email_confirmed) VALUES(?,?,?,?,?,?)');
+        for (const p of people) insert.run(p.ctp_id, p.name, p.role, p.staff_kind, p.staff_enabled ? 1 : 0, p.email_confirmed ? 1 : 0);
         saveSetting('ruleta_refreshed_at', Date.now());
         saveSetting('ruleta_total', total);
         saveSetting('ruleta_truncated', truncated ? 1 : 0);

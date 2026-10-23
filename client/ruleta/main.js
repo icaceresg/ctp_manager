@@ -22,6 +22,10 @@ let drawing = false;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const $ = (sel) => app.querySelector(sel);
 
+// Distintivo de quien tiene acceso a Manager, según su función de staff.
+const STAFF_LABELS = { operations: 'coordinación', referee: 'árbitro', production: 'producción', caster: 'caster', communications: 'comunicación', clubs: 'clubes', executive: 'dirección' };
+const roleLabel = (p) => (p.role === 'admin' ? 'admin' : STAFF_LABELS[p.staff_kind] || (p.role === 'referee' ? 'árbitro' : 'staff'));
+
 async function api(method, url, body) {
   const res = await fetch(`/api${url}`, {
     method,
@@ -242,7 +246,7 @@ function renderPeople() {
   list.innerHTML = participants
     .filter((p) => p.name.toLowerCase().includes(q))
     .map(
-      (p) => `<li><label><input type="checkbox" data-key="${esc(p.key)}" ${excluded.has(p.key) ? '' : 'checked'} /><span>${esc(p.name)}</span>${p.role && p.role !== 'player' ? `<em class="role">${p.role === 'admin' ? 'admin' : p.role === 'referee' ? 'árbitro' : 'staff'}</em>` : ''}</label></li>`,
+      (p) => `<li><label><input type="checkbox" data-key="${esc(p.key)}" ${excluded.has(p.key) ? '' : 'checked'} /><span>${esc(p.name)}</span>${p.role && p.role !== 'player' ? `<em class="role">${roleLabel(p)}</em>` : ''}</label></li>`,
     )
     .join('') || '<li class="muted">Nadie con ese nombre.</li>';
 }
@@ -397,12 +401,28 @@ function again() {
   stage.reset();
   drawing = false;
   // Por si alguien se ha dado de alta o de baja mientras tanto.
+  reloadRoster();
+}
+
+// Los permisos de staff se cambian en Manager en cualquier momento: la lista se
+// relee cada poco y al volver a la pestaña, nunca en mitad de un sorteo.
+function reloadRoster() {
+  if (drawing) return;
   api('GET', '/ruleta/participants')
     .then((data) => {
+      if (drawing) return;
       applyRoster(data);
       updateCount();
+      if ($('#drawer-people')?.classList.contains('open')) renderPeople();
     })
     .catch(() => {});
+}
+
+function watchRoster() {
+  setInterval(reloadRoster, 30_000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reloadRoster();
+  });
 }
 
 function onCue(name, data) {
@@ -486,6 +506,7 @@ async function boot() {
     participants = [];
     roster = { error: err.message, can_refresh: Boolean(me?.is_admin) };
   }
+  watchRoster();
   renderSplash();
 }
 

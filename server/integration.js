@@ -11,7 +11,7 @@ import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
 import { PRO_VIEW_ACTION, proViewSettings, proViewState } from './pro-view-contract.js';
-import { canManageStaff, canManageRanked } from '../shared/access.js';
+import { canAccess, canManageStaff, canManageRanked } from '../shared/access.js';
 import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse } from './staff-access-contract.js';
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
@@ -28,7 +28,9 @@ import {
   rememberAdministrationData,
   rememberCaseData,
   rememberProViewState,
+  rememberTicketThread,
 } from './operations.js';
+import { TICKET_ERRORS, ticketActionPayload, ticketId, ticketThreadResponse } from './ticket-contract.js';
 
 const ACTION_SECTIONS = Object.freeze({
   [PRO_VIEW_ACTION]: 'realizacion',
@@ -95,7 +97,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  if (body.action !== 'admin_service' || !['twitch','crm','users'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  if (body.action !== 'admin_service' || !['twitch','crm','users','tickets'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
   try {
@@ -110,6 +112,10 @@ async function ownerServiceFailure(body, response) {
     if (body.service === 'crm') {
       const message = typeof error?.crm_error === 'string' && Object.hasOwn(CRM_ERRORS, error.crm_error) ? CRM_ERRORS[error.crm_error] : null;
       return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
+    }
+    if (body.service === 'tickets') {
+      const message = typeof error?.ticket_error === 'string' && Object.hasOwn(TICKET_ERRORS, error.ticket_error) ? TICKET_ERRORS[error.ticket_error] : null;
+      return message ? integrationError(422, message) : null;
     }
     if (body.service === 'users') {
       const message = typeof error?.profile_error === 'string' && Object.hasOwn(USER_PROFILE_ERRORS, error.profile_error) ? USER_PROFILE_ERRORS[error.profile_error] : null;
@@ -532,6 +538,25 @@ export async function setStaffAccess(user, userId, body) {
   const payload = staffAccessPayload(userId, body);
   const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'staff', payload });
   return staffAccessResponse(result, payload);
+}
+
+/** Referees read and answer a CTP ticket directly; CTP applies it at once and notifies the player. */
+const canReferee = user => canAccess(user, 'arbitraje');
+export async function getTicketThread(user, id) {
+  if (!canReferee(user)) throw integrationError(403, 'Necesitas acceso de arbitraje.');
+  const payload = { action: 'thread', ticket_id: ticketId(id) };
+  const thread = ticketThreadResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tickets', payload }), payload.ticket_id);
+  rememberTicketThread(thread);
+  return thread;
+}
+
+export async function ticketAction(user, id, body) {
+  if (!canReferee(user)) throw integrationError(403, 'Necesitas acceso de arbitraje.');
+  if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  const payload = ticketActionPayload(id, body);
+  const thread = ticketThreadResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tickets', payload }), payload.ticket_id);
+  rememberTicketThread(thread, payload.action === 'status' ? null : user);
+  return thread;
 }
 
 /** Administrators read and correct a CTP account's own profile data. */

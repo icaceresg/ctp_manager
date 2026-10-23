@@ -3,9 +3,9 @@
 // criptográfico; el navegador solo lo anima. Cada sorteo queda guardado.
 //
 // Fuente de participantes:
-//  - Con el puente CTP configurado: usuarios registrados en CTP. La lista solo
-//    la puede recargar un administrador CTP (es lo que permite el puente) y se
-//    guarda aquí, así el resto del staff puede sortear con la última copia.
+//  - Con el puente CTP configurado: usuarios registrados en CTP. El servidor la
+//    recarga solo cada minuto (no hace falta que entre nadie ni pulsar nada) y
+//    la guarda aquí; si CTP falla, se sigue sorteando con la última copia.
 //    Quién sale como staff se calcula en cada lectura con el mismo criterio de
 //    acceso a Manager: rol CTP o permiso de la página de staff (que se apunta
 //    aquí en cuanto se cambia), salvo que Manager desactive a la persona o le
@@ -43,7 +43,7 @@ for (const [column, definition] of [['staff_kind', "TEXT NOT NULL DEFAULT ''"], 
   }
 }
 
-const REFRESH_MS = 10 * 60 * 1000;
+const REFRESH_MS = 60 * 1000;
 const setting = (key) => db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value ?? null;
 const saveSetting = (key, value) => db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
 const byName = (a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
@@ -111,8 +111,8 @@ export function rememberStaffAccess(change) {
   db.prepare('UPDATE ruleta_people SET role=?, staff_kind=?, staff_enabled=? WHERE ctp_id=?').run(role, change.staff_kind || '', change.enabled ? 1 : 0, id);
 }
 
-async function refreshFromCtp(user) {
-  refreshing ||= getRegisteredPlayers(user)
+function refreshFromCtp() {
+  refreshing ||= getRegisteredPlayers()
     .then(({ people, total, truncated }) => {
       tx(() => {
         db.prepare('DELETE FROM ruleta_people').run();
@@ -129,35 +129,43 @@ async function refreshFromCtp(user) {
   return refreshing;
 }
 
-/** Lista de participantes. `force` recarga desde CTP (solo administradores). */
-export async function listParticipants(user, { force = false } = {}) {
+/** Recarga periódica en segundo plano: la lista está al día aunque nadie tenga la ruleta abierta. */
+export function startRuletaSync() {
+  if (!ctpBridgeConfigured()) return null;
+  refreshFromCtp().catch(() => {});
+  const timer = setInterval(() => refreshFromCtp().catch(() => {}), REFRESH_MS);
+  timer.unref();
+  return timer;
+}
+
+/** Lista de participantes, igual para todo el staff con sesión. */
+export async function listParticipants() {
   if (!ctpBridgeConfigured()) {
-    return { source: 'manager', people: localPeople(), refreshed_at: Date.now(), can_refresh: false, truncated: false };
+    return { source: 'manager', people: localPeople(), refreshed_at: Date.now(), truncated: false };
   }
   const refreshedAt = Number(setting('ruleta_refreshed_at')) || 0;
   let warning = null;
-  if (user.is_admin && (force || Date.now() - refreshedAt > REFRESH_MS)) {
+  if (!refreshedAt) {
+    // Sin ninguna copia todavía: hay que esperar a la primera lectura.
     try {
-      await refreshFromCtp(user);
+      await refreshFromCtp();
     } catch (error) {
-      // Una caída de CTP no borra la última lista buena; se avisa y se sigue.
-      if (force || !refreshedAt) throw error instanceof HttpError ? error : new HttpError(503, 'No se pudo cargar la lista de CTP.');
-      warning = 'No se pudo actualizar desde CTP; se usa la última lista guardada.';
+      throw error instanceof HttpError ? error : new HttpError(503, 'No se pudo cargar la lista de CTP.');
     }
+  } else if (Date.now() - refreshedAt > REFRESH_MS) {
+    // Con copia, se responde ya y se pone al día por detrás. Una caída de CTP
+    // no borra la última lista buena; si dura, se avisa.
+    refreshFromCtp().catch(() => {});
+    if (Date.now() - refreshedAt > 5 * REFRESH_MS) warning = 'No se pudo actualizar desde CTP; se usa la última lista guardada.';
   }
   const people = cachedPeople();
-  if (!people.length) {
-    throw new HttpError(409, user.is_admin
-      ? 'CTP no ha devuelto ninguna persona registrada.'
-      : 'Aún no hay lista de jugadores. Un administrador de CTP tiene que abrir la ruleta una vez para cargarla.');
-  }
+  if (!people.length) throw new HttpError(409, 'CTP no ha devuelto ninguna persona registrada.');
   return {
     source: 'ctp',
     people,
     refreshed_at: Number(setting('ruleta_refreshed_at')) || null,
     total: Number(setting('ruleta_total')) || people.length,
     truncated: setting('ruleta_truncated') === '1',
-    can_refresh: Boolean(user.is_admin),
     warning,
   };
 }
@@ -168,7 +176,7 @@ export async function draw(user, body = {}) {
   if (!Array.isArray(excluded) || excluded.length > 20000 || excluded.some((k) => typeof k !== 'string' || k.length > 64)) {
     throw new HttpError(400, 'Lista de exclusiones no válida.');
   }
-  const { people, source } = await listParticipants(user);
+  const { people, source } = await listParticipants();
   const skip = new Set(excluded);
   const pool = people.filter((p) => !skip.has(p.key));
   if (!pool.length) throw new HttpError(400, 'No hay nadie en el sorteo. Elige al menos a una persona.');

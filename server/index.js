@@ -14,6 +14,7 @@ import { boardRouter } from './routes/board.js';
 import { operationsRouter } from './routes/operations.js';
 import { integrationRouter } from './routes/integration.js';
 import { startOperationsSync } from './integration.js';
+import { startRuletaSync } from './ruleta.js';
 import { obsRouter } from './routes/obs.js';
 import { administrationRouter } from './routes/administration.js';
 
@@ -109,6 +110,7 @@ if (v4Error && v6Error) {
 // Limpieza periódica de sesiones caducadas.
 setInterval(() => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()), 60 * 60 * 1000).unref();
 startOperationsSync();
+startRuletaSync();
 
 console.log(`\n  CTP Manager funcionando en ${APP_ORIGIN}`);
 console.log('  Para cerrar la app, cierra esta ventana.\n');

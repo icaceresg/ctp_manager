@@ -478,11 +478,30 @@ export async function getAdministrationService(user, service, payload) {
   return request({action:'admin_service',actor_id:getOperatorIdentity(user.id),service,payload});
 }
 
-/** Ruleta: lista de personas registradas en CTP, leída con la identidad del administrador. */
-export async function getRegisteredPlayers(user) {
-  if (!user?.is_admin) throw integrationError(403, 'Cargar la lista de CTP requiere administración.');
+/**
+ * Ruleta: lista de personas registradas en CTP. Se recarga sola, sin que nadie
+ * tenga que abrir nada: el servidor la lee con la identidad CTP de una cuenta a
+ * la que CTP deja consultar el directorio de staff (administración o
+ * coordinación). Si CTP rechaza a una, prueba con la siguiente.
+ */
+export async function getRegisteredPlayers() {
   if (!config.configured) throw integrationError(503, 'Conexión con CTP sin configurar.');
-  return collectRegisteredPlayers(request, getOperatorIdentity(user.id));
+  const readers = db.prepare(
+    `SELECT u.id FROM users u JOIN operation_operator_identities o ON o.user_id = u.id
+      WHERE u.active = 1 AND u.ctp_user_id IS NOT NULL AND o.external_id LIKE 'ctp:%'
+        AND (u.ctp_role = 'admin' OR (u.ctp_role = 'staff' AND u.ctp_staff_kind = 'operations'))
+      ORDER BY u.ctp_role = 'admin' DESC, u.last_login_at DESC`,
+  ).all();
+  let rejected = null;
+  for (const reader of readers) {
+    try {
+      return await collectRegisteredPlayers(request, getOperatorIdentity(reader.id));
+    } catch (error) {
+      if (!error.remoteRejected) throw error;
+      rejected = error;
+    }
+  }
+  throw rejected || integrationError(503, 'Ninguna cuenta de administración o coordinación de CTP ha entrado aún en Manager.');
 }
 
 export const ctpBridgeConfigured = () => config.configured;

@@ -16,7 +16,7 @@ const token='ranked-decision-transport-fixture-0123456789abcdef';
 const admin='10000000-0000-4000-8000-000000000011',referee='10000000-0000-4000-8000-000000000012';
 Object.assign(process.env,{DATA_DIR:temp,DB_PATH:path.join(temp,'decision.db'),PUBLIC_ORIGIN:origin,CTP_AUTH_MODE:'ctp',CTP_AUTH_URL:'https://pre.playctp.com',CTP_WEB_ORIGIN:'https://pre.playctp.com',CTP_AUTH_TOKEN_KEY:crypto.randomBytes(32).toString('base64url'),CTP_AUTH_ANON_KEY:`e30.${Buffer.from('{"role":"anon","exp":4102444800}').toString('base64url')}.fixture`,CTP_OPERATIONS_URL:'https://pre.playctp.com/functions/v1/manager-operations',CTP_OPERATIONS_TOKEN:token,CTP_SIGNING_SECRET:secret,CTP_ENABLE_WRITES:'true',CTP_SYNC_SECONDS:'0'});
 const roles=new Map([[admin,'admin'],[referee,'referee']]),sessions=new Map(),commands=new Map(),observed=[];
-let status='ready',version=3,mode='ok';
+let status='ready',version=3,mode='ok',moderation=false,remote=null;const receipts=new Map();
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async(url,init)=>{
  const body=JSON.parse(init.body);
@@ -26,7 +26,18 @@ globalThis.fetch=async(url,init)=>{
  }
  if(url.endsWith('/manager-operations')){
   observed.push(body);
-  if(body.action==='ranked_lobby_detail'){const data=lobbyFixture();data.lobby.status=status;return Response.json({ok:true,data});}
+  if(body.action==='ranked_lobby_detail'){const data=lobbyFixture();data.lobby.status=status;data.can_moderate=moderation;return Response.json({ok:true,data});}
+  // CTP's staff moderation receipts: replay the same request, reject a reused one.
+  if(['ranked_lobby_decision','ranked_player_ban'].includes(body.action)){
+   if(remote)return Response.json({ok:false,code:'remote'},{status:remote});
+   const {action,actor_id,request_id,...input}=body,prior=receipts.get(request_id),hash=JSON.stringify([action,actor_id,input]);
+   if(prior&&prior.hash!==hash)return Response.json({ok:false,code:'conflict'},{status:409});
+   const data=prior?{...prior.data,replayed:true}:action==='ranked_lobby_decision'
+    ?{schema_version:1,lobby_id:body.target_id,request_id,decision:body.decision,side:body.side,author_role:roles.get(actor_id.slice(4)),replayed:false}
+    :{schema_version:1,lobby_id:body.target_id,request_id,slot:body.slot,username:body.username,minutes:body.minutes,ends_at:'2026-10-23T13:00:00Z',replayed:false};
+   if(!prior){receipts.set(request_id,{hash,data});if(action==='ranked_lobby_decision')status=body.decision==='cancel'?'cancelled':'closed';}
+   return Response.json({ok:true,data});
+  }
   if(body.action==='admin_query'){
    assert.deepEqual(body,{action:'admin_query',actor_id:body.actor_id,resource:'ranked_lobbies',target_id:lobbyId,filters:{page:0,limit:1}});
    return Response.json({ok:true,data:{resource:'ranked_lobbies',items:[{id:lobbyId,status,manager_version:version}],total:1,has_more:false}});
@@ -63,13 +74,13 @@ function api(method,route,body,cookie=''){
 const route=`/operations/ranked/lobbies/${lobbyId}/decision`;
 const winner=(side='a')=>({decision:'winner',side,reason:'Captura del marcador final enviada',request_id:crypto.randomUUID()});
 
-test('only CTP administrators see and use the manual decision',async()=>{
- const adm=await signIn('admin@example.invalid'),ref=await signIn('ref@example.invalid');
- assert.equal((await api('GET',`/operations/ranked/lobbies/${lobbyId}`,undefined,adm)).data.can_decide,true);
- assert.equal((await api('GET',`/operations/ranked/lobbies/${lobbyId}`,undefined,ref)).data.can_decide,false);
- const count=observed.length;
- assert.equal((await api('POST',route,winner(),ref)).status,403);
- assert.equal(observed.length,count);
+test('admins use the console command; referees decide and block once CTP grants Ranked moderation',async()=>{
+ const adm=await signIn('admin@example.invalid'),ref=await signIn('ref@example.invalid'),detail=`/operations/ranked/lobbies/${lobbyId}`;
+ assert.equal((await api('GET',detail,undefined,adm)).data.can_decide,true);
+ let reply=(await api('GET',detail,undefined,ref)).data;
+ assert.deepEqual([reply.can_decide,reply.can_ban,'can_moderate' in reply],[false,false,false]);
+ moderation=true;reply=(await api('GET',detail,undefined,ref)).data;moderation=false;
+ assert.deepEqual([reply.can_decide,reply.can_ban],[true,true]);
 });
 
 test('a winner is applied at once with the current lobby version and the signed admin actor',async()=>{
@@ -96,4 +107,33 @@ test('invalid decisions stop before CTP',async()=>{
   assert.equal((await api('POST',route,body,adm)).status,400);
  assert.equal((await api('POST','/operations/ranked/lobbies/bad/decision',winner(),adm)).status,400);
  assert.equal(observed.length,count);
+});
+
+const ban=(extra={})=>({slot:2,username:'Player 2',minutes:30,reason:'Insultos reiterados en el chat',request_id:crypto.randomUUID(),...extra});
+test('a referee decision goes to CTP staff moderation with the exact signed actor and request',async()=>{
+ status='reported';const ref=await signIn('ref@example.invalid'),body=winner('a');
+ const reply=await api('POST',route,body,ref);
+ assert.equal(reply.status,200);assert.deepEqual(reply.data,{applied:true,lobby_id:lobbyId,request_id:body.request_id,decision:'winner',side:'a'});
+ assert.deepEqual(observed.at(-1),{action:'ranked_lobby_decision',actor_id:`ctp:${referee}`,target_id:lobbyId,request_id:body.request_id,decision:'winner',side:'a',reason:body.reason});
+ const again=await api('POST',route,body,ref);assert.equal(again.status,200);assert.equal(status,'closed');
+ const cancel={decision:'cancel',reason:'Partida duplicada por error',request_id:crypto.randomUUID()};status='voting';
+ assert.equal((await api('POST',route,cancel,ref)).status,200);assert.equal(observed.at(-1).side,null);assert.equal(status,'cancelled');
+});
+test('a referee blocks a player from Ranked for the chosen minutes, idempotently',async()=>{
+ const ref=await signIn('ref@example.invalid'),body=ban(),banRoute=`/operations/ranked/lobbies/${lobbyId}/ban`;
+ const reply=await api('POST',banRoute,body,ref);
+ assert.equal(reply.status,200);assert.deepEqual(reply.data,{schema_version:1,lobby_id:lobbyId,request_id:body.request_id,slot:2,username:'Player 2',minutes:30,ends_at:'2026-10-23T13:00:00Z',replayed:false});
+ assert.deepEqual(observed.at(-1),{action:'ranked_player_ban',actor_id:`ctp:${referee}`,target_id:lobbyId,request_id:body.request_id,slot:2,username:'Player 2',minutes:30,reason:body.reason});
+ assert.equal((await api('POST',banRoute,body,ref)).data.replayed,true);
+ const conflict=await api('POST',banRoute,{...body,minutes:60},ref);assert.equal(conflict.status,409);assert.match(conflict.data.error,/han cambiado/);
+});
+test('invalid blocks stop before CTP and CTP rejections keep a clear message',async()=>{
+ const ref=await signIn('ref@example.invalid'),banRoute=`/operations/ranked/lobbies/${lobbyId}/ban`,count=observed.length;
+ for(const body of[ban({slot:0}),ban({minutes:0}),ban({minutes:10081}),ban({reason:'corto'}),ban({username:''}),ban({user_id:'forged'}),[]])assert.equal((await api('POST',banRoute,body,ref)).status,400);
+ assert.equal((await api('POST',`${banRoute}?x=1`,ban(),ref)).status,400);
+ assert.equal(observed.length,count);
+ remote=422;const rejected=await api('POST',banRoute,ban(),ref);remote=null;
+ assert.equal(rejected.status,422);assert.match(rejected.data.error,/administradores ni árbitros/);
+ remote=403;const denied=await api('POST',banRoute,ban(),ref);remote=null;
+ assert.equal(denied.status,403);assert.match(denied.data.error,/administrador o árbitro/);
 });

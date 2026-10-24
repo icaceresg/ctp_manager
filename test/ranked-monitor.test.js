@@ -33,3 +33,13 @@ test('monitor rejects unauthenticated or non-admin users before the transport', 
   await assert.rejects(getRankedMonitor({id:1,is_admin:false,sections:['operaciones','arbitraje']}),{status:403});
   await assert.rejects(getRankedMonitor({id:1,is_admin:true,auth_mode:'ctp',ctp_role:'player'}),{status:403});
 });
+
+test('each match carries its selected mode or an open mode vote; older CTP builds omit both', () => {
+  const raw=monitorFixture();
+  assert.equal(rankedMonitorState(raw).active_lobbies[0].mode,'Search & Destroy');
+  raw.active_lobbies[0].mode='Hardpoint';raw.active_lobbies[0].mode_pending=true;
+  assert.deepEqual([rankedMonitorState(raw).active_lobbies[0].mode,rankedMonitorState(raw).active_lobbies[0].mode_pending],['Hardpoint',true]);
+  delete raw.active_lobbies[0].mode;delete raw.active_lobbies[0].mode_pending;
+  assert.deepEqual([rankedMonitorState(raw).active_lobbies[0].mode,rankedMonitorState(raw).active_lobbies[0].mode_pending],[null,false]);
+  for(const change of [row=>row.mode_pending='true',row=>row.mode='x'.repeat(81),row=>row.mode=3]){const data=monitorFixture();change(data.active_lobbies[0]);assert.throws(()=>rankedMonitorState(data),{status:502});}
+});

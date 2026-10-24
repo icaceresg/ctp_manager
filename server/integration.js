@@ -6,7 +6,7 @@ import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './co
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
 import { rankedMonitorState } from './ranked-monitor-contract.js';
-import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor, rankedChatRequest, rankedLobbyChatReceipt, rankedDecisionRequest } from './ranked-lobby-contract.js';
+import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor, rankedChatRequest, rankedLobbyChatReceipt, rankedDecisionRequest, rankedDecisionReceipt, rankedBanRequest, rankedBanReceipt } from './ranked-lobby-contract.js';
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
@@ -374,21 +374,29 @@ export async function getRankedLobbyDetail(user,lobbyId,before=null) {
   lobbyId=rankedLobbyId(lobbyId);before=rankedChatCursor(before);
   const value=rankedLobbyDetail(await request({action:'ranked_lobby_detail',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,before}),lobbyId);
   if(!value)throw integrationError(404,'No se ha encontrado esta partida Ranked.');
-  return {...value,chat:{...value.chat,can_send:value.chat.can_send&&config.writes},can_decide:canDecideRanked(user)};
+  // CTP grants Ranked moderation to every enabled admin/referee staff binding.
+ const {can_moderate,...detail}=value,moderate=can_moderate&&config.writes;
+ return {...detail,chat:{...detail.chat,can_send:detail.chat.can_send&&config.writes},can_decide:canDecideRanked(user)||moderate,can_ban:moderate};
 }
 export async function sendRankedLobbyChat(user,lobbyId,body){
  requireRankedOperator(user);lobbyId=rankedLobbyId(lobbyId);const input=rankedChatRequest(body);
  if(!config.writes)throw integrationError(403,'Los envíos a CTP están desactivados.');
  return rankedLobbyChatReceipt(await request({action:'ranked_lobby_chat',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,...input}),lobbyId,input);
 }
-/** CTP administrators may give a Ranked win or cancel the match directly; CTP applies it at once. */
+/** CTP administrators may use the console command; referees use CTP's staff moderation receipt. */
 const canDecideRanked=user=>Boolean(user?.is_admin&&(user.auth_mode!=='ctp'||user.ctp_role==='admin')&&config.writes
  &&['admin.ranked.lobby.resolve','admin.ranked.lobby.cancel'].every(type=>integrationStatus().supported_actions.includes(type)));
 // The CTP command hash includes the version read before the first attempt; a retry must reuse it.
 const rankedDecisions=new Map();
 export async function decideRankedLobby(user,lobbyId,body){
  requireRankedOperator(user);lobbyId=rankedLobbyId(lobbyId);const input=rankedDecisionRequest(body);
- if(!canDecideRanked(user))throw integrationError(403,'Dar la victoria o cancelar una partida Ranked requiere administración CTP.');
+ if(!canDecideRanked(user)){
+  if(!config.writes)throw integrationError(403,'Los envíos a CTP están desactivados.');
+  // CTP re-checks the admin/referee role, the lobby state and replays this request ID.
+  const receipt=await moderationRequest({action:'ranked_lobby_decision',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,request_id:input.request_id,decision:input.decision,side:input.side,reason:input.reason},
+   'CTP no ha aceptado la decisión. Comprueba que la partida sigue abierta y que la victoria solo se da con equipos y mapa asignados.');
+  return rankedDecisionReceipt(receipt,lobbyId,input);
+ }
  const type=input.decision==='winner'?'admin.ranked.lobby.resolve':'admin.ranked.lobby.cancel';
  const payload=input.decision==='winner'?{side:input.side,reason:input.reason}:{reason:input.reason};
  const actor=getOperatorIdentity(user.id),key=`${actor}:${input.request_id}`;
@@ -409,6 +417,24 @@ export async function decideRankedLobby(user,lobbyId,body){
  if(result?.applied!==true||result.command_id!==input.request_id||result.type!==type||result.target_id!==lobbyId)throw integrationError(502,'CTP no ha confirmado la decisión. Reintenta para comprobarla sin duplicarla.');
  rankedDecisions.delete(key);
  return{applied:true,lobby_id:lobbyId,request_id:input.request_id,decision:input.decision,side:input.side};
+}
+/** Block one player of the match from Ranked for N minutes. Admins and referees; never staff accounts. */
+export async function banRankedPlayer(user,lobbyId,body){
+ requireRankedOperator(user);lobbyId=rankedLobbyId(lobbyId);const input=rankedBanRequest(body);
+ if(!config.writes)throw integrationError(403,'Los envíos a CTP están desactivados.');
+ const receipt=await moderationRequest({action:'ranked_player_ban',actor_id:getOperatorIdentity(user.id),target_id:lobbyId,request_id:input.request_id,slot:input.slot,username:input.username,minutes:input.minutes,reason:input.reason},
+  'CTP no ha aceptado el bloqueo. No se puede bloquear a administradores ni árbitros, y la duración va de 1 minuto a 7 días.');
+ return rankedBanReceipt(receipt,lobbyId,input);
+}
+async function moderationRequest(body,rejected){
+ try{return await request(body);}
+ catch(error){
+  if(!(error instanceof HttpError))throw error;
+  if(error.status===409)throw integrationError(409,'La partida o sus jugadores han cambiado. Actualiza la partida y repite la acción.');
+  if(error.status===422)throw integrationError(422,rejected);
+  if(error.status===403)throw integrationError(403,'CTP no permite esta acción a tu cuenta. Se necesita ser administrador o árbitro de CTP.');
+  throw error;
+ }
 }
 export async function getClubCandidates(user, query) {
   if (!user?.is_admin) throw integrationError(403, 'La creación manual de clubes requiere administración.');

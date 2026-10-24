@@ -1,7 +1,7 @@
 import test,{after}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import os from'node:os';import path from'node:path';
 import{lobbyFixture,lobbyId}from'./fixtures/ranked-lobby.js';
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-detail-'));process.env.DATA_DIR=temp;process.env.DB_PATH='';process.env.PUBLIC_ORIGIN='';process.env.CTP_AUTH_MODE='local';
-const{rankedLobbyDetail,rankedLobbyId,rankedChatCursor,rankedChatRequest,rankedLobbyChatReceipt}=await import('../server/ranked-lobby-contract.js');const{getRankedLobbyDetail}=await import('../server/integration.js');const{db}=await import('../server/db.js');
+const{rankedLobbyDetail,rankedLobbyId,rankedChatCursor,rankedChatRequest,rankedLobbyChatReceipt,rankedBanRequest,rankedBanReceipt,rankedDecisionReceipt}=await import('../server/ranked-lobby-contract.js');const{getRankedLobbyDetail}=await import('../server/integration.js');const{db}=await import('../server/db.js');
 after(()=>{db.close();fs.rmSync(temp,{recursive:true,force:true,maxRetries:5});});
 test('detail projects only requested lobby, roster, votes and shared chat without secrets',()=>{
  const raw=lobbyFixture();raw.service_role='secret';raw.lobby.room_code='secret';raw.players[0].email='secret';raw.players[0].user_id='secret';raw.chat.messages[0].private_token='secret';
@@ -46,4 +46,35 @@ test('chat receipt proves exact lobby/request/text and projects no upstream secr
  const input={message:'<b>Hola</b>',request_id:requestId},raw={schema_version:1,lobby_id:lobbyId,request_id:requestId,replayed:false,secret:'private',message:{id:'9007199254740994',username:'Árbitro',message:input.message,is_system:false,author_role:'referee',created_at:'2026-10-23T12:00:00Z',token:'private'}};
  const clean=rankedLobbyChatReceipt(raw,lobbyId,input);assert.equal(JSON.stringify(clean).includes('private'),false);assert.equal(clean.message.message,input.message);
  for(const mutate of[r=>r.lobby_id=requestId,r=>r.request_id=lobbyId,r=>r.message.message='otro',r=>r.message.author_role=null,r=>r.message.is_system=true,r=>r.message.id=9007199254740994,r=>r.replayed=undefined]){const data=structuredClone(raw);mutate(data);assert.throws(()=>rankedLobbyChatReceipt(data,lobbyId,input),{status:502});}
+});
+
+test('players carry the division, XP and Top 50 they joined with, plus an active Ranked block',()=>{
+ const raw=lobbyFixture();raw.lobby.mode='Search & Destroy';raw.lobby.mode_pending=false;raw.can_moderate=true;
+ Object.assign(raw.players[0],{division:'gold',xp:1250,top50:false,ranked_ban_until:'2026-10-23T13:00:00Z'});Object.assign(raw.players[1],{division:'iridescent',xp:5400,top50:true,ranked_ban_until:null});
+ const clean=rankedLobbyDetail(raw,lobbyId);
+ assert.deepEqual(clean.players.slice(0,2).map(p=>[p.division,p.xp,p.top50,p.ranked_ban_until]),[['gold',1250,false,'2026-10-23T13:00:00Z'],['iridescent',5400,true,null]]);
+ assert.equal(clean.can_moderate,true);assert.equal(clean.lobby.mode,'Search & Destroy');
+ const legacy=rankedLobbyDetail(lobbyFixture(),lobbyId);
+ assert.deepEqual([legacy.players[0].division,legacy.players[0].xp,legacy.players[0].top50,legacy.players[0].ranked_ban_until,legacy.can_moderate,legacy.lobby.mode_pending],[null,null,null,null,false,false]);
+ for(const mutate of[r=>r.players[0].division='Gold!',r=>r.players[0].xp=-1,r=>r.players[0].xp=1.5,r=>r.players[0].top50='yes',r=>r.players[0].ranked_ban_until='mañana',r=>r.can_moderate='true',r=>r.lobby.mode_pending=1]){const data=lobbyFixture();mutate(data);assert.throws(()=>rankedLobbyDetail(data,lobbyId),{status:502});}
+});
+
+test('a Ranked block names a slot and its shown player, 1 minute to 7 days and a real reason',()=>{
+ const input={slot:2,username:'Player 2',minutes:60,reason:'  Insultos reiterados en el chat  ',request_id:requestId.toUpperCase()};
+ assert.deepEqual(rankedBanRequest(input),{slot:2,username:'Player 2',minutes:60,reason:'Insultos reiterados en el chat',request_id:requestId});
+ assert.equal(rankedBanRequest({...input,minutes:10080}).minutes,10080);
+ for(const value of[null,[],{...input,slot:0},{...input,slot:9},{...input,slot:'2'},{...input,username:''},{...input,username:'x'.repeat(101)},{...input,username:'a\u0000'},{...input,minutes:0},{...input,minutes:10081},{...input,minutes:1.5},{...input,reason:'corto'},{...input,reason:'x'.repeat(501)},{...input,request_id:'bad'},{...input,user_id:'forged'},{...input,actor_id:'forged'}])
+  assert.throws(()=>rankedBanRequest(value),{status:400});
+});
+
+test('block and decision receipts must match this lobby, request and input exactly',()=>{
+ const ban={slot:2,username:'Player 2',minutes:60,reason:'Insultos reiterados en el chat',request_id:requestId};
+ const banReply={schema_version:1,lobby_id:lobbyId,request_id:requestId,slot:2,username:'Player 2',minutes:60,ends_at:'2026-10-23T13:00:00Z',replayed:false,user_id:'private'};
+ assert.deepEqual(rankedBanReceipt(banReply,lobbyId,ban),{schema_version:1,lobby_id:lobbyId,request_id:requestId,slot:2,username:'Player 2',minutes:60,ends_at:'2026-10-23T13:00:00Z',replayed:false});
+ for(const mutate of[r=>r.lobby_id=requestId,r=>r.request_id=lobbyId,r=>r.slot=3,r=>r.username='Otro',r=>r.minutes=30,r=>r.ends_at='bad',r=>r.replayed=undefined]){const data=structuredClone(banReply);mutate(data);assert.throws(()=>rankedBanReceipt(data,lobbyId,ban),{status:502});}
+ const decision={decision:'winner',side:'b',reason:'Captura del marcador final',request_id:requestId};
+ const decisionReply={schema_version:1,lobby_id:lobbyId,request_id:requestId,decision:'winner',side:'b',author_role:'referee',replayed:true};
+ assert.deepEqual(rankedDecisionReceipt(decisionReply,lobbyId,decision),{applied:true,lobby_id:lobbyId,request_id:requestId,decision:'winner',side:'b'});
+ assert.equal(rankedDecisionReceipt({...decisionReply,decision:'cancel',side:null},lobbyId,{...decision,decision:'cancel',side:null}).side,null);
+ for(const mutate of[r=>r.side='a',r=>r.decision='cancel',r=>r.author_role='player',r=>r.lobby_id=requestId,r=>r.replayed='no']){const data=structuredClone(decisionReply);mutate(data);assert.throws(()=>rankedDecisionReceipt(data,lobbyId,decision),{status:502});}
 });

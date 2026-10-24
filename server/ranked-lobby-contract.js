@@ -20,6 +20,16 @@ export function rankedDecisionRequest(value){
  if(Array.from(reason).length<12||Array.from(reason).length>500||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(reason))throw new HttpError(400,'Escribe un motivo de entre 12 y 500 caracteres.');
  return{request_id:value.request_id.toLowerCase(),decision:value.decision,side:value.decision==='winner'?value.side:null,reason};
 }
+/** Block one player of this match from Ranked for 1 minute to 7 days. The slot and shown name must still match in CTP. */
+export function rankedBanRequest(value){
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['slot','username','minutes','reason','request_id'].includes(key)))throw new HttpError(400,'El bloqueo no es válido.');
+ if(typeof value.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.request_id))throw new HttpError(400,'La referencia del bloqueo no es válida.');
+ if(!Number.isSafeInteger(value.slot)||value.slot<1||value.slot>8||typeof value.username!=='string'||!value.username||Array.from(value.username).length>100||CONTROL.test(value.username))throw new HttpError(400,'Selecciona un jugador de la partida.');
+ if(!Number.isSafeInteger(value.minutes)||value.minutes<1||value.minutes>10080)throw new HttpError(400,'La duración debe estar entre 1 minuto y 7 días.');
+ const reason=typeof value.reason==='string'?value.reason.trim():'';
+ if(Array.from(reason).length<12||Array.from(reason).length>500||CONTROL.test(reason))throw new HttpError(400,'Escribe un motivo de entre 12 y 500 caracteres.');
+ return{request_id:value.request_id.toLowerCase(),slot:value.slot,username:value.username,minutes:value.minutes,reason};
+}
 // PostgreSQL length/left count Unicode code points rather than UTF-16 units.
 const text=(v,max)=>typeof v==='string'&&Array.from(v).length<=max?v:fail();
 const date=v=>typeof v==='string'&&v.length<=40&&Number.isFinite(Date.parse(v))?v:fail();
@@ -28,6 +38,10 @@ const number=v=>Number.isSafeInteger(v)&&v>=0?v:fail();
 const side=v=>v===null||v==='a'||v==='b'?v:fail();
 const bool=v=>typeof v==='boolean'?v:fail();
 const authorRole=v=>v===undefined||v===null?null:['admin','referee'].includes(v)?v:fail();
+const CONTROL=/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+const optional=(v,clean)=>v===undefined||v===null?null:clean(v);
+// Division ids come from CTP's XP policy (bronze … iridescent); unknown future ids are shown as sent.
+const division=v=>typeof v==='string'&&/^[a-z_]{1,40}$/.test(v)?v:fail();
 const rows=(v,max,clean)=>Array.isArray(v)&&v.length<=max?v.map(row=>row&&typeof row==='object'&&!Array.isArray(row)?clean(row):fail()):fail();
 const SYSTEM={
  'ranked.system.balancedMatchReady':'Partida Ranked preparada: equipos equilibrados y mapa asignado.',
@@ -43,8 +57,8 @@ export function rankedLobbyDetail(value,expectedId){
  if(!value.found){if(value.lobby_id!==expectedId)fail();return null;}
  const l=value.lobby;if(!l||l.id!==expectedId||!['voting','drafting','ready','reported','disputed','closed','cancelled'].includes(l.status))fail();
  let queue_id;try{queue_id=rankedLobbyId(l.queue_id);}catch{fail();}
- const lobby={id:l.id,queue_id,queue_title:text(l.queue_title,160),game_id:text(l.game_id,100),mode:text(l.mode,80),status:l.status,map_name:l.map_name===null?null:text(l.map_name,120),created_at:date(l.created_at),closed_at:optionalDate(l.closed_at),deadline_at:optionalDate(l.deadline_at)};
- const players=rows(value.players,8,p=>({slot:number(p.slot),username:p.username===null?null:text(p.username,100),side:side(p.side),is_captain:bool(p.is_captain),result_vote:side(p.result_vote)}));
+ const lobby={id:l.id,queue_id,queue_title:text(l.queue_title,160),game_id:text(l.game_id,100),mode:text(l.mode,80),mode_pending:l.mode_pending===undefined?false:bool(l.mode_pending),status:l.status,map_name:l.map_name===null?null:text(l.map_name,120),created_at:date(l.created_at),closed_at:optionalDate(l.closed_at),deadline_at:optionalDate(l.deadline_at)};
+ const players=rows(value.players,8,p=>({slot:number(p.slot),username:p.username===null?null:text(p.username,100),side:side(p.side),is_captain:bool(p.is_captain),result_vote:side(p.result_vote),division:optional(p.division,division),xp:optional(p.xp,number),top50:optional(p.top50,bool),ranked_ban_until:optional(p.ranked_ban_until,date)}));
  if(players.some(p=>p.slot<1||p.slot>8)||new Set(players.map(p=>p.slot)).size!==players.length)fail();
  const r=value.result;if(!r)fail();
  const result={winner:side(r.winner),resolution:r.resolution===null?null:systemCopy(text(r.resolution,2000)),resolution_truncated:bool(r.resolution_truncated),votes_a:number(r.votes_a),votes_b:number(r.votes_b),confirmations_required:number(r.confirmations_required),opens_at:optionalDate(r.opens_at),decides_at:optionalDate(r.decides_at),suspends_at:optionalDate(r.suspends_at)};
@@ -55,7 +69,7 @@ export function rankedLobbyDetail(value,expectedId){
  let next_before;try{next_before=rankedChatCursor(chat.next_before);}catch{fail();}
  const has_more=bool(chat.has_more);if(has_more&&(!messages.length||next_before!==messages[0].id)||!has_more&&next_before!==null)fail();
  const map_draws=rows(value.map_draws,64,d=>({revision:number(d.revision),map_name:text(d.map_name,120),drawn_at:date(d.drawn_at),skipped_at:optionalDate(d.skipped_at)}));
- return {schema_version:1,observed_at:date(value.observed_at),lobby,players,result,chat:{messages,next_before,has_more,can_send:chat.can_send===undefined?false:bool(chat.can_send)},map_draws,open_disputes:number(value.open_disputes)};
+ return {schema_version:1,observed_at:date(value.observed_at),lobby,players,result,chat:{messages,next_before,has_more,can_send:chat.can_send===undefined?false:bool(chat.can_send)},map_draws,open_disputes:number(value.open_disputes),can_moderate:value.can_moderate===undefined?false:bool(value.can_moderate)};
 }
 
 /** Accept an acknowledged message only for this exact lobby, request and text. */
@@ -64,4 +78,17 @@ export function rankedLobbyChatReceipt(value,lobbyId,input){
  const m=value.message;if(!m||m.is_system!==false||!['admin','referee'].includes(m.author_role)||m.message!==input.message)fail();
  let id;try{id=rankedChatCursor(m.id);}catch{fail();}if(!id)fail();
  return{schema_version:1,lobby_id:lobbyId,request_id:input.request_id,replayed:value.replayed,message:{id,username:m.username===null?null:text(m.username,100),message:text(m.message,800),is_system:false,author_role:m.author_role,created_at:date(m.created_at)}};
+}
+
+/** A referee/admin decision acknowledged by CTP for exactly this lobby and request. */
+export function rankedDecisionReceipt(value,lobbyId,input){
+ if(!value||value.schema_version!==1||value.lobby_id!==lobbyId||value.request_id!==input.request_id||value.decision!==input.decision
+  ||(value.side??null)!==input.side||!['admin','referee'].includes(value.author_role)||typeof value.replayed!=='boolean')fail();
+ return{applied:true,lobby_id:lobbyId,request_id:input.request_id,decision:input.decision,side:input.side};
+}
+/** A temporary Ranked block acknowledged by CTP for exactly this lobby, request, player and duration. */
+export function rankedBanReceipt(value,lobbyId,input){
+ if(!value||value.schema_version!==1||value.lobby_id!==lobbyId||value.request_id!==input.request_id||value.slot!==input.slot
+  ||value.username!==input.username||value.minutes!==input.minutes||typeof value.replayed!=='boolean')fail();
+ return{schema_version:1,lobby_id:lobbyId,request_id:input.request_id,slot:input.slot,username:input.username,minutes:input.minutes,ends_at:date(value.ends_at),replayed:value.replayed};
 }

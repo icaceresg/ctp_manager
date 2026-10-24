@@ -7,6 +7,8 @@ import { Spinner } from '../components/ui.jsx';
 import { Badge, DataTable, Empty } from '../operations/ui.jsx';
 import { dateTime } from '../operations/model.js';
 import { canManageRanked } from '../../../shared/access.js';
+import { rankedModeKey, rankedModeLabel } from './rankedLabels.js';
+import { ModeTag } from './RankedTags.jsx';
 import '../operations/operations.css';
 import './ranked-monitor.css';
 
@@ -18,7 +20,7 @@ export default function RankedMonitorPage() {
   const {me} = useApp();
   const allowed=canManageRanked(me),actorKey=`${me?.id}:${me?.ctp_user_id||''}:${me?.ctp_role||''}`;
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
-  const [automatic, setAutomatic] = useState(true), [queue, setQueue] = useState(''), [status, setStatus] = useState('');
+  const [automatic, setAutomatic] = useState(true), [queue, setQueue] = useState(''), [status, setStatus] = useState(''), [mode, setMode] = useState('');
   const [clock, setClock] = useState(Date.now());
   const request = useRef(0), inFlight = useRef(false);
   const load = useCallback(async () => {
@@ -44,7 +46,8 @@ export default function RankedMonitorPage() {
   }, [automatic, load]);
   if (!allowed) return <Navigate to="/operaciones/jornada" replace/>;
   const stale = data && clock - Date.parse(data.observed_at) > 45000;
-  const lobbies = data?.active_lobbies.filter(row => (!queue || row.queue_id === queue) && (!status || row.status === status)) || [];
+  const lobbies = data?.active_lobbies.filter(row => (!queue || row.queue_id === queue) && (!status || row.status === status)
+    && (!mode || (mode === 'pending' ? row.mode_pending : !row.mode_pending && rankedModeKey(row.mode) === mode))) || [];
   const queues = data?.queues.filter(row => !queue || row.id === queue) || [];
   const metrics = data ? [
     ['Colas simultáneas', data.summary.active_queues, `${number(data.summary.open_queues)} abiertas`, Activity],
@@ -66,10 +69,10 @@ export default function RankedMonitorPage() {
           {key:'waiting_players',title:'Buscando'}, {key:'solo_players',title:'Solos'}, {key:'waiting_parties',title:'Grupos'}, {key:'wait_avg_seconds',title:'Espera media',render:row => duration(row.wait_avg_seconds)}, {key:'wait_max_seconds',title:'Máxima',render:row => duration(row.wait_max_seconds)}, {key:'active_lobbies',title:'Partidas'}, {key:'map_count',title:'Mapas'}, {key:'presence_expired_players',title:'Presencia caducada'},
         ]}/>{data.truncated.queues && <p className="op-notice">Se muestran las primeras 50 colas. Los contadores globales incluyen todas.</p>}
       </section>
-      <section className="op-card"><div className="op-section-title"><div><h2>Partidas activas</h2><p>Desde el sorteo hasta la confirmación o revisión del resultado.</p></div><label className="rm-filter">Estado<select value={status} onChange={event => setStatus(event.target.value)}><option value="">Todos los estados</option>{Object.entries(STATUS).map(([key,title]) => <option key={key} value={key}>{title}</option>)}</select></label></div>
+      <section className="op-card"><div className="op-section-title"><div><h2>Partidas activas</h2><p>Desde el sorteo hasta la confirmación o revisión del resultado.</p></div><div className="rm-filters"><label className="rm-filter">Modo<select value={mode} onChange={event => setMode(event.target.value)}><option value="">Todos los modos</option><option value="hp">Punto caliente</option><option value="snd">BYD</option><option value="pending">Votando modo</option></select></label><label className="rm-filter">Estado<select value={status} onChange={event => setStatus(event.target.value)}><option value="">Todos los estados</option>{Object.entries(STATUS).map(([key,title]) => <option key={key} value={key}>{title}</option>)}</select></label></div></div>
         <div className="rm-statuses">{data.lobby_statuses.map(row => <span key={row.status}><span className="muted">{STATUS[row.status]}</span><strong>{number(row.count)}</strong></span>)}</div>
         <DataTable rows={lobbies} empty="Sin partidas en esta vista" emptyDetail="Cuando se forme una partida aparecerá aquí con su estado real." columns={[
-          {key:'id',title:'Partida',render:row => <Link to={`/ranked/partidas/${encodeURIComponent(row.id)}`} title="Abrir equipos, chat y resultado" className="rm-id">{row.id.slice(0,8)} ↗</Link>}, {key:'queue_title',title:'Cola'}, {key:'status',title:'Estado',render:row => <Badge value={row.status}>{STATUS[row.status]}</Badge>}, {key:'map_name',title:'Mapa',render:row => row.map_name || 'Sorteando'}, {key:'players',title:'Jugadores',render:row => `${row.players} · ${row.side_a}/${row.side_b}`}, {key:'age_seconds',title:'Desde formación',render:row => duration(row.age_seconds)}, {key:'result_votes',title:'Votos resultado'}, {key:'open_disputes',title:'Disputas'}, {key:'deadline_at',title:'Plazo',render:row => row.deadline_at?dateTime(row.deadline_at):'—'},
+          {key:'id',title:'Partida',render:row => <Link to={`/ranked/partidas/${encodeURIComponent(row.id)}`} title="Abrir equipos, chat y resultado" className="rm-id">{row.id.slice(0,8)} ↗</Link>}, {key:'queue_title',title:'Cola'}, {key:'mode',title:'Modo',render:row => <ModeTag mode={row.mode} pending={row.mode_pending}/>}, {key:'status',title:'Estado',render:row => <Badge value={row.status}>{STATUS[row.status]}</Badge>}, {key:'map_name',title:'Mapa',render:row => row.map_name || 'Sorteando'}, {key:'players',title:'Jugadores',render:row => `${row.players} · ${row.side_a}/${row.side_b}`}, {key:'age_seconds',title:'Desde formación',render:row => duration(row.age_seconds)}, {key:'result_votes',title:'Votos resultado'}, {key:'open_disputes',title:'Disputas'}, {key:'deadline_at',title:'Plazo',render:row => row.deadline_at?dateTime(row.deadline_at):'—'},
         ]}/>{data.truncated.active_lobbies && <p className="op-notice">Se muestran hasta 50 partidas. Los contadores incluyen todas las partidas activas.</p>}
       </section>
       <section className="op-card"><div className="op-section-title"><div><h2>Actividad de las últimas 24 horas</h2><p>{dateTime(data.window_started_at)} → {dateTime(data.observed_at)} · Todas las colas</p></div></div>
@@ -78,7 +81,7 @@ export default function RankedMonitorPage() {
       </section>
       <section className="op-card"><div className="op-section-title"><div><h2>Rotación y saltos de mapa</h2><p>Saltos sobre los sorteos de las últimas 24 horas. El historial incluye mapas retirados.</p></div><Link className="btn" to="/administracion/ranked">Administrar Ranked</Link></div>
         <DataTable rows={data.map_activity} empty="Todavía no hay mapas ni sorteos" emptyDetail="Las métricas aparecerán con la actividad de las partidas." columns={[
-          {key:'map_name',title:'Mapa'}, {key:'mode',title:'Modo',render:row => row.mode==='Hardpoint'?'Punto caliente':row.mode}, {key:'active_in_pool',title:'Pool actual',render:row => <Badge value={row.active_in_pool?'active':'paused'}>{row.active_in_pool?'En rotación':'Histórico'}</Badge>}, {key:'draws_24h',title:'Sorteado'}, {key:'skips_24h',title:'Omitido'}, {key:'ratio',title:'Tasa de salto',render:row => row.draws_24h?`${number(row.skips_24h/row.draws_24h*100)} %`:'—'},
+          {key:'map_name',title:'Mapa'}, {key:'mode',title:'Modo',render:row => rankedModeLabel(row.mode)}, {key:'active_in_pool',title:'Pool actual',render:row => <Badge value={row.active_in_pool?'active':'paused'}>{row.active_in_pool?'En rotación':'Histórico'}</Badge>}, {key:'draws_24h',title:'Sorteado'}, {key:'skips_24h',title:'Omitido'}, {key:'ratio',title:'Tasa de salto',render:row => row.draws_24h?`${number(row.skips_24h/row.draws_24h*100)} %`:'—'},
         ]}/>{data.truncated.map_activity && <p className="op-notice">Se muestran hasta 64 referencias de mapa.</p>}
       </section>
     </>}

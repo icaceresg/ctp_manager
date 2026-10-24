@@ -1,12 +1,14 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Link,Navigate,useParams} from 'react-router-dom';
-import {ArrowLeft,Gavel,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
+import {ArrowLeft,Ban,Gavel,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
 import {api} from '../api.js';
 import {useApp} from '../context.jsx';
 import {Spinner} from '../components/ui.jsx';
 import {Badge,Empty} from '../operations/ui.jsx';
 import {dateTime} from '../operations/model.js';
 import {canManageRanked} from '../../../shared/access.js';
+import {ModeTag,RankTag} from './RankedTags.jsx';
+import {BAN_DURATIONS} from './rankedLabels.js';
 import '../operations/operations.css';
 import './ranked-monitor.css';
 
@@ -40,6 +42,37 @@ function RankedDecision({lobby,players,onApplied}){
    <label htmlFor="ranked-decision-reason">Motivo (lo verán los jugadores en el chat de la partida)</label>
    <textarea id="ranked-decision-reason" rows={3} maxLength={1000} value={reason} disabled={busy} onChange={event=>{setReason(event.target.value);setDone('');}} placeholder="Explica la decisión…"/>
    <div className="rl-chat-compose-actions"><span className="muted">{length}/500 caracteres · mínimo 12.</span><button className={`btn ${decision==='cancel'?'danger':'primary'}`} type="submit" disabled={busy||length<12||length>500}>{busy?'Aplicando…':decision==='cancel'?'Cancelar partida':`Dar victoria al ${team(decision)}`}</button></div>
+   {error&&<p className="op-error" role="alert">{error}</p>}
+   {done&&<p className="op-notice" role="status">{done}</p>}
+  </form>
+ </section>;
+}
+/** Temporary Ranked block: the player cannot search or join Ranked until it ends. */
+function RankedBan({lobby,players,onApplied}){
+ const choices=players.filter(p=>p.username);
+ const [slot,setSlot]=useState(''),[minutes,setMinutes]=useState(60),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState('');
+ const pending=useRef(null),length=Array.from(reason.trim()).length,player=choices.find(p=>String(p.slot)===slot);
+ const durationTitle=BAN_DURATIONS.find(([value])=>value===minutes)?.[1]||`${minutes} minutos`;
+ async function submit(event){
+  event.preventDefault();if(busy||!player||length<12||length>500)return;
+  if(!window.confirm(`¿Bloquear a ${player.username} de Ranked durante ${durationTitle}? No podrá buscar ni entrar en partidas Ranked hasta que termine.`))return;
+  const input={slot:player.slot,username:player.username,minutes,reason:reason.trim()};
+  // Keep the reference while the input is unchanged, so an unconfirmed retry cannot block twice.
+  if(!pending.current||JSON.stringify(pending.current.input)!==JSON.stringify(input))pending.current={input,request_id:crypto.randomUUID()};
+  setBusy(true);setError('');setDone('');
+  try{const receipt=await api.post(`/operations/ranked/lobbies/${encodeURIComponent(lobby.id)}/ban`,{...input,request_id:pending.current.request_id});pending.current=null;setReason('');setDone(`${receipt.username} no podrá jugar Ranked hasta el ${dateTime(receipt.ends_at)}.`);onApplied();}
+  catch(cause){setError(cause.message||'No se ha confirmado el bloqueo. Reintenta para comprobarlo sin duplicarlo.');}
+  finally{setBusy(false);}
+ }
+ return <section className="op-card"><div className="op-section-title"><div><h2><Ban size={18}/> Bloqueo temporal de Ranked</h2><p>El jugador no podrá buscar ni entrar en partidas Ranked durante el tiempo elegido; si está buscando, sale de la cola al momento. No afecta a su cuenta ni a torneos o retos.</p></div></div>
+  <form className="rl-decision" onSubmit={submit}>
+   <div className="rl-ban-fields">
+    <label>Jugador<select value={slot} disabled={busy} onChange={event=>{setSlot(event.target.value);setDone('');}}><option value="">Selecciona un jugador</option>{choices.map(p=><option key={p.slot} value={p.slot}>{p.username}{p.side?` · ${team(p.side)}`:''}</option>)}</select></label>
+    <label>Duración<select value={minutes} disabled={busy} onChange={event=>setMinutes(Number(event.target.value))}>{BAN_DURATIONS.map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></label>
+   </div>
+   <label htmlFor="ranked-ban-reason">Motivo (queda registrado en CTP)</label>
+   <textarea id="ranked-ban-reason" rows={3} maxLength={1000} value={reason} disabled={busy} onChange={event=>{setReason(event.target.value);setDone('');}} placeholder="Explica el motivo del bloqueo…"/>
+   <div className="rl-chat-compose-actions"><span className="muted">{length}/500 caracteres · mínimo 12. No se puede bloquear a administradores ni árbitros.</span><button className="btn danger" type="submit" disabled={busy||!player||length<12||length>500}>{busy?'Aplicando…':'Bloquear de Ranked'}</button></div>
    {error&&<p className="op-error" role="alert">{error}</p>}
    {done&&<p className="op-notice" role="status">{done}</p>}
   </form>
@@ -93,12 +126,12 @@ export default function RankedLobbyPage(){
  return <div className="page wide op-page rm-page rl-page">
   <Link className="rl-back" to="/ranked/monitor"><ArrowLeft size={16}/> Volver al monitor de Ranked</Link>
   <header className="op-heading"><div><div className="op-eyebrow"><ShieldCheck size={15}/> SUPERVISIÓN DE PARTIDA</div><h1>{lobby?.map_name||'Partida Ranked'}</h1><p>{lobby?.queue_title||'Equipos, resultado y conversación de la partida.'}</p></div><button className="btn primary" disabled={busy||!validId} onClick={()=>void load()}><RefreshCw size={16} className={busy?'spin':''}/> Actualizar</button></header>
-  <p className="op-notice rl-readonly">Supervisión de la partida. Administración y arbitraje pueden escribir en el chat, también cuando la partida ha terminado. Solo administración puede dar la victoria a un equipo o cancelar la partida.</p>
+  <p className="op-notice rl-readonly">Supervisión de la partida. Administración y arbitraje pueden escribir en el chat (también cuando la partida ha terminado), dar la victoria a un equipo, cancelar la partida y bloquear jugadores de Ranked durante un tiempo.</p>
   {!validId&&<div className="op-error" role="alert">La referencia de la partida no es válida.</div>}
   {error&&<div className="op-error" role="alert">{error}{data?' Se conserva la última lectura correcta.':''}</div>}
   {!data?busy?<div className="op-loading"><Spinner/>Consultando la partida…</div>:null:<>
    <div className={`op-connection ${error?'is-stale':''}`} role="status"><span className={`rm-dot ${error?'is-stale':''}`}/><span>{error?'Última lectura conservada':'Datos de CTP'} · {dateTime(data.observed_at)}</span><span className="op-connection-mode">Cada 15 s con la pestaña visible</span></div>
-   <section className="op-card rl-overview"><div><span className="muted">Estado</span><Badge value={lobby.status}>{STATUS[lobby.status]}</Badge></div><div><span className="muted">Partida</span><span className="rm-id" title={lobby.id}>{lobby.id.slice(0,8)}</span></div><div><span className="muted">Creada</span><span>{dateTime(lobby.created_at)}</span></div><div><span className="muted">Disputas abiertas</span><strong>{data.open_disputes}</strong></div></section>
+   <section className="op-card rl-overview"><div><span className="muted">Estado</span><Badge value={lobby.status}>{STATUS[lobby.status]}</Badge></div><div><span className="muted">Modo</span><ModeTag mode={lobby.mode} pending={lobby.mode_pending}/></div><div><span className="muted">Partida</span><span className="rm-id" title={lobby.id}>{lobby.id.slice(0,8)}</span></div><div><span className="muted">Creada</span><span>{dateTime(lobby.created_at)}</span></div><div><span className="muted">Disputas abiertas</span><strong>{data.open_disputes}</strong></div></section>
    <section className="op-card"><div className="op-section-title"><div><h2>Resultado</h2><p>{result.winner?`Ganador confirmado: ${team(result.winner)}`:lobby.status==='cancelled'?'La partida se ha cancelado.':'Todavía no hay ganador confirmado.'}</p></div></div>
     <div className="rl-votes"><div><span>Votos al equipo A</span><strong>{result.votes_a}</strong></div><div><span>Votos al equipo B</span><strong>{result.votes_b}</strong></div><div><span>Confirmaciones necesarias</span><strong>{result.confirmations_required}</strong></div></div>
     <p className="muted rl-caption">Estos contadores son votos de resultado; no son el marcador del juego.</p>
@@ -107,7 +140,8 @@ export default function RankedLobbyPage(){
     <dl className="rl-times"><div><dt>Votos disponibles desde</dt><dd>{result.opens_at?dateTime(result.opens_at):'—'}</dd></div><div><dt>Decisión de la votación</dt><dd>{result.decides_at?dateTime(result.decides_at):'Sin primer voto'}</dd></div><div><dt>Suspensión sin votos</dt><dd>{result.suspends_at?dateTime(result.suspends_at):'—'}</dd></div></dl>
    </section>
    {data.can_decide&&!['closed','cancelled'].includes(lobby.status)&&<RankedDecision key={scope} lobby={lobby} players={data.players} onApplied={()=>{setBefore(null);void load();}}/>}
-   <section className="rl-teams" aria-label="Equipos de la partida">{['a','b',null].map(side=>{const players=data.players.filter(p=>p.side===side);if(side===null&&!players.length)return null;return <article key={side||'pending'} className={`op-card rl-team team-${side||'pending'}`}><h2><Users size={18}/> {team(side)} <span className="muted">{players.length}</span></h2>{players.length?<ol>{players.map(player=><li key={player.slot}><strong>{player.username||'Jugador no disponible'}</strong><span>{player.is_captain?'Capitán · ':''}{player.result_vote?`Votó ${team(player.result_vote)}`:'Sin voto de resultado'}</span></li>)}</ol>:<Empty title="Sin jugadores asignados">El equipo se mostrará al formarse.</Empty>}</article>;})}</section>
+   <section className="rl-teams" aria-label="Equipos de la partida">{['a','b',null].map(side=>{const players=data.players.filter(p=>p.side===side);if(side===null&&!players.length)return null;return <article key={side||'pending'} className={`op-card rl-team team-${side||'pending'}`}><h2><Users size={18}/> {team(side)} <span className="muted">{players.length}</span></h2>{players.length?<ol>{players.map(player=><li key={player.slot}><span className="rl-player"><strong>{player.username||'Jugador no disponible'}</strong><RankTag player={player}/></span><span>{player.is_captain?'Capitán · ':''}{player.result_vote?`Votó ${team(player.result_vote)}`:'Sin voto de resultado'}{player.ranked_ban_until&&<em className="rl-banned">Sin Ranked hasta el {dateTime(player.ranked_ban_until)}</em>}</span></li>)}</ol>:<Empty title="Sin jugadores asignados">El equipo se mostrará al formarse.</Empty>}</article>;})}</section>
+   {data.can_ban&&<RankedBan key={`ban-${scope}`} lobby={lobby} players={data.players} onApplied={()=>{setBefore(null);void load();}}/>}
    <section className="op-card"><div className="op-section-title"><div><h2><MessageSquare size={18}/> Chat de la partida</h2><p>Conversación compartida de esta partida. Los mensajes se muestran como texto.</p></div><div className="op-actions">{before&&<button className="btn" disabled={busy} onClick={()=>setBefore(null)}>Últimos mensajes</button>}<button className="btn" disabled={busy||!data.chat.has_more} onClick={()=>setBefore(data.chat.next_before)}>Mensajes anteriores</button></div></div>
     <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><strong>{message.is_system?'CTP':message.username||'Jugador no disponible'}{message.author_role&&<small className="rl-staff-role">{message.author_role==='admin'?'Administración':'Árbitro'}</small>}</strong><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes en esta página">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>
     {data.chat.can_send?<form className="rl-chat-compose" onSubmit={sendMessage}>

@@ -32,6 +32,9 @@ export function rankedMonitorState(value) {
   if (new Set(lobby_statuses.map(row => row.status)).size !== lobby_statuses.length) fail();
   const active_lobbies = rows(value.active_lobbies, 50, row => ({
     id: id(row.id), queue_id: id(row.queue_id), queue_title: text(row.queue_title), status: status(row.status),
+    // Selected mode per match (Hardpoint or Search & Destroy); older CTP builds omit it.
+    mode: row.mode === undefined || row.mode === null ? null : text(row.mode, 80),
+    mode_pending: row.mode_pending === undefined ? false : typeof row.mode_pending === 'boolean' ? row.mode_pending : fail(),
     map_name: row.map_name === null ? null : text(row.map_name, 120), created_at: date(row.created_at),
     deadline_at: row.deadline_at === null ? null : date(row.deadline_at), age_seconds: seconds(row.age_seconds),
     ...counts(row, ['players', 'side_a', 'side_b', 'result_votes', 'open_disputes']),

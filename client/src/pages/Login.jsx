@@ -1,30 +1,58 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { api } from '../api.js';
 import { Spinner } from '../components/ui.jsx';
+import { CAPTCHA_MESSAGES, captchaCanSubmit, mountLoginCaptcha } from '../../auth-captcha.js';
+import '../../auth-captcha.css';
 
 export function Login({ setup, provider, onDone }) {
   const ctp = provider === 'ctp';
   const [form, setForm] = useState({ name: '', username: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [captcha, setCaptcha] = useState(null);
+  const captchaElement = useRef(null);
+  const captchaController = useRef(null);
+  const inFlight = useRef(false);
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  useEffect(() => {
+    if (!ctp || setup) return;
+    setCaptcha(null);
+    const controller = mountLoginCaptcha(captchaElement.current, setCaptcha);
+    captchaController.current = controller;
+    return () => {
+      controller.destroy();
+      captchaController.current = null;
+    };
+  }, [ctp, setup]);
 
   async function submit(e) {
     e.preventDefault();
+    if (inFlight.current) return;
     setError('');
     if (setup && form.password !== form.confirm) {
       setError('Las contraseñas no coinciden.');
       return;
     }
+    if (ctp && !setup && !captchaCanSubmit(captcha)) {
+      setError(captcha?.error || CAPTCHA_MESSAGES.required);
+      return;
+    }
+    inFlight.current = true;
     setBusy(true);
     try {
       if (setup) await api.post('/auth/setup', { name: form.name, username: form.username, password: form.password });
-      else await api.post('/auth/login', { ...(ctp ? { email: form.username } : { username: form.username }), password: form.password });
+      else {
+        const captchaToken = ctp ? captchaController.current.consume() : '';
+        await api.post('/auth/login', { ...(ctp ? { email: form.username } : { username: form.username }), password: form.password, ...(captchaToken ? { captchaToken } : {}) });
+      }
       onDone();
     } catch (err) {
       setError(err.message);
+      captchaController.current?.reset();
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -75,8 +103,9 @@ export function Login({ setup, provider, onDone }) {
             <input id="pw2" className="input" type="password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} />
           </div>
         )}
+        {ctp && !setup && <div ref={captchaElement} />}
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="btn primary block" disabled={busy || !form.username || !form.password}>
+        <button className="btn primary block" disabled={busy || !form.username || !form.password || (ctp && !setup && !captchaCanSubmit(captcha))}>
           {busy && <Spinner size={15} />} {setup ? 'Crear cuenta y entrar' : 'Entrar'}
         </button>
         <p className="login-foot">

@@ -141,7 +141,12 @@ test('en local: solo staff con sesión ve la lista y sortea; el ganador sale del
     assert.equal((await call('POST', '/api/ruleta/draw', { host, origin, body: {} })).status, 401);
     const setup = await call('POST', '/api/auth/setup', { host, origin, body: { username: 'admin', name: 'Admin', password: 'contraseña-segura' } });
     assert.equal(setup.status, 200);
-    const cookie = setup.headers['set-cookie'][0].split(';')[0];
+    const config = await call('GET', '/api/auth/config', { host });
+    assert.equal(config.status, 200);
+    assert.deepEqual(config.json, { provider: 'local', captcha: { required: false, siteKey: null } });
+    const signed = await call('POST', '/api/auth/login', { host, origin, body: { username: 'admin', password: 'contraseña-segura' } });
+    assert.equal(signed.status, 200);
+    const cookie = signed.headers['set-cookie'][0].split(';')[0];
     for (const [username, name] of [['ana', 'Ana'], ['luis', 'Luis']]) {
       assert.equal((await call('POST', '/api/users', { host, origin, cookie, body: { username, name, password: 'contraseña-segura' } })).status, 201);
     }
@@ -179,6 +184,9 @@ test('ruleta.playctp.com solo expone la ruleta y su login, con cookie __Host- pr
     const status = await call('GET', '/api/auth/status', { host });
     assert.equal(status.status, 200);
     assert.equal(status.json.authenticated, false);
+    const config = await call('GET', '/api/auth/config', { host });
+    assert.equal(config.status, 200);
+    assert.deepEqual(config.json, { provider: 'local', captcha: { required: false, siteKey: null } });
     assert.equal((await call('GET', '/api/ruleta/participants', { host })).status, 401);
     for (const route of ['/api/users', '/api/contents', '/api/operations/integration', '/api/me']) {
       assert.equal((await call('GET', route, { host })).status, 404, route);

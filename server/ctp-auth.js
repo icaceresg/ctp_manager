@@ -24,7 +24,25 @@ export function ctpAuthConfig(env = process.env) {
   const key = Buffer.from(raw, 'base64url');
   if (!/^[A-Za-z0-9_-]{43}$/.test(raw) || key.length !== 32 || key.toString('base64url') !== raw) throw new Error('CTP_AUTH_TOKEN_KEY requiere 32 bytes aleatorios en base64url.');
   if (raw === env.CTP_OPERATIONS_TOKEN || raw === env.CTP_SIGNING_SECRET) throw new Error('La clave de sesión debe ser independiente de las credenciales del puente.');
-  return { mode, origin, anon, key };
+  const required = env.CTP_AUTH_CAPTCHA_REQUIRED || 'false';
+  const siteKey = env.CTP_AUTH_CAPTCHA_SITE_KEY || '';
+  if (!['true', 'false'].includes(required) || (siteKey && !/^[A-Za-z0-9_-]{10,100}$/.test(siteKey))
+    || required === 'true' && !siteKey) throw new Error('Configura la clave pública de Turnstile antes de exigir la verificación de CTP.');
+  return { mode, origin, anon, key, captcha: { required: required === 'true', siteKey: siteKey || null } };
+}
+
+/** Public widget configuration only. The native CTP Auth service verifies tokens. */
+export function publicCtpAuthConfig(config) {
+  return { provider: config.mode === 'ctp' ? 'ctp' : 'local', captcha: {
+    required: config.mode === 'ctp' && config.captcha?.required === true,
+    siteKey: config.mode === 'ctp' ? config.captcha?.siteKey || null : null,
+  } };
+}
+
+function captchaToken(value, required) {
+  if (value === undefined && !required) return undefined;
+  if (typeof value !== 'string' || !value || value.length > 2048 || /\s/.test(value)) fail(400, 'captcha_failed');
+  return value;
 }
 
 export function encryptTokens(key, tokens, associatedData) {
@@ -65,33 +83,44 @@ export function validateIdentity(value, expectedSubject) {
 }
 
 export function createCtpAuthClient(config, fetchImpl = fetch) {
+  async function readJson(response) {
+    if (!/^application\/json\b/i.test(response.headers.get('content-type') || '')) fail(503, 'ctp_unavailable');
+    const reader = response.body?.getReader();
+    if (!reader) fail(503, 'ctp_unavailable');
+    const chunks = []; let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read(); if (done) break;
+        total += value.length; if (total > 65536) fail(503, 'ctp_unavailable');
+        chunks.push(Buffer.from(value));
+      }
+    } finally { await reader.cancel().catch(() => {}); }
+    return JSON.parse(Buffer.concat(chunks));
+  }
+
   async function request(endpoint, body, accessToken) {
     let response;
     try {
       response = await fetchImpl(config.origin + endpoint, {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
-        headers: { apikey: config.anon, 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        headers: { apikey: config.anon, 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
         body: JSON.stringify(body),
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        // Read only the bounded native error code; provider messages and tokens
+        // never become Manager error text. No separate siteverify consumption.
+        if (response.status === 400 && endpoint === '/auth/v1/token?grant_type=password') {
+          let error;
+          try { error = await readJson(response); }
+          catch { await response.body?.cancel().catch(() => {}); /* generic rejection below */ }
+          if (error?.code === 'captcha_failed' || error?.error_code === 'captcha_failed') fail(400, 'captcha_failed');
+        } else await response.body?.cancel();
         if ([400, 401].includes(response.status)) fail(401, 'invalid_credentials');
         if (response.status === 403) fail(403, 'staff_only');
         if (response.status === 429) fail(429, 'rate_limited');
         fail(503, 'ctp_unavailable');
       }
-      if (!/^application\/json\b/i.test(response.headers.get('content-type') || '')) fail(503, 'ctp_unavailable');
-      const reader = response.body?.getReader();
-      if (!reader) fail(503, 'ctp_unavailable');
-      const chunks = []; let total = 0;
-      try {
-        for (;;) {
-          const { done, value } = await reader.read(); if (done) break;
-          total += value.length; if (total > 65536) fail(503, 'ctp_unavailable');
-          chunks.push(Buffer.from(value));
-        }
-      } finally { await reader.cancel().catch(() => {}); }
-      return JSON.parse(Buffer.concat(chunks));
+      return await readJson(response);
     } catch (error) {
       if (error instanceof CtpAuthError) throw error;
       fail(503, 'ctp_unavailable');
@@ -108,10 +137,12 @@ export function createCtpAuthClient(config, fetchImpl = fetch) {
   }
 
   return {
-    async login(email, password) {
+    async login(email, password, proof) {
+      const token = captchaToken(proof, config.captcha?.required === true);
       if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254
         || typeof password !== 'string' || !password || password.length > 1024) fail(401, 'invalid_credentials');
-      return tokens(await request('/auth/v1/token?grant_type=password', { email: email.trim().toLowerCase(), password }));
+      return tokens(await request('/auth/v1/token?grant_type=password', { email: email.trim().toLowerCase(), password,
+        ...(token ? { gotrue_meta_security: { captcha_token: token } } : {}) }));
     },
     async refresh(previous) {
       return tokens(await request('/auth/v1/token?grant_type=refresh_token', { refresh_token: previous.refreshToken }), previous.subject);

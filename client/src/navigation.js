@@ -1,4 +1,5 @@
 import { OP_TABS } from './operations/model.js';
+import { metricsAllowedHost } from './pages/metricsModel.js';
 
 const groups = {
   jornada: 'Trabajo diario', turnos: 'Trabajo diario',
@@ -14,7 +15,7 @@ const editorial = [
   { section: 'recursos', to: '/recursos', title: 'Recursos', keywords: 'archivos pendientes' },
   { section: 'tablero', to: '/tablero', title: 'Tablero', keywords: 'contenido tareas' },
 ];
-export function managerNavigation(can, isAdmin, staffManager = false, rankedStaff = false) {
+export function managerNavigation(can, isAdmin, staffManager = false, rankedStaff = false, hostname = '') {
   const items = OP_TABS.filter(tab => tab.sections.some(can)).map(tab => ({
     id: tab.id, to: `/operaciones/${tab.id}`, title: titles[tab.id] || tab.title, group: groups[tab.id],
     keywords: `${tab.title} ${tab.id} ${aliases[tab.id] || ''}`,
@@ -28,6 +29,7 @@ export function managerNavigation(can, isAdmin, staffManager = false, rankedStaf
     { id: 'usuarios', to: '/usuarios', title: 'Usuarios y roles', group: 'Administración', keywords: 'permisos staff cuentas' },
     { id: 'integracion', to: '/operaciones/integracion', title: 'Conexión CTP', group: 'Administración', keywords: 'api sincronización integración' },
   );
+  if (isAdmin && metricsAllowedHost(hostname)) items.push({ id: 'metrics', to: '/administration/metrics', title: 'Tráfico y servidor', group: 'Administración', keywords: 'monitor métricas cpu memoria disco swap tráfico peticiones actividad ranked pre prod servidor' });
   if (!isAdmin && staffManager) items.push({ id: 'usuarios', to: '/usuarios', title: 'Usuarios y funciones', group: 'Coordinación', keywords: 'permisos staff cuentas funciones' });
   return items;
 }

@@ -4,7 +4,8 @@ import { api } from '../api.js';
 import { Spinner } from '../components/ui.jsx';
 import { previewDocument, safeUrl, sanitizeHtml } from './sanitize.js';
 
-const BUTTON_STYLE = 'display:inline-block;background-color:#D4A030;color:#0E0F11;padding:12px 26px;font-weight:bold;text-decoration:none;border-radius:0';
+// Mismo botón que el marco oscuro de CTP.
+const BUTTON_STYLE = 'display:inline-block;background-color:#FED602;color:#101114;padding:17px 30px;font-size:14px;line-height:20px;font-weight:800;letter-spacing:1px;text-transform:uppercase;text-decoration:none;border-radius:6px';
 
 /**
  * Editor de correo con modo visual, código HTML y vista previa. Cualquier
@@ -84,7 +85,7 @@ export function EmailEditor({ value, onChange, mergeTags = [], preview, label = 
         {tool('Deshacer', Undo2, () => command('undo'))}{tool('Rehacer', Redo2, () => command('redo'))}<span className="crm-sep" />
         {tool('Párrafo', Pilcrow, () => command('formatBlock', 'p'))}{tool('Título', Heading2, () => command('formatBlock', 'h2'))}{tool('Subtítulo', Heading3, () => command('formatBlock', 'h3'))}<span className="crm-sep" />
         {tool('Negrita', Bold, () => command('bold'))}{tool('Cursiva', Italic, () => command('italic'))}{tool('Subrayado', Underline, () => command('underline'))}{tool('Tachado', Strikethrough, () => command('strikeThrough'))}
-        <label className="crm-tool crm-color" title="Color del texto"><input type="color" aria-label="Color del texto" defaultValue="#17191D" onMouseDown={remember} onChange={event => command('foreColor', event.target.value)} /></label><span className="crm-sep" />
+        <label className="crm-tool crm-color" title="Color del texto"><input type="color" aria-label="Color del texto" defaultValue="#FFFFFF" onMouseDown={remember} onChange={event => command('foreColor', event.target.value)} /></label><span className="crm-sep" />
         {tool('Lista', List, () => command('insertUnorderedList'))}{tool('Lista numerada', ListOrdered, () => command('insertOrderedList'))}{tool('Cita', Quote, () => command('formatBlock', 'blockquote'))}<span className="crm-sep" />
         {tool('Alinear a la izquierda', AlignLeft, () => command('justifyLeft'))}{tool('Centrar', AlignCenter, () => command('justifyCenter'))}{tool('Alinear a la derecha', AlignRight, () => command('justifyRight'))}<span className="crm-sep" />
         {tool('Enlace', Link2, () => { remember(); setDialog({ type: 'link', url: 'https://', text: window.getSelection()?.toString() ? '' : '' }); })}{tool('Quitar enlace', Unlink, () => command('unlink'))}

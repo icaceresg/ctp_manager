@@ -4,9 +4,11 @@ import { queryAdministration,proposeAdministration } from '../administration.js'
 import { integrationServicesStatus,ownerAction,uploadAdministrationImage } from '../administration-services.js';
 import { crmAction } from '../crm.js';
 import { getCtpUserProfile,updateCtpUserProfile } from '../integration.js';
+import { metricsHandler } from '../metrics.js';
 
 export const administrationRouter=Router();
 administrationRouter.use('/administration',requireAuth,requireAdmin);
+administrationRouter.get('/administration/metrics',metricsHandler);
 administrationRouter.get('/administration',async(req,res)=>res.json(await queryAdministration(req.user,req.query)));
 administrationRouter.post('/administration/commands',(req,res)=>res.json(proposeAdministration(req.user,req.body||{})));
 administrationRouter.get('/administration/integrations',async(req,res)=>res.json(await integrationServicesStatus(req.user)));

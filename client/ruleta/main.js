@@ -5,6 +5,8 @@ import '@fontsource/saira-condensed/700.css';
 import '@fontsource/saira-condensed/800.css';
 import './ruleta.css';
 import { AudioEngine } from './audio.js';
+import { CAPTCHA_MESSAGES, captchaCanSubmit, mountLoginCaptcha } from '../auth-captcha.js';
+import '../auth-captcha.css';
 
 const app = document.getElementById('app');
 const canvas = document.getElementById('stage');
@@ -16,6 +18,7 @@ let roster = null; // { source, warning, truncated, total, refreshed_at }
 let provider = 'local';
 let excluded = new Set(loadExcluded());
 let drawing = false;
+let loginCaptcha = null;
 
 // ---------- utilidades ----------
 
@@ -71,6 +74,8 @@ const icon = {
 // ---------- pantallas ----------
 
 function renderLogin(error = '') {
+  loginCaptcha?.destroy();
+  loginCaptcha = null;
   app.innerHTML = `
     <div class="gate">
       <form class="gate-card" id="login">
@@ -81,25 +86,46 @@ function renderLogin(error = '') {
           ? '<label>Correo de tu cuenta CTP<input name="username" type="email" autocomplete="email" required autofocus /></label>'
           : '<label>Usuario<input name="username" autocomplete="username" required autofocus /></label>'}
         <label>Contraseña<input name="password" type="password" autocomplete="current-password" required /></label>
+        ${provider === 'ctp' ? '<div id="login-captcha"></div>' : ''}
         <p class="gate-error" role="alert">${esc(error)}</p>
-        <button class="btn-gold" type="submit">Entrar</button>
+        <button class="btn-gold" type="submit" ${provider === 'ctp' ? 'disabled' : ''}>Entrar</button>
       </form>
     </div>`;
-  $('#login').addEventListener('submit', async (e) => {
+  const form = $('#login');
+  const button = form.querySelector('button[type="submit"]');
+  const errorElement = form.querySelector('.gate-error');
+  let captcha = null;
+  let busy = false;
+  const updateButton = () => { button.disabled = busy || (provider === 'ctp' && !captchaCanSubmit(captcha)); };
+  if (provider === 'ctp') loginCaptcha = mountLoginCaptcha($('#login-captcha'), (state) => { captcha = state; updateButton(); });
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (busy) return;
+    if (provider === 'ctp' && !captchaCanSubmit(captcha)) {
+      errorElement.textContent = captcha?.error || CAPTCHA_MESSAGES.required;
+      return;
+    }
     const f = new FormData(e.target);
-    const btn = e.target.querySelector('button');
-    btn.disabled = true;
+    busy = true;
+    errorElement.textContent = '';
+    updateButton();
     try {
-      await api('POST', '/auth/login', provider === 'ctp' ? { email: f.get('username'), password: f.get('password') } : { username: f.get('username'), password: f.get('password') });
-      boot();
+      const captchaToken = provider === 'ctp' ? loginCaptcha.consume() : '';
+      await api('POST', '/auth/login', provider === 'ctp' ? { email: f.get('username'), password: f.get('password'), ...(captchaToken ? { captchaToken } : {}) } : { username: f.get('username'), password: f.get('password') });
+      await boot();
     } catch (err) {
-      renderLogin(err.message);
+      errorElement.textContent = err.message;
+      loginCaptcha?.reset();
+    } finally {
+      busy = false;
+      updateButton();
     }
   });
 }
 
 function renderSplash() {
+  loginCaptcha?.destroy();
+  loginCaptcha = null;
   app.innerHTML = `
     <button class="splash" id="enter">
       <span class="partners splash-partners"><img src="/brand/logo-ctp.svg" alt="PlayCTP" /><span class="partners-x">×</span><img src="/ruleta-media/miami-heretics.webp" alt="Miami Heretics" class="partner-logo" /></span>

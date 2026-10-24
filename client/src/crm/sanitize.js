@@ -39,7 +39,30 @@ export function textToHtml(text) {
 }
 export function htmlIsEmpty(html) { return !String(html || '').replace(/<(?!img)[^>]*>/gi, '').replace(/&nbsp;/g, ' ').trim() && !/<img/i.test(html || ''); }
 
-/** Vista previa aproximada del marco corporativo; el envío de prueba muestra el real. */
-export function previewDocument({ subject, title, preheader, html, action, footer }) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#EBEBEB;font-family:Arial,Helvetica,sans-serif;color:#17191D}.shell{max-width:600px;margin:24px auto;background:#fff;border:1px solid #e3e3e3}.head{padding:22px 30px;border-top:4px solid #D4A030;display:flex;justify-content:space-between;align-items:center}.logo{font-weight:800;font-size:26px;letter-spacing:1px;color:#17191D}.logo b{color:#D4A030}.kicker{font-size:10px;color:#5b6068;letter-spacing:1px}.body{padding:30px 34px;font-size:16px;line-height:26px;word-wrap:break-word}.body img{max-width:100%;height:auto}h1.t{font-size:28px;line-height:35px;margin:0 0 20px}.cta{display:inline-block;background:#D4A030;color:#0E0F11;font-weight:bold;padding:0 26px;line-height:46px;text-decoration:none;margin-top:18px}.foot{padding:20px 34px;background:#fafafa;border-top:1px solid #EBEBEB;font-size:11px;color:#5b6068}.meta{max-width:600px;margin:12px auto 0;font-size:12px;color:#444}.meta strong{color:#111}</style></head><body><div class="meta"><strong>${escapeHtml(subject || '(sin asunto)')}</strong>${preheader ? ` · ${escapeHtml(preheader)}` : ''}</div><div class="shell"><div class="head"><span class="logo">C<b>T</b>P</span><span class="kicker">#PlayCTP</span></div><div class="body">${title ? `<h1 class="t">${escapeHtml(title)}</h1>` : ''}${sanitizeHtml(html)}${action ? `<p><span class="cta">${escapeHtml(action)} ↗</span></p>` : ''}</div><div class="foot">${escapeHtml(footer || '')}</div></div></body></html>`;
+// Mismo marco oscuro que renderCorporateEmail en CTP (services/notification-worker/email.mjs).
+const PREVIEW_STYLE = 'body{margin:0;padding:24px 14px 34px;background:#090B0F;font-family:Arial,Helvetica,sans-serif;color:#CBD0D8}'
+  + '.meta{max-width:600px;margin:0 auto 12px;font-size:12px;color:#959BA6}.meta strong{color:#F5F5F6}'
+  + '.shell{max-width:600px;margin:0 auto;background:#13161C;border:1px solid #2A2E35}.bar{height:5px;background:#FED602}'
+  + '.head{padding:39px 44px 29px;text-align:center}.head img{display:inline-block;width:184px;max-width:100%;height:auto}'
+  + '.body{padding:24px 52px 44px;text-align:center;font-size:16px;line-height:26px;word-wrap:break-word}.body img{max-width:100%;height:auto}'
+  + '.body a{color:#FED602}.body h1,.body h2,.body h3,.body h4,.body strong,.body b{color:#fff}.body ul,.body ol{display:table;margin:0 auto 16px;padding-left:22px;text-align:left}'
+  + '.kicker{margin:0 0 16px;color:#FED602;font-size:12px;font-weight:bold;letter-spacing:3px;line-height:18px;text-transform:uppercase}'
+  + 'h1.t{margin:0 0 22px;color:#fff;font-size:42px;line-height:49px;font-weight:800;letter-spacing:-1px}'
+  + '.cta{display:inline-block;margin-top:16px;background:#FED602;color:#101114;font-size:14px;line-height:20px;letter-spacing:1px;font-weight:800;text-transform:uppercase;padding:17px 30px;border-radius:6px}'
+  + '.sign{margin-top:37px;padding-top:27px;border-top:1px solid #30343C}.tag{margin:0 0 9px;color:#FED602;font-size:13px;line-height:19px;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase}'
+  + '.motto{margin:0;color:#D4D7DD;font-size:15px;line-height:25px}.hash{margin:19px 0 0;color:#fff;font-size:16px;line-height:24px;font-weight:bold}'
+  + '.foot{padding:28px 38px;background:#0D1015;border-top:1px solid #292D35;text-align:center;font-size:11px;line-height:18px;color:#959BA6}.foot p{margin:0 0 9px}.foot p:last-child{margin:0}'
+  + '.foot .help{font-size:13px;line-height:20px;color:#C4C8D0}.foot .mail{margin-bottom:17px;font-size:13px;line-height:20px;color:#FED602;text-decoration:underline}.foot u{color:#959BA6}'
+  + '@media(max-width:620px){body{padding:16px 8px}.head{padding:30px 24px 24px}.body{padding:34px 24px}.foot{padding:25px 20px}h1.t{font-size:33px;line-height:39px}}';
+
+/** Vista previa aproximada del marco corporativo (textos en español); el envío de prueba muestra el real. */
+export function previewDocument({ subject, title, preheader, html, action, footer, unsubscribe = false }) {
+  const logo = typeof document === 'undefined' ? '/brand/logo-ctp.svg' : new URL('/brand/logo-ctp.svg', document.baseURI).href;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${PREVIEW_STYLE}</style></head><body>`
+    + `<div class="meta"><strong>${escapeHtml(subject || '(sin asunto)')}</strong>${preheader ? ` · ${escapeHtml(preheader)}` : ''}</div>`
+    + `<div class="shell"><div class="bar"></div><div class="head"><img src="${escapeHtml(logo)}" alt="PlayCTP"></div>`
+    + `<div class="body">${title ? `<p class="kicker">Cuenta · Competición · Comunidad</p><h1 class="t">${escapeHtml(title)}</h1>` : ''}${sanitizeHtml(html)}${action ? `<span class="cta">${escapeHtml(action)} →</span>` : ''}`
+    + '<div class="sign"><p class="tag">Tu próximo reto empieza aquí</p><p class="motto">Compite. Supérate. Haz que cada partida cuente.</p><p class="hash">#PlayCTP 💛</p></div></div>'
+    + `<div class="foot"><p class="help">¿Necesitas ayuda?</p><p class="mail">contact@playctp.com</p><p>${escapeHtml(footer || '')}</p>`
+    + `<p><u>Visitar CTP</u> &nbsp;·&nbsp; <u>Privacidad</u>${unsubscribe ? ' &nbsp;·&nbsp; <u>Dar de baja comunicaciones comerciales</u>' : ''}</p><p>© PlayCTP. Todos los derechos reservados.</p></div></div></body></html>`;
 }

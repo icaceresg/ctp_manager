@@ -11,10 +11,18 @@ test('profile edits send only known, changed fields with the read version', () =
   for (const body of [
     { expected_version: 4, changes: {} }, { changes: { gamertag: 'x' } }, { expected_version: 0, changes: { gamertag: 'x' } },
     { expected_version: 4, changes: { role: 'admin' } }, { expected_version: 4, changes: { points: 1 } }, { expected_version: 4, changes: { username: '' } },
-    { expected_version: 4, changes: { username: 'a' } }, { expected_version: 4, changes: { email: 'no-es-correo' } }, { expected_version: 4, changes: { activision_id: 'sinalmohadilla' } },
+    { expected_version: 4, changes: { username: 'a' } }, { expected_version: 4, changes: { email: 'no-es-correo' } }, { expected_version: 4, changes: { activision_id: 'a' } },
     { expected_version: 4, changes: { platform: 'Atari' } }, { expected_version: 4, changes: { gamertag: 'x' }, password: 'secret' },
   ]) assert.throws(() => userProfilePayload(id, body), error => error.status === 400);
   assert.throws(() => userProfilePayload('nope', { expected_version: 1, changes: { gamertag: 'x' } }), error => error.status === 400);
+});
+
+test('ActivisionID follows the CTP PRO rule: 2-16 name characters and an optional #number', () => {
+  for (const activision_id of ['sinalmohadilla', 'Nombre#1234567', 'José Pérez#12', 'x_y.z-w', 'ab'])
+    assert.equal(userProfilePayload(id, { expected_version: 1, changes: { activision_id } }).changes.activision_id, activision_id);
+  for (const activision_id of ['a', 'Nom#', 'Nombre#abc', 'diecisieteletrass', 'emoji🎮'])
+    assert.throws(() => userProfilePayload(id, { expected_version: 1, changes: { activision_id } }),
+      error => error.status === 400 && error.message === USER_PROFILE_ERRORS.user_profile_activision_invalid);
 });
 
 test('profile responses are bounded and every SQL code has Spanish copy', () => {

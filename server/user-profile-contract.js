@@ -12,7 +12,7 @@ export const USER_PROFILE_ERRORS = Object.freeze({
   user_profile_email_invalid: 'El correo no es válido.',
   user_profile_email_taken: 'Ese correo ya pertenece a otra cuenta.',
   user_profile_gamertag_invalid: 'El gamertag es obligatorio y admite hasta 50 caracteres.',
-  user_profile_activision_invalid: 'El ActivisionID debe tener el formato Nombre#1234567.',
+  user_profile_activision_invalid: 'El ActivisionID debe tener de 2 a 16 letras, números, espacios, puntos o guiones, y opcionalmente #número (Nombre#1234567).',
   user_profile_activision_taken: 'Ese ActivisionID ya está vinculado a otra cuenta.',
   user_profile_platform_invalid: 'Selecciona una plataforma válida.',
   user_profile_discord_invalid: 'El Discord admite hasta 100 caracteres.',
@@ -21,6 +21,8 @@ export const USER_PROFILE_ERRORS = Object.freeze({
   user_profile_birthdate_invalid: 'La fecha de nacimiento no es válida.',
   user_profile_duplicate: 'Otro dato de la cuenta ya está en uso. Revisa nombre, correo y ActivisionID.',
 });
+// Same rule as CTP PRO: 2-16 name characters and an optional #number.
+export const ACTIVISION_ID = /^[\p{L}\p{N}\p{M} _.-]{2,16}(?:#[0-9]+)?$/u;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const fail = message => { throw new HttpError(400, message); };
@@ -45,7 +47,7 @@ export function userProfilePayload(id, body = {}) {
     if (key === 'username' && (value.length < 3 || value.length > 20 || !/^[\p{L}\p{N}_.\- ]+$/u.test(value))) fail(USER_PROFILE_ERRORS.user_profile_username_invalid);
     if (key === 'email' && (value.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value))) fail(USER_PROFILE_ERRORS.user_profile_email_invalid);
     if (key === 'gamertag' && value.length > 50) fail(USER_PROFILE_ERRORS.user_profile_gamertag_invalid);
-    if (key === 'activision_id' && value && !/^[^#\s][^#]{1,23}#[0-9]{4,10}$/.test(value)) fail(USER_PROFILE_ERRORS.user_profile_activision_invalid);
+    if (key === 'activision_id' && value && !ACTIVISION_ID.test(value)) fail(USER_PROFILE_ERRORS.user_profile_activision_invalid);
     if (key === 'platform' && !USER_PLATFORMS.includes(value)) fail(USER_PROFILE_ERRORS.user_profile_platform_invalid);
     if (key === 'birthdate' && value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) fail(USER_PROFILE_ERRORS.user_profile_birthdate_invalid);
     out[key] = value === '' ? null : value;

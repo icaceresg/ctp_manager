@@ -109,7 +109,7 @@ function UserProfileDialog({id,onClose,onSaved}){
       <Field label="Nombre de usuario" hint="Entre 3 y 20 caracteres. También sirve para iniciar sesión."><input name="username" required minLength={3} maxLength={20} defaultValue={profile.username}/></Field>
       <Field label="Correo de acceso" hint={profile.email_confirmed?'Correo verificado.':'Correo sin verificar.'}><input name="email" type="email" required maxLength={254} defaultValue={profile.email||''}/></Field>
       <Field label="Gamertag"><input name="gamertag" required maxLength={50} defaultValue={profile.gamertag}/></Field>
-      <Field label="ActivisionID" hint="Formato Nombre#1234567. Déjalo vacío para quitarlo."><input name="activision_id" maxLength={40} pattern="[^#\s][^#]{1,23}#[0-9]{4,10}" defaultValue={profile.activision_id||''}/></Field>
+      <Field label="ActivisionID" hint="De 2 a 16 caracteres, con #número opcional (Nombre#1234567). Déjalo vacío para quitarlo."><input name="activision_id" maxLength={40} pattern="[\p{L}\p{N}\p{M} _.\-]{2,16}(?:#[0-9]+)?" defaultValue={profile.activision_id||''}/></Field>
       <Field label="Plataforma"><select name="platform" defaultValue={profile.platform}>{PLATFORMS.map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></Field>
       <Field label="Fecha de nacimiento"><input name="birthdate" type="date" min="1900-01-01" defaultValue={profile.birthdate||''}/></Field>
       <Field label="Discord"><input name="discord" maxLength={100} defaultValue={profile.discord||''}/></Field>

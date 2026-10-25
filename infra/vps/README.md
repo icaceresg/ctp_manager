@@ -2,6 +2,10 @@
 
 Este documento describe la instalación histórica de PRE. El dominio público apunta a **PROD** desde el 20 de octubre de 2026: usar el [runbook vigente](../../docs/MANAGER_PRODUCTION_2026-10-20.md), la unidad `ctp-manager-prod.service` y su ejemplo de entorno. Conservar PRE en su servicio y SQLite propios; no copiar su entorno sobre producción.
 
+Las publicaciones de PRE son automáticas desde la rama `pre`: ver
+[CI/CD de Manager PRE](../../docs/CI_CD_PRE.md). Los pasos manuales de este
+documento siguen sirviendo para la instalación inicial y para producción.
+
 Este paquete prepara un servicio Node independiente conectado a la API de
 `https://pre.playctp.com`. El dominio público del Manager es
 `https://manager.playctp.com`. No crea otra base competitiva, publica la web de

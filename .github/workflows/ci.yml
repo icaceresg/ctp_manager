@@ -29,15 +29,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - name: Reject known high-severity dependency vulnerabilities
-        run: npm audit --audit-level=high
-      - run: npm test
-      - name: Check the aggregate observer
-        run: |
-          python3 -B test/metrics-traffic.test.py
-          python3 -B test/metrics-collector.test.py
-      - run: npm run build
+      - uses: ./.github/actions/manager-checks
       - name: Package the verified runtime without private data
         run: node scripts/package-vps.mjs --out output/ctp-manager.tar.gz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

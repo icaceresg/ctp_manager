@@ -100,3 +100,49 @@ test('hidden configuration, databases and leaked credentials cannot enter the ru
     fs.unlinkSync(path.join(source.directory, relative));
   }
 });
+
+function installedDependencies(t, source) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-manager-deps-test-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  for (const name of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(source.directory, name), path.join(directory, name));
+  const write = (relative, content) => {
+    const destination = path.join(directory, relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, content);
+  };
+  write('node_modules/.package-lock.json', '{"lockfileVersion":3}');
+  write('node_modules/express/package.json', '{"name":"express","version":"5.2.1"}');
+  write('node_modules/express/index.js', 'module.exports = {};');
+  write('node_modules/gopd/.eslintrc', '{}');
+  write('node_modules/gopd/test/index.js', 'require("../");');
+  return { directory, write };
+}
+
+test('release can bundle the production dependencies installed from the same lockfile', async t => {
+  const source = fixture(t);
+  const deps = installedDependencies(t, source);
+  const receipt = await packageVps({ cwd: source.directory, out: 'output/manager.tar.gz', deps: deps.directory, env: { GITHUB_REF: 'refs/heads/pre' } });
+  assert.equal(receipt.dependencies, 5);
+  const manifest = JSON.parse(execFileSync('tar', ['-xOf', receipt.output, 'manifest.json'], { encoding: 'utf8' }));
+  assert.equal(manifest.ref, 'refs/heads/pre');
+  assert.deepEqual(manifest.dependencies.files.map(file => file.path), [
+    'node_modules/.package-lock.json', 'node_modules/express/index.js', 'node_modules/express/package.json',
+    'node_modules/gopd/.eslintrc', 'node_modules/gopd/test/index.js',
+  ]);
+  const entries = execFileSync('tar', ['-tzf', receipt.output], { encoding: 'utf8' }).trim().split(/\r?\n/);
+  assert.ok(entries.includes('node_modules/express/package.json'));
+  assert.ok(!entries.some(entry => /(?:\.env|data\/)/.test(entry)));
+});
+
+test('dependency bundling refuses another lockfile, links and leaked credentials', async t => {
+  const source = fixture(t);
+  const deps = installedDependencies(t, source);
+  fs.writeFileSync(path.join(deps.directory, 'package-lock.json'), '{"name":"other","lockfileVersion":3,"packages":{}}');
+  await assert.rejects(packageVps({ cwd: source.directory, out: 'output/a.tar.gz', deps: deps.directory, env: {} }), /dependency_lockfile_mismatch/);
+  fs.copyFileSync(path.join(source.directory, 'package-lock.json'), path.join(deps.directory, 'package-lock.json'));
+  deps.write('node_modules/leak/index.js', 'const key = "sk_live_' + 'b'.repeat(24) + '";');
+  await assert.rejects(packageVps({ cwd: source.directory, out: 'output/b.tar.gz', deps: deps.directory, env: {} }), /dependency_contains_private_credential/);
+  fs.rmSync(path.join(deps.directory, 'node_modules/leak'), { recursive: true });
+  fs.symlinkSync(path.join(source.directory, 'data'), path.join(deps.directory, 'node_modules', 'linked'), 'junction');
+  await assert.rejects(packageVps({ cwd: source.directory, out: 'output/c.tar.gz', deps: deps.directory, env: {} }), /dependency_link_refused/);
+});

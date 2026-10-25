@@ -34,7 +34,7 @@ Coordinación organiza el trabajo local y gestiona las concesiones de staff. Est
 
 ## Publicación sin reemplazar datos
 
-El workflow `.github/workflows/ci.yml` verifica y genera un artefacto; no instala servicios en la VPS. Solo reacciona a `pre`, `main`, PR hacia esas ramas o una ejecución manual. Publicar esta rama feature no cambia producción. `scripts/package-vps.mjs` incluye exclusivamente `server`, `shared`, `dist`, manifiesto y dependencias declaradas; excluye SQLite, entornos y secretos. Los assets de infraestructura se revisan aparte y no se aplican al instalar una release Node.
+El workflow `.github/workflows/ci.yml` verifica y genera un artefacto; no instala servicios en la VPS. PRE se publica automáticamente con `deploy-pre.yml` ([CI/CD de Manager PRE](CI_CD_PRE.md)); producción sigue los pasos manuales de esta sección. Solo reacciona a `pre`, `main`, PR hacia esas ramas o una ejecución manual. Publicar esta rama feature no cambia producción. `scripts/package-vps.mjs` incluye exclusivamente `server`, `shared`, `dist`, manifiesto y dependencias declaradas; excluye SQLite, entornos y secretos. Los assets de infraestructura se revisan aparte y no se aplican al instalar una release Node.
 
 Antes de otra publicación:
 

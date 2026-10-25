@@ -78,3 +78,18 @@ test('block and decision receipts must match this lobby, request and input exact
  assert.equal(rankedDecisionReceipt({...decisionReply,decision:'cancel',side:null},lobbyId,{...decision,decision:'cancel',side:null}).side,null);
  for(const mutate of[r=>r.side='a',r=>r.decision='cancel',r=>r.author_role='player',r=>r.lobby_id=requestId,r=>r.replayed='no']){const data=structuredClone(decisionReply);mutate(data);assert.throws(()=>rankedDecisionReceipt(data,lobbyId,decision),{status:502});}
 });
+
+test('disputes name the reporter, their team and what they wrote, without player identities',()=>{
+ const raw=lobbyFixture();raw.lobby.status='disputed';raw.open_disputes=1;
+ raw.disputes=[{username:'Player 6',side:'b',reason:'El equipo A ha usado un arma prohibida.\nTengo clip.',created_at:'2026-10-23T11:40:00Z',resolved:false,user_id:'secret'},{username:null,side:null,reason:'x'.repeat(2000),created_at:'2026-10-23T11:45:00Z',resolved:true}];
+ const clean=rankedLobbyDetail(raw,lobbyId);
+ assert.deepEqual(clean.disputes,[{username:'Player 6',side:'b',reason:'El equipo A ha usado un arma prohibida.\nTengo clip.',created_at:'2026-10-23T11:40:00Z',resolved:false},{username:null,side:null,reason:'x'.repeat(2000),created_at:'2026-10-23T11:45:00Z',resolved:true}]);
+ assert.equal(JSON.stringify(clean).includes('secret'),false);
+ // CTP before migration 238 only sends the count.
+ assert.equal(rankedLobbyDetail(lobbyFixture(),lobbyId).disputes,null);
+ assert.deepEqual(rankedLobbyDetail({...lobbyFixture(),disputes:[]},lobbyId).disputes,[]);
+ const ok={username:'Player 6',side:'b',reason:'Motivo suficiente',created_at:'2026-10-23T11:40:00Z',resolved:false};
+ for(const mutate of[r=>r.disputes={},r=>r.disputes=[null],r=>r.disputes=Array(17).fill(ok),r=>r.disputes=[{...ok,side:'c'}],r=>r.disputes=[{...ok,reason:'x'.repeat(2001)}],r=>r.disputes=[{...ok,reason:null}],r=>r.disputes=[{...ok,username:'x'.repeat(101)}],r=>r.disputes=[{...ok,created_at:'ayer'}],r=>r.disputes=[{...ok,resolved:'no'}],r=>{r.open_disputes=0;r.disputes=[ok];}]){
+  const data=lobbyFixture();data.open_disputes=1;mutate(data);assert.throws(()=>rankedLobbyDetail(data,lobbyId),{status:502});
+ }
+});

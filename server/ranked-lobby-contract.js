@@ -69,7 +69,12 @@ export function rankedLobbyDetail(value,expectedId){
  let next_before;try{next_before=rankedChatCursor(chat.next_before);}catch{fail();}
  const has_more=bool(chat.has_more);if(has_more&&(!messages.length||next_before!==messages[0].id)||!has_more&&next_before!==null)fail();
  const map_draws=rows(value.map_draws,64,d=>({revision:number(d.revision),map_name:text(d.map_name,120),drawn_at:date(d.drawn_at),skipped_at:optionalDate(d.skipped_at)}));
- return {schema_version:1,observed_at:date(value.observed_at),lobby,players,result,chat:{messages,next_before,has_more,can_send:chat.can_send===undefined?false:bool(chat.can_send)},map_draws,open_disputes:number(value.open_disputes),can_moderate:value.can_moderate===undefined?false:bool(value.can_moderate)};
+ // Player disputes (CTP 238): who opened each one, their team, what they wrote and whether it is resolved.
+ // null = this CTP version does not send them yet; the open count still comes alone.
+ const open_disputes=number(value.open_disputes);
+ const disputes=value.disputes===undefined?null:rows(value.disputes,16,d=>({username:d.username===null?null:text(d.username,100),side:side(d.side),reason:text(d.reason,2000),created_at:date(d.created_at),resolved:bool(d.resolved)}));
+ if(disputes&&disputes.filter(d=>!d.resolved).length>open_disputes)fail();
+ return {schema_version:1,observed_at:date(value.observed_at),lobby,players,result,chat:{messages,next_before,has_more,can_send:chat.can_send===undefined?false:bool(chat.can_send)},map_draws,open_disputes,disputes,can_moderate:value.can_moderate===undefined?false:bool(value.can_moderate)};
 }
 
 /** Accept an acknowledged message only for this exact lobby, request and text. */

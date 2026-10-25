@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Link,Navigate,useParams} from 'react-router-dom';
-import {ArrowLeft,Ban,Gavel,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
+import {ArrowLeft,Ban,Flag,Gavel,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
 import {api} from '../api.js';
 import {useApp} from '../context.jsx';
 import {Spinner} from '../components/ui.jsx';
@@ -14,6 +14,21 @@ import './ranked-monitor.css';
 
 const STATUS={voting:'Sorteo de mapa',drafting:'Formando equipos',ready:'Lista para jugar',reported:'Confirmando resultado',disputed:'En revisión',closed:'Finalizada',cancelled:'Cancelada'};
 const team=side=>side==='a'?'Equipo A':side==='b'?'Equipo B':'Sin asignar';
+/** Player disputes: who opened each one, their team and the message they wrote in CTP. */
+function RankedDisputes({lobby,disputes,open}){
+ const title=count=><h2><Flag size={18}/> Disputas{count?<span className="muted"> {count}</span>:null}</h2>;
+ // Older CTP versions only send the open count.
+ if(disputes===null)return open>0||lobby.status==='disputed'?<section className="op-card rl-disputes has-open"><div className="op-section-title"><div>{title()}<p>{open===1?'Hay 1 disputa abierta':`Hay ${open} disputas abiertas`}. CTP todavía no envía quién la ha abierto ni su mensaje.</p></div></div></section>:null;
+ if(!disputes.length)return lobby.status==='disputed'?<section className="op-card rl-disputes has-open"><div className="op-section-title"><div>{title()}<p>Ningún jugador ha abierto una disputa: la partida pasó a revisión por empate en la votación del resultado.</p></div></div></section>:null;
+ const shownOpen=disputes.filter(d=>!d.resolved).length;
+ return <section className={`op-card rl-disputes ${shownOpen?'has-open':''}`}><div className="op-section-title"><div>{title(disputes.length)}<p>Quién ha abierto cada disputa y el mensaje que escribió al reportar la partida.</p></div></div>
+  <ol className="rl-dispute-list">{disputes.map((dispute,index)=><li key={`${dispute.created_at}:${index}`} className={dispute.resolved?'is-resolved':''}>
+   <header><strong>{dispute.username||'Jugador no disponible'}</strong><span className="muted">{team(dispute.side)}</span><Badge value={dispute.resolved?'resolved':'disputed'}>{dispute.resolved?'Resuelta':'Abierta'}</Badge><time dateTime={dispute.created_at}>{dateTime(dispute.created_at)}</time></header>
+   <p>{dispute.reason}</p>
+  </li>)}</ol>
+  {open>shownOpen&&<p className="muted rl-caption">Hay más disputas abiertas de las que se muestran aquí.</p>}
+ </section>;
+}
 /** Manual arbitration: CTP closes the match at once with this winner (XP applied) or cancels it (no XP). */
 function RankedDecision({lobby,players,onApplied}){
  const playable=['ready','reported','disputed'].includes(lobby.status);
@@ -132,6 +147,7 @@ export default function RankedLobbyPage(){
   {!data?busy?<div className="op-loading"><Spinner/>Consultando la partida…</div>:null:<>
    <div className={`op-connection ${error?'is-stale':''}`} role="status"><span className={`rm-dot ${error?'is-stale':''}`}/><span>{error?'Última lectura conservada':'Datos de CTP'} · {dateTime(data.observed_at)}</span><span className="op-connection-mode">Cada 15 s con la pestaña visible</span></div>
    <section className="op-card rl-overview"><div><span className="muted">Estado</span><Badge value={lobby.status}>{STATUS[lobby.status]}</Badge></div><div><span className="muted">Modo</span><ModeTag mode={lobby.mode} pending={lobby.mode_pending}/></div><div><span className="muted">Partida</span><span className="rm-id" title={lobby.id}>{lobby.id.slice(0,8)}</span></div><div><span className="muted">Creada</span><span>{dateTime(lobby.created_at)}</span></div><div><span className="muted">Disputas abiertas</span><strong>{data.open_disputes}</strong></div></section>
+   <RankedDisputes lobby={lobby} disputes={data.disputes??null} open={data.open_disputes}/>
    <section className="op-card"><div className="op-section-title"><div><h2>Resultado</h2><p>{result.winner?`Ganador confirmado: ${team(result.winner)}`:lobby.status==='cancelled'?'La partida se ha cancelado.':'Todavía no hay ganador confirmado.'}</p></div></div>
     <div className="rl-votes"><div><span>Votos al equipo A</span><strong>{result.votes_a}</strong></div><div><span>Votos al equipo B</span><strong>{result.votes_b}</strong></div><div><span>Confirmaciones necesarias</span><strong>{result.confirmations_required}</strong></div></div>
     <p className="muted rl-caption">Estos contadores son votos de resultado; no son el marcador del juego.</p>

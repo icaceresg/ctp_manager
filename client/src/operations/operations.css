@@ -26,7 +26,7 @@
 .op-section-title a { display: inline-flex; align-items: center; gap: 7px; }
 .op-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .op-filters input:not([type=checkbox]) { min-width: 210px; }
-.op-page input:not([type=checkbox]), .op-page select, .op-page textarea, .op-form input, .op-form select, .op-form textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); padding: 10px 12px; min-height: 42px; }
+.op-page input:not([type=checkbox]):not([type=radio]), .op-page select, .op-page textarea, .op-form input:not([type=checkbox]):not([type=radio]), .op-form select, .op-form textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); padding: 10px 12px; min-height: 42px; }
 .op-filters input:not([type=checkbox]), .op-filters select, .op-section-title > input { width: auto !important; max-width: 100%; }
 .op-filters input::placeholder { color: var(--muted); }
 .op-match-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(310px,1fr)); gap: 16px; }
@@ -117,7 +117,7 @@
 .op-stack { display: flex; flex-direction: column; gap: 5px; align-items: start; }
 .op-scopes { border: 1px solid var(--border-strong); border-radius: 7px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .op-scopes legend { padding: 0 5px; font-size: 13px; }
-.op-form input[type=checkbox], .op-page input[type=checkbox] { width: 16px; height: 16px; min-height: 0; flex-shrink: 0; accent-color: var(--accent); }
+.op-form input:is([type=checkbox],[type=radio]), .op-page input:is([type=checkbox],[type=radio]) { width: 16px; height: 16px; min-height: 0; flex-shrink: 0; accent-color: var(--accent); }
 .op-player-insights { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 20px; }
 .op-insight { display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; }
 .op-insight > div:first-child { display: flex; justify-content: space-between; gap: 14px; align-items: center; }

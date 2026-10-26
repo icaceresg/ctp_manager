@@ -650,15 +650,19 @@ export function prepareAdministrationCommand(user, input = {}) {
 }
 
 /** A direct ticket action already applied in CTP; mirror it so the inbox reflects it before the next feed. */
-export function rememberTicketThread(thread,actorUser=null) {
+export function rememberTicketThread(thread) {
   return tx(()=>{
     let item;try{item=record('incident',thread.ticket.id,true);}catch{return thread;/* Not in the local feed yet. */}
     const t=thread.ticket,last=thread.messages.at(-1);
+    // The person who replied need not own the ticket. Resolve the official
+    // CTP identity, never a display name or the latest message's author.
+    const assigned=t.assigned?.id?db.prepare('SELECT id FROM users WHERE ctp_user_id=?').get(t.assigned.id):null;
     save('incident',{...item,
       status:({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[t.status]||t.status,
-      source_status:t.status,reporter_id:t.author.id||item.reporter_id||null,reporter_name:t.author.username,assigned_name:t.assigned?.username||null,
+      source_status:t.status,reporter_id:t.author.id||item.reporter_id||null,reporter_name:t.author.username,reporter_gamertag:t.author.gamertag||null,reporter_activision_id:t.author.activision_id||null,assigned_name:t.assigned?.username||null,
+      assignee_id:assigned?.id??null,assignee_ctp_id:t.assigned?.id??null,
       awaiting_staff:last?!last.is_staff:false,last_message_at:last?.created_at||item.last_message_at||null,
-      ...(actorUser?{assignee_id:actorUser.id}:{})},item.source);
+      },item.source);
     return thread;
   });
 }

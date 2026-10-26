@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Link,Navigate,useParams,useSearchParams} from 'react-router-dom';
-import {ArrowLeft,Ban,Flag,Gavel,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
+import {ArrowLeft,Ban,ExternalLink,Flag,Gavel,MessageSquare,RefreshCw,Send,ShieldCheck,Users} from 'lucide-react';
 import {api} from '../api.js';
 import {useApp} from '../context.jsx';
 import {Spinner} from '../components/ui.jsx';
@@ -10,10 +10,10 @@ import {canManageRanked} from '../../../shared/access.js';
 import {ModeTag,RankTag} from './RankedTags.jsx';
 import {BAN_DURATIONS,reportReasonLabel} from './rankedLabels.js';
 import {operationReturnPath} from '../navigation.js';
+import {rankedPhaseLabel,safeRankedClipUrl} from '../../../shared/ranked-lobby-presentation.js';
 import '../operations/operations.css';
 import './ranked-monitor.css';
 
-const STATUS={voting:'Sorteo de mapa',drafting:'Formando equipos',ready:'Lista para jugar',reported:'Confirmando resultado',disputed:'En revisión',closed:'Finalizada',cancelled:'Cancelada'};
 const team=side=>side==='a'?'Equipo A':side==='b'?'Equipo B':'Sin asignar';
 /** Player disputes: who opened each one, their team and the message they wrote in CTP. */
 export function RankedDisputes({lobby,disputes,open,canDecide}){
@@ -27,10 +27,16 @@ export function RankedDisputes({lobby,disputes,open,canDecide}){
   <ol className="rl-dispute-list">{disputes.map((dispute,index)=><li key={`${dispute.created_at}:${index}`} className={dispute.resolved?'is-resolved':''}>
    <header><strong>{dispute.username||'Jugador no disponible'}</strong><span className="muted">{team(dispute.side)}</span><Badge value={dispute.resolved?'resolved':'disputed'}>{dispute.resolved?'Resuelta':'Abierta'}</Badge><time dateTime={dispute.created_at}>{dateTime(dispute.created_at)}</time></header>
    <p>{dispute.reason}</p>
+   {safeRankedClipUrl(dispute.clip_url)?<a className="btn sm" href={safeRankedClipUrl(dispute.clip_url)} target="_blank" rel="noopener noreferrer" aria-label={`Ver el clip de la disputa de ${dispute.username||'este jugador'}`}><ExternalLink size={14}/> Ver clip de la disputa</a>:<p className="muted rl-caption">Esta disputa no tiene un clip disponible. Los registros anteriores se conservan sin enlace.</p>}
    {!dispute.resolved&&action}
   </li>)}</ol>
   {open>shownOpen&&<p className="muted rl-caption">Hay más disputas abiertas de las que se muestran aquí.</p>}
  </section>;
+}
+/** Selection history stays visible, including skips from the earlier system. */
+export function RankedMapHistory({lobby,draws}) {
+ const pending=lobby.mode_pending===true?'El mapa se decidirá después de la votación de modo.':lobby.status==='voting'&&!lobby.map_name?'La votación de mapa todavía no ha terminado.':'Todavía no hay un mapa asignado.';
+ return <section className="op-card"><div className="op-section-title"><div><h2>Selección de mapa</h2><p>Mapa asignado y selecciones anteriores de esta partida.</p></div></div>{draws.length?<ol className="rl-draws">{draws.map(draw=><li key={draw.revision}><strong>{draw.map_name}</strong><span>{draw.skipped_at?'Omitido · sistema anterior':'Asignado'}</span><time dateTime={draw.drawn_at}>{dateTime(draw.drawn_at)}</time></li>)}</ol>:<p className="muted">{pending}</p>}</section>;
 }
 /** Player reports: who reported whom, why and when. Staff can jump to the Ranked block with that player selected. */
 function RankedReports({reports,canBan,onBlock}){
@@ -167,7 +173,7 @@ export default function RankedLobbyPage(){
   {error&&<div className="op-error" role="alert">{error}{data?' Se conserva la última lectura correcta.':''}</div>}
   {!data?busy?<div className="op-loading"><Spinner/>Consultando la partida…</div>:null:<>
    <div className={`op-connection ${error?'is-stale':''}`} role="status"><span className={`rm-dot ${error?'is-stale':''}`}/><span>{error?'Última lectura conservada':'Datos de CTP'} · {dateTime(data.observed_at)}</span><span className="op-connection-mode">Cada 15 s con la pestaña visible</span></div>
-   <section className="op-card rl-overview"><div><span className="muted">Estado</span><Badge value={lobby.status}>{STATUS[lobby.status]}</Badge></div><div><span className="muted">Modo</span><ModeTag mode={lobby.mode} pending={lobby.mode_pending}/></div><div><span className="muted">Partida</span><span className="rm-id" title={lobby.id}>{lobby.id.slice(0,8)}</span></div><div><span className="muted">Creada</span><span>{dateTime(lobby.created_at)}</span></div><div><span className="muted">Disputas abiertas</span><strong>{data.open_disputes}</strong></div></section>
+   <section className="op-card rl-overview"><div><span className="muted">Estado</span><Badge value={lobby.status}>{rankedPhaseLabel(lobby)}</Badge></div><div><span className="muted">Modo</span><ModeTag mode={lobby.mode} pending={lobby.mode_pending}/></div><div><span className="muted">Partida</span><span className="rm-id" title={lobby.id}>{lobby.id.slice(0,8)}</span></div><div><span className="muted">Creada</span><span>{dateTime(lobby.created_at)}</span></div><div><span className="muted">Disputas abiertas</span><strong>{data.open_disputes}</strong></div></section>
    <RankedDisputes lobby={lobby} disputes={data.disputes??null} open={data.open_disputes} canDecide={data.can_decide&&!['closed','cancelled'].includes(lobby.status)}/>
    <RankedReports reports={data.player_reports} canBan={data.can_ban} onBlock={report=>{setBanPreset({slot:report.reported_slot,username:report.reported,reason:report.reason,at:Date.now()});document.getElementById('ranked-ban')?.scrollIntoView({block:'start'});}}/>
    <section className="op-card"><div className="op-section-title"><div><h2>Resultado</h2><p>{result.winner?`Ganador confirmado: ${team(result.winner)}`:lobby.status==='cancelled'?'La partida se ha cancelado.':'Todavía no hay ganador confirmado.'}</p></div></div>
@@ -190,7 +196,7 @@ export default function RankedLobbyPage(){
      {sent&&<p className="op-notice" role="status">Mensaje confirmado en el chat de la partida.</p>}
     </form>:<p className="muted rl-caption">El envío de mensajes no está disponible para esta cuenta o todavía no se ha habilitado en CTP.</p>}
    </section>
-   <section className="op-card"><div className="op-section-title"><div><h2>Sorteos de mapa</h2><p>Historial de esta partida, incluidos los mapas omitidos.</p></div></div>{data.map_draws.length?<ol className="rl-draws">{data.map_draws.map(draw=><li key={draw.revision}><strong>{draw.map_name}</strong><span>{draw.skipped_at?'Omitido':'Asignado'}</span><time dateTime={draw.drawn_at}>{dateTime(draw.drawn_at)}</time></li>)}</ol>:<p className="muted">El mapa todavía no se ha sorteado.</p>}</section>
+   <RankedMapHistory lobby={lobby} draws={data.map_draws}/>
   </>}
  </div>;
 }

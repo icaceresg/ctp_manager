@@ -4,6 +4,8 @@ import { ArrowUpRight, CalendarDays, CheckCircle2, Clock3, ListChecks, Users } f
 import { Badge, Empty, AuditList } from './ui.jsx';
 import { dateTime, label, matchName, officialResult } from './model.js';
 import { ACTIVE_ASSIGNMENTS, madridDay, matchCoverage, personalTasks, validTime } from './staffModel.js';
+import {canManageRanked} from '../../../shared/access.js';
+import {RankedWorkSummary} from './RankedWorkSummary.jsx';
 import { useWorkspaceSearch } from './useWorkspaceSearch.js';
 
 export function StaffDesk({ data, me, can }) {
@@ -39,6 +41,7 @@ export function StaffDesk({ data, me, can }) {
   const firstPending = [...pending].sort((a, b) => validTime(a.starts_at) - validTime(b.starts_at))[0];
   const firstGap = gaps.filter((m) => validTime(m.scheduled_at) !== null).sort((a, b) => validTime(a.scheduled_at) - validTime(b.scheduled_at))[0];
   return <>
+    {canManageRanked(me)&&<RankedWorkSummary actorKey={`${me.id}:${me.ctp_user_id||''}:${me.ctp_role||''}`}/>}
     <section className="op-card"><div className="op-section-title"><div><h2>Qué hacer ahora</h2><p>Abre una tarea para trabajar directamente en ella.</p></div><div className="op-actions"><span className="op-count">{tasks.length} en esta consulta</span>{can('disponibilidad') && <Link className="btn sm" to="/disponibilidad"><CalendarDays size={15} /> Disponibilidad</Link>}</div></div>{tasks.length ? <><ol className="op-task-list">{(showAllTasks ? tasks : tasks.slice(0, 6)).map((task) => <li key={task.id}><Link to={task.to}><span className={`op-task-marker ${task.priority === 0 ? 'is-urgent' : ''}`}><ListChecks size={16} /></span><span><strong>{task.title}</strong><small>{task.detail}{task.when ? ` · ${dateTime(task.when)}` : ''}</small></span><ArrowUpRight size={17} /></Link></li>)}</ol>{tasks.length > 6 && <button className="btn" onClick={() => setShowAllTasks(!showAllTasks)}>{showAllTasks ? 'Mostrar menos' : `Ver ${tasks.length - 6} tareas más`}</button>}</> : <div className="op-caught-up"><CheckCircle2 size={22} /><div><strong>No tienes tareas pendientes en esta consulta</strong><p>Consulta la agenda o actualiza tus días disponibles.</p></div></div>}</section>
     {((seesAssignments && pendingCount > 0) || (can('operaciones') && gapCount > 0)) && <div className="op-quick-strip">
       {seesAssignments && pendingCount > 0 && <Link to={`/operaciones/turnos?person=me${firstPending ? `&week=${madridDay(firstPending.starts_at)}` : ''}`}><Clock3 size={18} /><span><strong>{pendingCount} turno{pendingCount === 1 ? '' : 's'} por confirmar</strong><small>Confirmar mis turnos</small></span><ArrowUpRight size={16} /></Link>}

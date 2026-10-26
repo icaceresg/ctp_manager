@@ -30,6 +30,7 @@ export function validateSecrets(value){
  if(!value||value.schemaVersion!==1||value.projectId!==PROJECT||value.apiUrl!==API||value.webUrl!==WEB||value.managerUrl!==MANAGER)fail('dev_manager_secrets_target_invalid');
  if(!jwt(value.anonKey,'anon')||typeof value.serviceRoleKey!=='string'||value.serviceRoleKey.length<20||value.serviceRoleKey.length>16384)fail('dev_manager_secrets_invalid');
  for(const name of ['managerToken','managerHmac'])if(typeof value[name]!=='string'||value[name].length<32||value[name].length>256||/\s/.test(value[name]))fail('dev_manager_secrets_invalid');
+ if(value.managerPcCheckKey!==undefined&&(typeof value.managerPcCheckKey!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.managerPcCheckKey)||[value.managerToken,value.managerHmac,value.managerEncryptionKey].includes(value.managerPcCheckKey)))fail('dev_manager_pc_key_invalid');
  if(new Set([value.managerToken,value.managerHmac,value.managerEncryptionKey]).size!==3)fail('dev_manager_secrets_not_independent');
  try{ctpAuthConfig(managerEnvironment({},value));}catch{fail('dev_manager_auth_configuration_invalid');}
  return value;
@@ -46,6 +47,7 @@ export function managerEnvironment(source,secrets){
   CTP_AUTH_ANON_KEY:secrets.anonKey,CTP_AUTH_TOKEN_KEY:secrets.managerEncryptionKey,
   CTP_AUTH_CAPTCHA_REQUIRED:'false',CTP_AUTH_CAPTCHA_SITE_KEY:'',
   CTP_OPERATIONS_URL:WEB+'/functions/v1/manager-operations',CTP_OPERATIONS_TOKEN:secrets.managerToken,CTP_SIGNING_SECRET:secrets.managerHmac,
+  PC_CHECK_EVIDENCE_KEY:secrets.managerPcCheckKey||'',
   CTP_ENABLE_WRITES:'true',CTP_ALLOW_LOCAL_WRITES:'true',CTP_SYNC_SECONDS:'0',OBS_ENABLE_CONTROL:'false'};
 }
 

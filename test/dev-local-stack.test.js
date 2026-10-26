@@ -22,6 +22,29 @@ test('DEV launcher rejects foreign project targets and malformed or reused crede
  ])assert.throws(()=>validateSecrets({...value,...patch}),error=>/^dev_manager_/.test(error.message));
 });
 
+test('optional DEV PC-check evidence key is an independent 43-character base64url string',()=>{
+ const value={...secrets(),managerToken:crypto.randomBytes(32).toString('base64url'),managerHmac:crypto.randomBytes(32).toString('base64url')};
+ const managerPcCheckKey=crypto.randomBytes(32).toString('base64url');
+ assert.equal(managerPcCheckKey.length,43);
+ const configured={...value,managerPcCheckKey};assert.equal(validateSecrets(configured),configured);
+ assert.equal(managerEnvironment({},configured).PC_CHECK_EVIDENCE_KEY,managerPcCheckKey);
+ for(const invalid of [null,0,false,'','x'.repeat(42),'x'.repeat(44),'x'.repeat(42)+'+','x'.repeat(42)+'/',
+  'x'.repeat(42)+'=', 'x'.repeat(42)+'\n',[managerPcCheckKey],{toString:()=>managerPcCheckKey}]){
+  assert.throws(()=>validateSecrets({...value,managerPcCheckKey:invalid}),/dev_manager_pc_key_invalid/);
+ }
+ for(const name of ['managerToken','managerHmac','managerEncryptionKey']){
+  assert.equal(value[name].length,43);
+  assert.throws(()=>validateSecrets({...value,managerPcCheckKey:value[name]}),/dev_manager_pc_key_invalid/);
+ }
+});
+
+test('legacy DEV secrets without a PC-check key remain valid and do not inherit another environment key',()=>{
+ const legacy=secrets();assert.equal(Object.hasOwn(legacy,'managerPcCheckKey'),false);
+ assert.equal(validateSecrets(legacy),legacy);
+ assert.equal(managerEnvironment({PC_CHECK_EVIDENCE_KEY:'foreign-app-key'},legacy).PC_CHECK_EVIDENCE_KEY,'');
+ assert.equal(Object.hasOwn(legacy,'managerPcCheckKey'),false);
+});
+
 test('DEV process inherits only OS settings and fixed local paths, never the service role or another app environment',()=>{
  const keys=secrets();
  const env=managerEnvironment({Path:'os-path',TEMP:'temp-dir',SYSTEMROOT:'system',

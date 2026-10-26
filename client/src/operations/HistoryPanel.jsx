@@ -4,8 +4,10 @@ import { api } from '../api.js';
 import { Badge, DataTable, Empty, Field } from './ui.jsx';
 import { dateTime, matchName, safeWebUrl, label } from './model.js';
 import { actionLabel } from './actionLabels.js';
+import { canManageRanked } from '../../../shared/access.js';
+import { rankedHistoryPath } from '../../../shared/ranked-lobby-presentation.js';
 
-export function HistoryPanel({data,can}) {
+export function HistoryPanel({data,can,me}) {
   const [draft,setDraft]=useState({query:'',kind:'match',status:'',date_from:'',date_to:''});
   const [filters,setFilters]=useState(draft);
   const [cursor,setCursor]=useState(null);
@@ -33,13 +35,15 @@ export function HistoryPanel({data,can}) {
         {key:'status',title:'Estado',render:item=><Badge value={item.status||'confirmed'}/>},
         {key:'when',title:'Fecha',render:item=>dateTime(item.occurred_at||item.scheduled_at||item.created_at||item.updated_at)},
         {key:'version',title:'Versión',render:item=>item.manager_version??item.version??'—'},
-        {key:'more',title:'Detalle',render:item=><HistoryDetails item={item} origin={data.connection?.web_origin} review={can('arbitraje')}/>},
+        {key:'more',title:'Detalle',render:item=><HistoryDetails item={item} origin={data.connection?.web_origin} review={can('arbitraje')} ranked={canManageRanked(me)}/>},
       ]}/><div className="op-actions"><button className="btn" disabled={busy||!pages.length} onClick={()=>{setCursor(pages[pages.length-1]);setPages(p=>p.slice(0,-1));}}>Anterior</button><span>Página {pages.length+1} · {(result.items||[]).length} registros</span><button className="btn" disabled={busy||!result.next_cursor} onClick={()=>{setPages(p=>[...p,cursor]);setCursor(result.next_cursor);}}>Siguiente</button></div></>}
     </>}
   </>;
 }
-function HistoryDetails({item,origin,review}) {
+export function HistoryDetails({item,origin,review,ranked=false}) {
   const detail=item.detail||item;
   const href=safeWebUrl(origin,item.web_path);
-  return <details className="op-details"><summary>Consultar</summary><dl className="op-settings"><div><dt>Referencia</dt><dd style={{overflowWrap:'anywhere'}}>{item.id||item.target_id}</dd></div>{(detail.type||detail.command_type)&&<div><dt>Acción</dt><dd>{actionLabel(detail.type||detail.command_type)}</dd></div>}{detail.resolution&&<div><dt>Resolución</dt><dd>{detail.resolution}</dd></div>}{detail.review_note&&<div><dt>Revisión</dt><dd>{detail.review_note}</dd></div>}{detail.score_a!=null&&detail.score_b!=null&&<div><dt>Resultado</dt><dd>{detail.score_a} – {detail.score_b}</dd></div>}{detail.actor_name&&<div><dt>Responsable</dt><dd>{detail.actor_name}</dd></div>}</dl><div className="op-actions">{review&&['match','stats'].includes(item.kind)&&<Link className="btn" to={`/operaciones/estadisticas?match=${encodeURIComponent(item.kind==='match'?item.id:detail.match_id)}`}>Revisiones de estadísticas</Link>}{href&&<a className="btn" href={href} target="_blank" rel="noopener noreferrer">Consultar en CTP</a>}</div></details>;
+  const rankedPath=rankedHistoryPath(item);
+  const statistics=review&&(item.kind==='stats'||item.kind==='match'&&detail.tournament_id&&!['ranked','challenge'].includes(detail.competition_kind));
+  return <details className="op-details"><summary>Consultar</summary><dl className="op-settings"><div><dt>Referencia</dt><dd style={{overflowWrap:'anywhere'}}>{item.id||item.target_id}</dd></div>{(detail.type||detail.command_type)&&<div><dt>Acción</dt><dd>{actionLabel(detail.type||detail.command_type)}</dd></div>}{detail.resolution&&<div><dt>Resolución</dt><dd>{detail.resolution}</dd></div>}{detail.review_note&&<div><dt>Revisión</dt><dd>{detail.review_note}</dd></div>}{detail.score_a!=null&&detail.score_b!=null&&<div><dt>Resultado</dt><dd>{detail.score_a} – {detail.score_b}</dd></div>}{detail.actor_name&&<div><dt>Responsable</dt><dd>{detail.actor_name}</dd></div>}</dl><div className="op-actions">{ranked&&rankedPath&&<Link className="btn" to={rankedPath}>Ver partida Ranked</Link>}{statistics&&<Link className="btn" to={`/operaciones/estadisticas?match=${encodeURIComponent(item.kind==='match'?item.id:detail.match_id)}`}>Revisiones de estadísticas</Link>}{href&&<a className="btn" href={href} target="_blank" rel="noopener noreferrer">Consultar en CTP</a>}</div></details>;
 }

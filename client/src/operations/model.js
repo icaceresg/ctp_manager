@@ -1,20 +1,24 @@
 export const OP_SECTIONS = ['operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones'];
+// Order is the sidebar order inside each group (Trabajo diario, Competición,
+// Emisión y comunidad). Disciplina was replaced by Sanciones.
 export const OP_TABS = [
   { id: 'jornada', title: 'Mi jornada', sections: OP_SECTIONS },
+  { id: 'turnos', title: 'Planificador', sections: ['operaciones', 'casters', 'arbitraje', 'realizacion'] },
+  { id: 'decisiones', title: 'Decisiones', sections: OP_SECTIONS },
   { id: 'torneos', title: 'Torneos', sections: ['operaciones'] },
   { id: 'incidencias', title: 'Incidencias', sections: ['arbitraje'] },
-  { id: 'arbitraje', title: 'Partidos y actas', sections: ['arbitraje'] },
-  { id: 'turnos', title: 'Planificador', sections: ['operaciones', 'casters', 'arbitraje', 'realizacion'] },
+  { id: 'arbitraje', title: 'Actas y resultados', sections: ['arbitraje'] },
+  { id: 'estadisticas', title: 'Estadísticas', sections: ['arbitraje'] },
+  { id: 'sanciones', title: 'Sanciones', sections: ['arbitraje'] },
+  { id: 'clubes', title: 'Clubes', sections: ['clubes'] },
+  { id: 'historico', title: 'Histórico', sections: ['operaciones', 'arbitraje'] },
   { id: 'casters', title: 'Dossier', sections: ['casters', 'operaciones', 'realizacion'] },
   { id: 'realizacion', title: 'Preparación', sections: ['realizacion'] },
-  { id: 'estadisticas', title: 'Estadísticas', sections: ['arbitraje'] },
-  { id: 'clubes', title: 'Clubes', sections: ['clubes'] },
   { id: 'discord', title: 'Discord', sections: ['comunicaciones'] },
-  { id: 'disciplina', title: 'Disciplina', sections: ['arbitraje'] },
   { id: 'contenido', title: 'Contenido', sections: ['comunicaciones'] },
-  { id: 'historico', title: 'Histórico', sections: ['operaciones', 'arbitraje'] },
-  { id: 'decisiones', title: 'Decisiones', sections: OP_SECTIONS },
 ];
+// Old links keep working after the reorganization.
+export const OP_TAB_ALIASES = { disciplina: 'sanciones' };
 export const labels = {
   open: 'Abierta', investigating: 'En investigación', waiting: 'Esperando respuesta', resolved: 'Resuelta',
   approve: 'Aprobar', reject: 'Rechazar', close: 'Cerrar expediente', award: 'Adjudicar resultado', cancel: 'Cancelar', verify: 'Verificar',

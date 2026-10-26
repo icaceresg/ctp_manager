@@ -5,9 +5,10 @@ import { Activity, ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, Clock3, I
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Modal, Spinner } from '../components/ui.jsx';
-import { OP_TABS, dateTime, label, matchName, teamName, approvedMaps, playersForMap, rosterRows, officialResult, playerInsights } from './model.js';
+import { OP_TABS, OP_TAB_ALIASES, dateTime, label, matchName, teamName, approvedMaps, playersForMap, rosterRows, officialResult, playerInsights } from './model.js';
 import { AuditList, Badge, DataTable, Empty, Field, FormDialog, MatchLink, StatsTable, WebLink } from './ui.jsx';
-import { IncidentsPanel, StatisticsPanel, DisciplinePanel } from './ReviewPanels.jsx';
+import { IncidentsPanel, StatisticsPanel } from './ReviewPanels.jsx';
+import { SanctionsPanel } from './SanctionsPanel.jsx';
 import { AssignmentsPanel, ProductionPanel, ClubsPanel, DiscordPanel, ContentPanel, IntegrationPanel } from './WorkPanels.jsx';
 import { StaffDesk } from './StaffDesk.jsx';
 import { CLOSED_INCIDENTS } from './staffModel.js';
@@ -73,6 +74,7 @@ export function OperationsPage() {
     catch (err) { toast(err.message, 'error'); }
     finally { setBusy(false); }
   };
+  if (!matchId && OP_TAB_ALIASES[view]) return <Navigate to={`/operaciones/${OP_TAB_ALIASES[view]}`} replace />;
   if (!matchId && view !== 'integracion' && !tabs.some((t) => t.id === view)) return <Navigate to={`/operaciones/${tabs[0]?.id || 'jornada'}`} replace />;
   if (view === 'integracion' && !me.is_admin) return <Navigate to="/operaciones/jornada" replace />;
   const connection = data?.connection || {};
@@ -108,7 +110,7 @@ export function OperationsPage() {
       {view === 'estadisticas' && <StatisticsPanel {...props} />}
       {view === 'clubes' && <ClubsPanel {...props} />}
       {view === 'discord' && <DiscordPanel {...props} />}
-      {view === 'disciplina' && <DisciplinePanel {...props} />}
+      {view === 'sanciones' && <SanctionsPanel {...props} />}
       {view === 'contenido' && <ContentPanel {...props} />}
       {view === 'integracion' && <IntegrationPanel {...props} />}
       {data.primary&&data.pages?.[data.primary]&&<WorkspacePagination data={data} setParams={setParams}/>}

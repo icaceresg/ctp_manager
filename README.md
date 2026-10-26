@@ -27,6 +27,7 @@ Debe mantenerse un único Panel por emisión. Manager no abre otra instancia del
 - **Incidencias:** bandeja por responsable, prioridad y estado, búsqueda, notas privadas, conversación CTP y resoluciones.
 - **Torneos:** crear y editar, gestionar estados, revisar inscripción y roster, consultar puntos y seed oficiales, generar cruces con el motor CTP, publicar fases y reprogramar partidos. Los cambios quedan como propuestas hasta la confirmación remota.
 - **Estadísticas:** aprobar/rechazar y preparar correcciones justificadas de ocho jugadores, con historial por partido. La corrección crea otra revisión pendiente y exige un revisor distinto; conserva las cifras originales.
+- **Sanciones:** quién está sancionado ahora, cuánto le queda y por qué; buscador de todas las cuentas de CTP con su historial disciplinario; suspensiones temporales (Ranked, retos, inscripción en torneos), amonestaciones con mensaje para el jugador, revocaciones, recursos y levantamiento de bloqueos de Ranked. Se aplican al momento en CTP y el jugador recibe el aviso.
 - **Decisiones:** revisar propuestas junto a su expediente o desde la bandeja común. Solo administración envía a CTP; no se confunde una solicitud con un cambio aplicado.
 - **Histórico:** búsqueda remota por tipo y fechas, páginas y detalle, incluso fuera de los partidos de la jornada.
 
@@ -86,6 +87,7 @@ La [recepción QA de PRE del 15 de octubre](docs/MANAGER_PRE_QA_2026-10-15.md) e
 
 - Quien solo tiene *Recursos* puede marcar recursos como listos, pero no crear ni editar tarjetas.
 - Si desactivas a alguien o le cambias la contraseña, sus sesiones abiertas se cierran al momento.
+- En *Administración CTP → Usuarios CTP* un administrador puede **eliminar una cuenta de jugador** escribiendo su nombre para confirmar. Sin historial compartido, la cuenta desaparece del todo; con partidas, resultados o pagos, se borran el acceso y los datos personales y queda anónima como «Cuenta eliminada» para no alterar a otros jugadores. Staff y líderes de club con más miembros no se eliminan desde aquí.
 - En modo público, *Mi cuenta* enlaza a la cuenta CTP para gestionar la contraseña. El formulario local solo aparece en desarrollo.
 
 ### Ruleta del directo (ruleta.playctp.com)

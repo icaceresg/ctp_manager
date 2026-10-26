@@ -44,6 +44,23 @@ Todas las rutas se montan bajo `/api`, requieren sesión y aplican permisos en s
 - `POST /operations/sanctions/:id/revoke` (`arbitraje`): `{expected_version,reason}` prepara `sanction.revoke` para una sanción oficial.
 - `POST /operations/commands/:id/cancel`: `{expected_updated_at}`. Solo autor con permiso vigente o administrador. Admite `pending` con cero intentos, o `rejected` con exactamente un intento y `result.rejected_confirmed:true`. Descarta la propuesta, registra quién/cuándo y libera el recurso local. Nunca revoca una acción remota. Un intento ambiguo se recupera con su mismo identificador, no se descarta.
 
+## Sanciones directas (`arbitraje`, CTP 240)
+
+La pestaña **Sanciones** lee y escribe directamente en CTP mediante `admin_service` `discipline`. CTP autoriza cada llamada con los permisos `sanction.*` del operador (administración o arbitraje), aplica la decisión al momento y avisa al jugador. No pasa por la cola de Decisiones ni necesita expediente.
+
+- `GET /operations/discipline/overview`: `{generated_at,active,appeals,recent}`. `active` reúne suspensiones, bloqueos de Ranked y amonestaciones vigentes o programadas; `appeals`, recursos pendientes.
+- `GET /operations/discipline/users?buscar&page`: todas las cuentas de CTP (25 por página) con `restricted_until`, `warnings` e `history`.
+- `GET /operations/discipline/users/:id`: `{user,clubs,items}` con todo el historial disciplinario de la cuenta.
+- `POST /operations/discipline/sanctions`: `{request_id,user_id,restriction:"warning"|"competition_suspend",scopes,starts_at,ends_at,reason}`. La amonestación lleva ámbitos vacíos y su `reason` es el mensaje que ve el jugador; la suspensión exige uno o más de `ranked`, `challenges`, `tournament_registration`. Duración máxima de 10 años. No se sanciona a staff.
+- `POST /operations/discipline/sanctions/:id/revoke` y `/review`: `{request_id,expected_version,reason[,decision]}`; reutilizan las reglas de independencia de CTP.
+- `POST /operations/discipline/bans/:id/lift`: `{request_id,reason}` levanta antes de tiempo un bloqueo de Ranked.
+
+`request_id` hace idempotente cada escritura: repetirlo con los mismos datos devuelve el resultado ya aplicado (`replayed:true`). Los errores llegan como códigos `discipline_*` que Manager traduce; nunca se reenvía texto SQL.
+
+## Usuarios CTP (administración)
+
+- `POST /administration/users/:id/delete`: `{expected_version,confirm_username}`. Solo administración CTP y con escrituras activadas. CTP rechaza staff, la propia cuenta y al líder de un club con más miembros. Si la cuenta no tiene historial compartido se borra por completo (`mode:"deleted"`); si lo tiene (partidas, resultados, estadísticas, torneos, pagos), se cierra, se borran sus datos personales y queda anónima como «Cuenta eliminada» (`mode:"anonymized"`).
+
 ## Adaptador interno
 
 `ingestSnapshot({matches,incidents,stats,clubs,deliveries,sanctions})` (alias `statistics`) valida y persiste proyecciones CTP de forma transaccional. Las colecciones omitidas no se borran. Un feed con `generated_at` y sin `possibly_truncated` retira de las vistas los registros externos ausentes en las colecciones presentes, preservando su historial. Los feeds parciales no permiten inferir bajas. Se rechazan reversiones a una `source_version` anterior. Campos `version` de API Manager son locales; `source_version` conserva la versión externa. `getIntegrationStatus()` / `setIntegrationStatus(status)` mantienen estado sin secretos.

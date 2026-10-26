@@ -15,6 +15,13 @@ import { canAccess, canManageStaff, canManageRanked } from '../shared/access.js'
 import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse } from './staff-access-contract.js';
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
+import {
+  DISCIPLINE_ERRORS, USER_DELETE_ERRORS,
+  disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
+  disciplineSanctionPayload, disciplineRevokePayload, disciplineReviewPayload, disciplineLiftPayload,
+  disciplineOverviewResponse, disciplineUsersResponse, disciplineHistoryResponse, disciplineWriteResponse,
+  userDeletePayload, userDeleteResponse,
+} from './discipline-contract.js';
 import { collectRegisteredPlayers } from './ruleta-contract.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
@@ -29,6 +36,7 @@ import {
   rememberCaseData,
   rememberProViewState,
   rememberTicketThread,
+  auditDirectDecision,
 } from './operations.js';
 import { TICKET_ERRORS, ticketActionPayload, ticketId, ticketThreadResponse } from './ticket-contract.js';
 
@@ -97,7 +105,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  if (body.action !== 'admin_service' || !['twitch','crm','users','tickets'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  if (body.action !== 'admin_service' || !['twitch','crm','users','tickets','discipline'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
   try {
@@ -116,6 +124,13 @@ async function ownerServiceFailure(body, response) {
     if (body.service === 'tickets') {
       const message = typeof error?.ticket_error === 'string' && Object.hasOwn(TICKET_ERRORS, error.ticket_error) ? TICKET_ERRORS[error.ticket_error] : null;
       return message ? integrationError(422, message) : null;
+    }
+    if (body.service === 'discipline') {
+      const message = typeof error?.discipline_error === 'string' && Object.hasOwn(DISCIPLINE_ERRORS, error.discipline_error) ? DISCIPLINE_ERRORS[error.discipline_error] : null;
+      return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
+    }
+    if (body.service === 'users' && typeof error?.delete_error === 'string') {
+      return Object.hasOwn(USER_DELETE_ERRORS, error.delete_error) ? integrationError(error.delete_error === 'user_delete_conflict' ? 409 : 422, USER_DELETE_ERRORS[error.delete_error]) : null;
     }
     if (body.service === 'users') {
       const message = typeof error?.profile_error === 'string' && Object.hasOwn(USER_PROFILE_ERRORS, error.profile_error) ? USER_PROFILE_ERRORS[error.profile_error] : null;
@@ -626,6 +641,59 @@ export async function updateCtpUserProfile(user, id, body) {
   if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   const payload = userProfilePayload(id, body);
   return userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
+}
+
+/**
+ * Sanciones: referees and admins list who is sanctioned, search every CTP
+ * account and apply a warning or a timed suspension. CTP authorizes each call
+ * under the operator's own sanction scopes and applies it at once.
+ */
+const disciplineRequest = (user, payload) => request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'discipline', payload });
+function requireDiscipline(user, write = false) {
+  if (!canReferee(user)) throw integrationError(403, 'Las sanciones requieren acceso de arbitraje.');
+  if (write && !config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+}
+export async function getDisciplineOverview(user) {
+  requireDiscipline(user);
+  return disciplineOverviewResponse(await disciplineRequest(user, disciplineOverviewQuery()));
+}
+export async function getDisciplineUsers(user, query) {
+  requireDiscipline(user);
+  const payload = disciplineUsersQuery(query);
+  return disciplineUsersResponse(await disciplineRequest(user, payload), payload);
+}
+export async function getDisciplineHistory(user, id) {
+  requireDiscipline(user);
+  const payload = disciplineHistoryQuery(id);
+  return disciplineHistoryResponse(await disciplineRequest(user, payload), payload.user_id);
+}
+const DISCIPLINE_WRITES = Object.freeze({
+  sanction: (id, body) => disciplineSanctionPayload(body),
+  revoke: disciplineRevokePayload,
+  review: disciplineReviewPayload,
+  lift: disciplineLiftPayload,
+});
+export async function writeDiscipline(user, action, id, body) {
+  requireDiscipline(user, true);
+  if (!Object.hasOwn(DISCIPLINE_WRITES, action)) throw integrationError(400, 'Acción disciplinaria no admitida.');
+  const payload = DISCIPLINE_WRITES[action](id, body);
+  const result = disciplineWriteResponse(await disciplineRequest(user, payload));
+  if (!result.replayed) {
+    const item = result.item;
+    auditDirectDecision(item.source === 'ranked_ban' ? 'ranked_ban' : 'sanction', item.id, `discipline.${action === 'sanction' ? item.kind : action}`, user,
+      { subject_id: item.subject_id, subject_name: item.subject_name, ...(action === 'review' ? { decision: payload.decision } : {}) });
+  }
+  return result;
+}
+
+/** Administrators close a CTP player account; CTP decides between deletion and anonymisation. */
+export async function deleteCtpUser(user, id, body) {
+  if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'Esta sección requiere administración CTP.');
+  if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  const payload = userDeletePayload(id, body);
+  const result = userDeleteResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
+  auditDirectDecision('administration', payload.user_id, 'admin.user.delete', user, { mode: result.mode, kept: result.kept.length });
+  return result;
 }
 
 /** Optional read polling only; writes always require a deliberate authenticated request. */

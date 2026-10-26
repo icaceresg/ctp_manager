@@ -74,6 +74,12 @@ const local={
   'sanction.drafted':'Propuesta disciplinaria creada',
   'sanction.appealed':'Recurso registrado',
   'sanction.reviewed':'Recurso revisado',
+  'discipline.warning':'Amonestación aplicada en CTP',
+  'discipline.suspension':'Suspensión aplicada en CTP',
+  'discipline.revoke':'Sanción revocada en CTP',
+  'discipline.review':'Recurso resuelto en CTP',
+  'discipline.lift':'Bloqueo de Ranked levantado en CTP',
+  'admin.user.delete':'Cuenta CTP eliminada',
   'content.created':'Tarjeta editorial preparada',
 };
 const stages={requested:'propuesta preparada',acknowledged:'confirmación recibida de CTP',cancelled:'propuesta descartada',rejected:'rechazo recibido de CTP'};

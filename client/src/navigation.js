@@ -2,13 +2,12 @@ import { OP_TABS } from './operations/model.js';
 import { metricsAllowedHost } from './pages/metricsModel.js';
 
 const groups = {
-  jornada: 'Trabajo diario', turnos: 'Trabajo diario',
-  torneos: 'Competición', arbitraje: 'Competición', incidencias: 'Competición', estadisticas: 'Competición', disciplina: 'Competición', clubes: 'Competición',
+  jornada: 'Trabajo diario', turnos: 'Trabajo diario', decisiones: 'Trabajo diario',
+  torneos: 'Competición', incidencias: 'Competición', arbitraje: 'Competición', estadisticas: 'Competición', sanciones: 'Competición', clubes: 'Competición', historico: 'Competición',
   casters: 'Emisión y comunidad', realizacion: 'Emisión y comunidad', discord: 'Emisión y comunidad', contenido: 'Emisión y comunidad',
-  historico: 'Seguimiento', decisiones: 'Seguimiento',
 };
-const titles = { torneos: 'Torneos', incidencias: 'Arbitraje', turnos: 'Turnos de staff', casters: 'Dossiers de partidos', realizacion: 'Preparar directo', decisiones: 'Decisiones pendientes' };
-const aliases = { jornada: 'inicio tareas agenda', incidencias: 'árbitro disputa reto expediente soporte', estadisticas: 'ocr captura revisión bajas muertes', clubes: 'verificar identidad logo escudo', casters: 'narración roster mapas', realizacion: 'emisión streaming obs', decisiones: 'enviar propuestas pendientes' };
+const titles = { torneos: 'Torneos', incidencias: 'Incidencias', turnos: 'Turnos de staff', casters: 'Dossiers de partidos', realizacion: 'Preparar directo', decisiones: 'Decisiones pendientes' };
+const aliases = { jornada: 'inicio tareas agenda', incidencias: 'arbitraje árbitro disputa reto expediente soporte ticket', arbitraje: 'partidos actas resultado veto pick ban', sanciones: 'disciplina amonestación amonestar suspensión ban bloqueo castigo jugadores cuentas historial recurso', historico: 'búsqueda partidos pasados', estadisticas: 'ocr captura revisión bajas muertes', clubes: 'verificar identidad logo escudo', casters: 'narración roster mapas', realizacion: 'emisión streaming obs', decisiones: 'enviar propuestas pendientes' };
 const editorial = [
   { section: 'calendario', to: '/calendario', title: 'Calendario editorial', keywords: 'publicaciones redes' },
   { section: 'escaleta', to: '/escaleta', title: 'Escaleta', keywords: 'guion emisión' },
@@ -20,7 +19,7 @@ export function managerNavigation(can, isAdmin, staffManager = false, rankedStaf
     id: tab.id, to: `/operaciones/${tab.id}`, title: titles[tab.id] || tab.title, group: groups[tab.id],
     keywords: `${tab.title} ${tab.id} ${aliases[tab.id] || ''}`,
   }));
-  if (can('disponibilidad')) items.splice(Math.min(2, items.length), 0, { id: 'disponibilidad', to: '/disponibilidad', title: 'Mi disponibilidad', group: 'Trabajo diario', keywords: 'agenda días horarios' });
+  if (can('disponibilidad')) items.splice(items.findIndex(item => item.id === 'jornada') + 1, 0, { id: 'disponibilidad', to: '/disponibilidad', title: 'Mi disponibilidad', group: 'Trabajo diario', keywords: 'agenda días horarios' });
   items.push(...editorial.filter(item => can(item.section)).map(item => ({ ...item, id: item.section, group: 'Contenido editorial' })));
   if (isAdmin || rankedStaff) items.push({ id: 'ranked-monitor', to: '/ranked/monitor', title: 'Monitor de Ranked · 8s', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización' });
   if (isAdmin) items.push(

@@ -25,9 +25,9 @@ export function RankedQueuePlayers({data, queue = '', me, returnTo='/ranked/moni
   const parties = new Map();
   for (const player of players || []) if (player.party_id && !parties.has(player.party_id)) parties.set(player.party_id, parties.size + 1);
   const canView = canManageRanked(me);
-  return <section className="op-card" aria-labelledby="ranked-queue-players"><div className="op-section-title"><div><h2 id="ranked-queue-players">Personas en cola</h2><p>La misma cola seleccionada arriba · sólo búsquedas con presencia vigente en esta lectura.</p></div>{players && <Badge value="active">{number(players.length)} personas mostradas</Badge>}</div>
+  return <section className="op-card" aria-labelledby="ranked-queue-players"><div className="op-section-title"><div><h2 id="ranked-queue-players">Personas en cola</h2><p>La misma cola seleccionada arriba · sólo búsquedas con presencia vigente en esta lectura.</p></div>{players && <Badge value="active">{number(players.length)} {players.length===1?'persona mostrada':'personas mostradas'}</Badge>}</div>
     {players === undefined || players === null ? <p className="op-notice">CTP todavía no ofrece el detalle de personas en esta lectura. El contador de búsqueda no permite identificar a los jugadores.</p> : <>
-      {longWaits>0&&<p className="op-notice" role="status"><Clock3 size={16}/> {number(longWaits)} personas mostradas llevan 3 minutos o más buscando. Revisa la cola y los tamaños de grupo; esta espera por sí sola no demuestra una avería.</p>}
+      {longWaits>0&&<p className="op-notice" role="status"><Clock3 size={16}/> {number(longWaits)} {longWaits===1?'persona mostrada lleva':'personas mostradas llevan'} 3 minutos o más buscando. Revisa la cola y los tamaños de grupo; esta espera por sí sola no demuestra una avería.</p>}
       <DataTable rows={players} empty="No hay personas buscando en esta cola" emptyDetail="Aparecerán cuando estén buscando y su presencia siga vigente." columns={[
         {key:'username',title:'Persona',render:row => <span className="rm-queue-person"><strong>{row.username}</strong>{row.gamertag && row.gamertag !== row.username && <small className="muted">{row.gamertag}</small>}</span>},
         {key:'activision_id',title:'Activision ID'}, {key:'queue_title',title:'Cola'},

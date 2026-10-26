@@ -27,7 +27,9 @@ El motor se conserva en el repositorio CTP, en `infra/vps/ranked-adaptive`. Su e
 
 Con ocho jugadores factibles forma sin esperar a mejorar MMR. Desde dieciséis candidatos compara alternativas conservando grupos completos y la unidad viable más antigua. Una espera de 180 segundos fuerza el roster FIFO completo. El reloj usa la entrada original y no se reinicia por un cambio de modo. No impone exclusiones por XP o división.
 
-No hay promesa de tiempo máximo cuando faltan personas o los grupos no permiten dos equipos de cuatro. Tampoco se interpreta actividad reciente como personas conectadas al juego. La instalación del runtime se prepara desactivada; su validación, activación local y limitaciones se documentan en CTP.
+No hay promesa de tiempo máximo cuando faltan personas o los grupos no permiten dos equipos de cuatro. Tampoco se interpreta actividad reciente como personas conectadas al juego. La migración245 instala el runtime desactivado por defecto. Se ha habilitado únicamente en la base DEV propia para esta prueba; PRE/PROD no se han modificado. En CTP, `python -B infra/dev/matchmaking.py status|enable|disable` comprueba el marcador local y la huella aplicada antes de operar.
+
+El selector de245 no aplica restricciones de XP/división. La admisión local heredada de183 permanece aparte y no se presenta como réplica de la modificación externa228 de producción. Los detalles y comandos reproducibles están en `infra/vps/ranked-adaptive/RUNTIME.md` del repositorio CTP.
 
 ## Evidencia local
 

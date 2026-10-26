@@ -74,4 +74,6 @@ test('long waiting players appear first and a partial list is not described as a
   assert.match(html,/7 min 0 s/);assert.match(html,/por sí sola no demuestra una avería/);
   assert.equal((html.match(/class="rm-long-wait"/g)||[]).length,2);
   assert.equal(data.queue_players[0].username,'Recien llegado');
+  data.queue_players[1].wait_seconds=179;
+  assert.match(render('RankedQueuePlayers',{data}),/1 persona mostrada lleva 3 minutos o más/);
 });

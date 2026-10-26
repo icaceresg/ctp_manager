@@ -35,3 +35,5 @@
 @media(max-width:650px){.rl-dispute-list time{margin-left:0;width:100%}}
 .rl-report-reason{font-weight:600;color:var(--warning)}.rl-report-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:12px}
 .rm-long-wait{color:var(--danger,#ff8f85);white-space:nowrap}
+.rm-page .op-table th:first-child,.rm-page .op-table td:first-child{min-width:160px}
+.rm-page .op-table td:has(.rm-long-wait){white-space:nowrap}

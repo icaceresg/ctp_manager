@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {monitorFixture} from './fixtures/ranked-monitor.js';
+import {monitorFixture,monitorPeopleAndMapsFixture} from './fixtures/ranked-monitor.js';
 const temp = fs.mkdtempSync(path.join(os.tmpdir(),'ctp-ranked-monitor-contract-'));
 process.env.DATA_DIR=temp;process.env.DB_PATH='';process.env.PUBLIC_ORIGIN='';process.env.CTP_AUTH_MODE='local';
 const {rankedMonitorState} = await import('../server/ranked-monitor-contract.js');
@@ -42,4 +42,30 @@ test('each match carries its selected mode or an open mode vote; older CTP build
   delete raw.active_lobbies[0].mode;delete raw.active_lobbies[0].mode_pending;
   assert.deepEqual([rankedMonitorState(raw).active_lobbies[0].mode,rankedMonitorState(raw).active_lobbies[0].mode_pending],[null,false]);
   for(const change of [row=>row.mode_pending='true',row=>row.mode='x'.repeat(81),row=>row.mode=3]){const data=monitorFixture();change(data.active_lobbies[0]);assert.throws(()=>rankedMonitorState(data),{status:502});}
+});
+
+test('older snapshots keep people and played-map counts unavailable rather than fabricating empty lists', () => {
+  const raw=monitorFixture();delete raw.map_plays;delete raw.queue_players;delete raw.map_plays_window;delete raw.map_plays_criterion;delete raw.truncated.queue_players;delete raw.truncated.map_plays;
+  const clean=rankedMonitorState(raw);
+  assert.deepEqual([clean.map_plays,clean.queue_players,clean.map_plays_window,clean.map_plays_criterion,clean.truncated.queue_players,clean.truncated.map_plays],[null,null,null,null,null,null]);
+});
+test('map counts have explicit confirmed-only meaning and retain zero-use and historical maps', () => {
+  const raw=monitorPeopleAndMapsFixture(),clean=rankedMonitorState(raw);
+  assert.deepEqual(clean.map_plays,raw.map_plays);
+  assert.deepEqual(clean.map_plays.map(row=>[row.map_name,row.played_matches,row.played_matches_24h]),[['Coal',10,1],['Cachette',3,0],['Rooftops',0,0]]);
+  for(const change of[r=>r.map_plays_criterion='draws',r=>r.map_plays_window='24h',r=>r.map_plays[0].played_matches=-1,r=>r.map_plays[0].played_matches_24h=11,r=>r.map_plays[0].last_played_at=null,r=>r.map_plays[2].last_played_at='2026-10-23T11:58:00Z',r=>r.map_plays[0].last_played_at='2027-01-01T00:00:00Z',r=>r.map_plays.push(r.map_plays[0]),r=>r.map_plays=Array(65).fill(r.map_plays[0]),r=>r.truncated.map_plays=undefined]){const data=structuredClone(raw);change(data);assert.throws(()=>rankedMonitorState(data),{status:502});}
+});
+test('queue projection exposes only needed staff identity and real waiting time, never upstream profile fields', () => {
+  const raw=monitorPeopleAndMapsFixture();Object.assign(raw.queue_players[0],{email:'secret@example.test',token:'private',roles:['admin'],room_code:'private',phone:'private'});
+  const clean=rankedMonitorState(raw);
+  assert.equal(clean.queue_players[0].activision_id,'SinNumeros');
+  assert.equal(clean.queue_players[0].wait_seconds,50);
+  assert.equal(clean.queue_players[0].user_id,'30000000-0000-4000-8000-000000000001');
+  assert.equal(JSON.stringify(clean).includes('private'),false);assert.equal(JSON.stringify(clean).includes('secret@example'),false);
+  assert.equal(clean.queue_players[1].party_size,2);
+});
+test('queue list fails closed on stale presence, wrong age, duplicates, half parties or inconsistent groups', () => {
+  const changes=[r=>r.queue_players[0].presence_expires_at=r.observed_at,r=>r.queue_players[0].joined_at='2026-10-23T12:00:01Z',r=>r.queue_players[0].wait_seconds=500,r=>r.queue_players[0].user_id='bad',r=>r.queue_players[0].username=' ',r=>r.queue_players[0].party_size=2,r=>r.queue_players[2].party_size=4,r=>r.queue_players[2].queue_id='10000000-0000-4000-8000-000000000002',r=>r.queue_players.pop(),r=>r.queue_players.push({...r.queue_players[0]}),r=>r.queue_players=Array(201).fill(r.queue_players[0]),r=>r.truncated.queue_players=undefined];
+  for(const change of changes){const raw=monitorPeopleAndMapsFixture();change(raw);assert.throws(()=>rankedMonitorState(raw),{status:502});}
+  const raw=monitorPeopleAndMapsFixture();raw.queue_players=[];assert.deepEqual(rankedMonitorState(raw).queue_players,[]);
 });

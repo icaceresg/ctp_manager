@@ -1,6 +1,6 @@
 import { OfficialIncidentStatus } from './CaseControls.jsx';
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileCheck2, Info, LockKeyhole, Plus } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
@@ -11,8 +11,12 @@ import { IncidentInbox } from './IncidentInbox.jsx';
 import { elapsedLabel, incidentNextAction } from './staffModel.js';
 import { DecisionPanel } from './DecisionPanel.jsx';
 import { TicketChat } from './TicketChat.jsx';
+import { canManageRanked } from '../../../shared/access.js';
+import { rankedIncidentPath } from '../navigation.js';
+import { selectedCaseContext } from './caseSelection.js';
 
 export function IncidentsPanel({ data, mutate, me, reload }) {
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const selected = params.get('case');
   const [dialog, setDialog] = useState(null);
@@ -21,7 +25,7 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
   const [error, setError] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);
   const incidents = data.incidents || [];
-  const incident = detail?.incident || detail?.resource || incidents.find((i) => i.id === selected);
+  const { incident, notes, audit } = selectedCaseContext(detail, incidents, selected);
   const openDialog = (type) => { setDialogCase(incident); setDialog(type); };
   const editing = dialogCase || incident;
   useEffect(() => {
@@ -32,6 +36,7 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
   const choose = (id) => { const next = new URLSearchParams(params); id ? next.set('case', id) : next.delete('case'); setParams(next); };
   const update = (body, base = incident) => mutate('patch', `/incidents/${encodeURIComponent(base.id)}`, { expected_version: base.version, ...body });
   const closed = ['resolved', 'closed', 'closed_internal', 'rejected', 'resolution_pending'].includes(incident?.status);
+  const rankedPath = canManageRanked(me) ? rankedIncidentPath(incident, location.pathname + location.search) : null;
   return <>
     <div className="op-section-title"><div><h2>Incidencias y arbitraje</h2><p>Un expediente por problema, con responsable, contexto y seguimiento.</p></div><button className="btn primary" onClick={() => setDialog('new')} disabled={!data.matches.length}><Plus size={16} /> Abrir expediente</button></div>
     {selected ? <>
@@ -39,6 +44,7 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
       {error && <p className="op-error" role="alert">{error}</p>}
       {incident && <section className="op-card op-case-focus"><div className="op-section-title"><div><div className="op-eyebrow">EXPEDIENTE · {incident.id.slice(0, 8)}</div><h2>{incident.title}</h2></div><div className="op-actions"><Badge value={incident.status} /><button className="btn ghost icon sm" aria-label="Información del expediente" title="Información del expediente" onClick={() => setInfoOpen(true)}><Info size={17} /></button></div></div>
         <p className="op-text op-case-reason">{incident.reason}</p>
+        {rankedPath && <div className="op-case-actions"><Link className="btn primary" to={rankedPath}><FileCheck2 size={15} /> Abrir partida y resolver</Link><span className="muted">Revisa equipos, resultado y chat antes de elegir una decisión.</span></div>}
         <div className="op-case-essentials"><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} />{incident.reporter_name && <span>Creada por <strong>{incident.reporter_name}</strong></span>}<span>{incident.assigned_name || data.staff.find((s) => s.id === incident.assignee_id)?.name || 'Sin asignar'}</span>{incident.awaiting_staff && <strong className="op-urgent">Nuevo mensaje</strong>}{incident.priority === 'urgent' && <strong className="op-urgent">Urgente</strong>}</div>
         <div className="op-case-next"><strong>{incidentNextAction(incident)}</strong><span>Abierto hace {elapsedLabel(incident.created_at)}</span></div>
         {incident.status === 'resolution_pending' && <p className="op-notice">Resolución preparada. Falta la confirmación de CTP para cerrar el expediente oficial.</p>}
@@ -47,10 +53,10 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
         {incident.source === 'ctp' && incident.kind !== 'ranked' ? <TicketChat incident={incident} reload={reload} /> : <OfficialIncidentStatus incident={incident} data={data} reload={reload} mutate={mutate} />}
         {incident.resolution && <details className="op-case-panel"><summary>Resolución registrada</summary><blockquote className="op-quote">{incident.resolution}</blockquote></details>}
         {incident.source === 'ctp' && incident.kind === 'ranked' && <details className="op-case-panel"><summary>Conversación con jugadores</summary><CaseConversation key={incident.id} incident={incident} configured={data.connection?.configured} /></details>}
-        <details className="op-case-panel"><summary>Notas del expediente · {(detail?.notes || incident.notes || []).length}</summary>
-          {(detail?.notes || incident.notes || []).length ? <ol className="op-notes">{(detail?.notes || incident.notes).map((n) => <li key={n.id}><div className="op-note-heading"><strong>{n.author_name || n.actor_name || 'Staff'}</strong><Badge value={n.visibility === 'internal' ? 'draft' : n.delivery_status || 'pending'}>{n.visibility === 'internal' ? 'Interna' : n.delivery_status === 'delivered' ? 'Enviada a CTP' : 'Respuesta a CTP · pendiente'}</Badge></div><p>{n.text}</p><small>{dateTime(n.created_at)}</small></li>)}</ol> : <p className="muted">Sin notas todavía.</p>}
+        <details className="op-case-panel"><summary>Notas del expediente · {notes.length}</summary>
+          {notes.length ? <ol className="op-notes">{notes.map((n) => <li key={n.id}><div className="op-note-heading"><strong>{n.author_name || n.actor_name || 'Staff'}</strong><Badge value={n.visibility === 'internal' ? 'draft' : n.delivery_status || 'pending'}>{n.visibility === 'internal' ? 'Interna' : n.delivery_status === 'delivered' ? 'Enviada a CTP' : 'Respuesta a CTP · pendiente'}</Badge></div><p>{n.text}</p><small>{dateTime(n.created_at)}</small></li>)}</ol> : <p className="muted">Sin notas todavía.</p>}
         </details>
-        {detail?.audit?.length > 0 && <details className="op-case-panel"><summary>Historial del expediente · {detail.audit.length}</summary><AuditList items={detail.audit} /></details>}
+        {audit.length > 0 && <details className="op-case-panel"><summary>Historial del expediente · {audit.length}</summary><AuditList items={audit} /></details>}
       </section>}
       {incident && infoOpen && <Modal title="Información del expediente" onClose={() => setInfoOpen(false)}><div className="op-connection-detail"><p><strong>ID:</strong> {incident.id}</p><p><strong>Estado:</strong> {label(incident.status)}</p><p><strong>Responsable:</strong> {data.staff.find((s) => s.id === incident.assignee_id)?.name || 'Sin asignar'}</p><p><strong>Prioridad:</strong> {incident.priority === 'urgent' ? 'Urgente' : 'Normal'}</p><p><strong>Abierto:</strong> {dateTime(incident.created_at)}</p><p><strong>Origen:</strong> {incident.source === 'ctp' ? 'CTP' : 'Manager'}</p></div></Modal>}
       {!incident && !error && <p className="muted">Cargando expediente…</p>}

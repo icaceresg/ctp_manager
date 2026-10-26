@@ -8,6 +8,8 @@ import { Badge, DataTable, Empty, Field, FormDialog } from '../operations/ui.jsx
 import { DecisionPanel } from '../operations/DecisionPanel.jsx';
 import { dateTime } from '../operations/model.js';
 import AdministrationIntegrations from './AdministrationIntegrations.jsx';
+import UserProfileDialog from './UserProfileDialog.jsx';
+import { managerUserId, operationReturnPath } from '../navigation.js';
 import '../operations/operations.css';
 import '../operations/sanctions.css';
 
@@ -27,7 +29,9 @@ export default function AdministrationPage(){
   const definition=SECTIONS.find(item=>item[0]===section);
   const [search,setSearch]=useState(params.get('q')||'');
   const [dialog,setDialog]=useState(null);
-  const [editing,setEditing]=useState(null);
+  const editing=section==='usuarios'?managerUserId(params.get('edit')):null;
+  const returnTo=params.get('returnTo')?operationReturnPath(params.get('returnTo')):null;
+  const setEditing=id=>setParams(previous=>{const next=new URLSearchParams(previous);id?next.set('edit',id):next.delete('edit');return next;});
   const [removing,setRemoving]=useState(null);
   const variant=params.get('view');
   const resource=section==='mapas'&&variant==='modes'?'modes':section==='ranked'&&variant==='lobbies'?'ranked_lobbies':definition?.[2]||'summary';
@@ -41,7 +45,7 @@ export default function AdministrationPage(){
     return {...result,operations,request_key:requestKey};
   },[resource,page,query,gameId]);
   const data=loaded?.request_key===requestKey?loaded:null;
-  useEffect(()=>{setSearch(query);setDialog(null);setEditing(null);setRemoving(null);},[section,query,variant]);
+  useEffect(()=>{setSearch(query);setDialog(null);setRemoving(null);},[section,query,variant]);
   const change=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set(key,String(value)):next.delete(key);if(key!=='page')next.delete('page');return next;},{replace:true});
   if(!me?.is_admin)return <Navigate to="/operaciones/jornada" replace/>;
   if(!definition)return <Navigate to="/administracion/resumen" replace/>;
@@ -70,6 +74,8 @@ export default function AdministrationPage(){
   return <div className="page wide op-page">
     <header className="op-heading"><div><div className="op-eyebrow"><ShieldCheck size={15}/> ADMINISTRACIÓN CTP</div><h1>{definition[1]}</h1></div><button className="btn" disabled={loading} onClick={reload}><RefreshCw size={16} className={loading?'spin':''}/>Actualizar</button></header>
     <nav className="op-tabs" aria-label="Administración CTP">{SECTIONS.map(([id,title])=><Link key={id} className={section===id?'active':''} aria-current={section===id?'page':undefined} to={`/administracion/${id}`}>{title}</Link>)}</nav>
+    {returnTo&&<Link className="btn op-back" to={returnTo}>Volver al caso o a Ranked</Link>}
+    {section==='usuarios'&&params.has('edit')&&!editing&&<p className="op-error" role="alert">La referencia de la cuenta no es válida. Selecciona una cuenta desde la lista o vuelve al ticket.</p>}
     <p className="muted">Los cambios oficiales se preparan, se revisan y se envían a CTP. Las decisiones sin confirmación permanecen pendientes.</p>
     {error&&<div className="op-error" role="alert"><CircleAlert size={18}/><span>{error.message}{data?' Se conserva la última lectura.':''}</span><button className="btn" onClick={reload}>Reintentar</button></div>}
     {loading&&!data?<div className="op-loading"><Spinner/>Cargando administración…</div>:data?<>
@@ -89,38 +95,6 @@ export default function AdministrationPage(){
     {removing&&<DeleteUserDialog key={removing.id} user={removing} onClose={()=>setRemoving(null)} onDeleted={result=>{toast(result.mode==='deleted'?`Cuenta de ${removing.username} eliminada por completo.`:`Cuenta de ${removing.username} cerrada y anonimizada. Sus partidas se conservan como «Cuenta eliminada».`);setRemoving(null);reload();}}/>}
     {editing&&<UserProfileDialog key={editing} id={editing} onClose={()=>setEditing(null)} onSaved={()=>{toast('Datos de la cuenta actualizados en CTP.');reload();}}/>}
   </div>;
-}
-
-const PLATFORMS=[['PC','PC'],['PlayStation','PlayStation'],['Xbox','Xbox'],['Switch','Switch'],['Movil','Móvil'],['Otra','Otra']];
-const PROFILE_FIELDS=['username','email','gamertag','activision_id','platform','discord','twitter','bio','birthdate'];
-/** Direct, versioned correction of a CTP account; CTP validates and audits each change. */
-function UserProfileDialog({id,onClose,onSaved}){
-  const {data:profile,loading,error,reload}=useData(()=>api.get(`/administration/users/${id}`),[id]);
-  if(!profile)return <FormDialog title="Editar datos de la cuenta" onClose={onClose} submitLabel="Guardar cambios" submit={()=>{throw new Error(error?'Vuelve a cargar la cuenta.':'Espera a que se cargue la cuenta.');}}>
-    {loading?<p role="status"><Spinner/> Cargando cuenta…</p>:<p className="op-error" role="alert">{error?.message||'No se ha podido cargar la cuenta.'}<button className="btn" type="button" onClick={reload}>Reintentar</button></p>}
-  </FormDialog>;
-  return <FormDialog title="Editar datos de la cuenta" onClose={onClose} submitLabel="Guardar cambios" help="Los cambios se aplican en CTP al guardar y quedan registrados en la auditoría. El rol se gestiona desde la asignación de staff." submit={async body=>{
-    const changes={};
-    for(const field of PROFILE_FIELDS){const value=(body[field]??'').trim();if(value!==(profile[field]??''))changes[field]=value;}
-    if(!Object.keys(changes).length)throw new Error('No hay cambios que guardar.');
-    if(changes.email&&body.confirm_email!=='on')throw new Error('Confirma el cambio de correo de acceso.');
-    await api.patch(`/administration/users/${id}`,{expected_version:profile.manager_version,changes});
-    onSaved();
-  }}>
-    <p><strong>{profile.username}</strong> · {ROLE[profile.role]||profile.role} · alta {dateTime(profile.created_at)}</p>
-    <div className="op-form-grid">
-      <Field label="Nombre de usuario" hint="Entre 3 y 20 caracteres. También sirve para iniciar sesión."><input name="username" required minLength={3} maxLength={20} defaultValue={profile.username}/></Field>
-      <Field label="Correo de acceso" hint={profile.email_confirmed?'Correo verificado.':'Correo sin verificar.'}><input name="email" type="email" required maxLength={254} defaultValue={profile.email||''}/></Field>
-      <Field label="Gamertag"><input name="gamertag" required maxLength={50} defaultValue={profile.gamertag}/></Field>
-      <Field label="ActivisionID" hint="De 2 a 16 caracteres, con #número opcional (Nombre#1234567). Déjalo vacío para quitarlo."><input name="activision_id" maxLength={40} pattern="[\p{L}\p{N}\p{M} _.\-]{2,16}(?:#[0-9]+)?" defaultValue={profile.activision_id||''}/></Field>
-      <Field label="Plataforma"><select name="platform" defaultValue={profile.platform}>{PLATFORMS.map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></Field>
-      <Field label="Fecha de nacimiento"><input name="birthdate" type="date" min="1900-01-01" defaultValue={profile.birthdate||''}/></Field>
-      <Field label="Discord"><input name="discord" maxLength={100} defaultValue={profile.discord||''}/></Field>
-      <Field label="X (Twitter)" hint="Sin @."><input name="twitter" maxLength={50} defaultValue={profile.twitter||''}/></Field>
-    </div>
-    <Field label="Biografía"><textarea name="bio" rows={3} maxLength={500} defaultValue={profile.bio||''}/></Field>
-    <label className="op-check"><input type="checkbox" name="confirm_email"/> Si cambio el correo, el jugador pasará a iniciar sesión con el nuevo inmediatamente.</label>
-  </FormDialog>;
 }
 
 /** Closing a CTP account cannot be undone; the typed username is the confirmation. */

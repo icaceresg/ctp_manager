@@ -10,6 +10,8 @@
 .rm-history strong { font: 700 30px/1.1 var(--font-display); }
 .rm-history span { font-size: 12px; }
 .rm-id { font-family: var(--font-mono); }
+.rm-queue-person { display: flex; flex-direction: column; gap: 5px; max-width: 240px; overflow-wrap: anywhere; }
+.rm-page td .btn { white-space: nowrap; }
 .rl-back{display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;color:var(--muted);font-size:13px;text-decoration:none}.rl-back:hover{color:var(--text)}
 .rl-readonly,.rl-caption{font-size:12px;line-height:1.6}.rl-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:22px}.rl-overview>div{display:flex;flex-direction:column;align-items:flex-start;gap:10px;font-size:13px}
 .rl-votes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.rl-votes>div{display:flex;flex-direction:column;gap:12px;padding:14px;border:1px solid var(--border);border-radius:8px}.rl-votes span{font-size:12px;color:var(--muted)}.rl-votes strong{font:700 30px/1 var(--font-display)}

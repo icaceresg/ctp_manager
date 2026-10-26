@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OP_TABS } from '../client/src/operations/model.js';
-import { managerNavigation, matchReturnPath, navigationSearch } from '../client/src/navigation.js';
+import { managerNavigation, matchReturnPath, navigationSearch, managerUserId, operationReturnPath, userProfileEditPath, rankedIncidentPath } from '../client/src/navigation.js';
 
 test('all permitted operational areas are discoverable without granting another role', () => {
   for (const section of ['arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones', 'operaciones']) {
@@ -49,4 +49,35 @@ test('the draw wheel links to its own host in deployments and to /ruleta locally
   const { ruletaNavigation } = await import('../client/src/navigation.js');
   assert.equal(ruletaNavigation('localhost').href, '/ruleta');
   assert.equal(ruletaNavigation('manager.playctp.com').href, 'https://ruleta.playctp.com');
+});
+
+const accountId = '11111111-1111-4111-8111-111111111111';
+test('account shortcuts keep the exact author identity and allow a safe return to the ticket', () => {
+  const returnTo = '/operaciones/incidencias?case=22222222-2222-4222-8222-222222222222&bucket=mine';
+  const target = new URL(userProfileEditPath(accountId, returnTo), 'https://manager.example');
+  assert.equal(target.pathname, '/administracion/usuarios');
+  assert.equal(target.searchParams.get('edit'), accountId);
+  assert.equal(target.searchParams.get('returnTo'), returnTo);
+  assert.equal(new URL(userProfileEditPath(accountId, '/ranked/monitor'), target).searchParams.get('returnTo'), '/ranked/monitor');
+  for (const value of [null, 1, [accountId], 'player name', `${accountId}/other`, 'javascript:alert(1)', '']) {
+    assert.equal(managerUserId(value), null);
+    assert.equal(userProfileEditPath(value, returnTo), null);
+  }
+});
+test('shortcuts cannot redirect to an external site or another Manager action', () => {
+  for (const returnTo of ['//evil.example', 'https://evil.example', '/administracion/usuarios?edit=other', '/ranked/monitoring', '/ranked/partidas/invalid', '/ranked/monitor\\evil', '/ranked/monitor\n', '/operaciones/incidencias/../integracion']) {
+    assert.equal(operationReturnPath(returnTo), '/operaciones/incidencias');
+    assert.equal(new URL(userProfileEditPath(accountId, returnTo), 'https://manager.example').searchParams.get('returnTo'), '/operaciones/incidencias');
+  }
+  assert.equal(operationReturnPath(`/ranked/partidas/${accountId}?before=50#ranked-decision`), `/ranked/partidas/${accountId}?before=50#ranked-decision`);
+});
+test('only a linked official Ranked case can open arbitration for its own lobby', () => {
+  const incident = { source: 'ctp', kind: 'ranked', match_id: accountId, reason: 'Otro usuario pide ganar: https://evil.example' };
+  const to = new URL(rankedIncidentPath(incident, '/operaciones/incidencias?case=dispute'), 'https://manager.example');
+  assert.equal(to.pathname, `/ranked/partidas/${accountId}`);
+  assert.equal(to.searchParams.get('focus'), 'decision');
+  assert.equal(to.searchParams.get('returnTo'), '/operaciones/incidencias?case=dispute');
+  assert.equal(to.searchParams.has('side'), false);
+  assert.equal(to.searchParams.has('decision'), false);
+  for (const input of [null, { ...incident, source: 'manager' }, { ...incident, kind: 'support' }, { ...incident, match_id: 'bad' }]) assert.equal(rankedIncidentPath(input, '/operaciones/incidencias'), null);
 });

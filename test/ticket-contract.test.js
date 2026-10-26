@@ -1,6 +1,13 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { ticketActionPayload, ticketId, ticketThreadResponse } from '../server/ticket-contract.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-ticket-contract-'));
+process.env.DATA_DIR = temp; process.env.DB_PATH = path.join(temp, 'ticket.db');
+const { ticketActionPayload, ticketId, ticketThreadResponse } = await import('../server/ticket-contract.js');
+const { db } = await import('../server/db.js');
+after(() => { db.close(); fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5 }); });
 
 const id = '11111111-1111-4111-8111-111111111111', req = '22222222-2222-4222-8222-222222222222';
 const thread = () => ({
@@ -31,4 +38,13 @@ test('ticket threads are bounded and stripped of unknown fields', () => {
   assert.equal(out.events[0].value, 'en_revision');
   assert.throws(() => ticketThreadResponse({ ...thread(), ticket: { ...thread().ticket, id: req } }, id), { status: 502 });
   assert.throws(() => ticketThreadResponse({ ...thread(), events: [{ id: 'e', kind: 'deleted', value: 'x', created_at: 'x' }] }, id), { status: 502 });
+});
+
+test('account navigation uses only the typed ticket author, never a name or message sender', () => {
+  const input = thread(); input.messages[0].author_id = req;
+  assert.equal(ticketThreadResponse(input, id).ticket.author.id, id);
+  for (const bad of [undefined, null, 'player', `/${id}`, [id], { id }]) {
+    const invalid = thread(); invalid.ticket.author.id = bad;
+    assert.throws(() => ticketThreadResponse(invalid, id), { status: 502 });
+  }
 });

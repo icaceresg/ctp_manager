@@ -48,3 +48,27 @@ export function matchReturnPath(value) {
   const path = value.split(/[?#]/)[0];
   return OP_TABS.some(tab => path === `/operaciones/${tab.id}`) ? value : '/operaciones/jornada';
 }
+
+const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+export function managerUserId(value) {
+  return typeof value === 'string' && UUID.test(value) ? value : null;
+}
+/** Only local operational context can be kept by account/lobby shortcuts. */
+export function operationReturnPath(value, fallback = '/operaciones/incidencias') {
+  if (typeof value !== 'string' || value.length > 1600 || /[\\\u0000-\u001f\u007f]/.test(value)) return fallback;
+  const path = value.split(/[?#]/)[0];
+  return path === '/operaciones/incidencias' || path === '/ranked/monitor'
+    || new RegExp(`^/ranked/partidas/${UUID.source.slice(1, -1)}$`, 'i').test(path) ? value : fallback;
+}
+export function userProfileEditPath(userId, returnTo) {
+  const id = managerUserId(userId);
+  if (!id) return null;
+  const params = new URLSearchParams({ edit: id });
+  if (returnTo) params.set('returnTo', operationReturnPath(returnTo));
+  return `/administracion/usuarios?${params}`;
+}
+export function rankedIncidentPath(incident, returnTo) {
+  if (incident?.source !== 'ctp' || incident.kind !== 'ranked' || !managerUserId(incident.match_id)) return null;
+  const params = new URLSearchParams({ focus: 'decision', returnTo: operationReturnPath(returnTo) });
+  return `/ranked/partidas/${incident.match_id}?${params}`;
+}

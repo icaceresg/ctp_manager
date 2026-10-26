@@ -72,7 +72,13 @@ export function jsonRequest(origin,route,{method='GET',headers={},body,timeout=8
     try{resolve({data:JSON.parse(raw),headers:response.headers});}catch{reject(new Error('dev_manager_http_json_invalid'));}
    });
   });
-  request.setTimeout(timeout,()=>request.destroy());request.on('error',()=>reject(new Error('dev_manager_http_unavailable')));
+  request.setTimeout(timeout,()=>request.destroy());request.on('error',error=>{
+   const failure=new Error('dev_manager_http_unavailable');
+   // Only this exact socket refusal can establish a stale control endpoint.
+   // Preserve its safe code without retaining an address, request or capability.
+   if(error.code==='ECONNREFUSED')failure.code='ECONNREFUSED';
+   reject(failure);
+  });
   request.end(body===undefined?undefined:JSON.stringify(body));
  });
 }
@@ -114,15 +120,16 @@ async function prepareData(){
 
 export function validateRuntime(value){
  if(!value||value.schemaVersion!==1||value.projectId!==PROJECT||value.kind!==ownerRecord.kind||value.managerOrigin!==MANAGER
+  ||typeof value.sourceRoot!=='string'||!equalPath(value.sourceRoot,ROOT)
   ||!Number.isSafeInteger(value.launcherPid)||value.launcherPid<1||!Number.isSafeInteger(value.apiPid)||value.apiPid<1||value.apiPid===value.launcherPid
   ||!Number.isSafeInteger(value.controlPort)||value.controlPort<1||value.controlPort>65535
   ||!/^[a-f0-9]{32}$/.test(value.instanceId||'')||!/^[A-Za-z0-9_-]{43}$/.test(value.controlToken||'')
   ||typeof value.startedAtUtc!=='string'||value.startedAtUtc.length>40||!Number.isFinite(Date.parse(value.startedAtUtc)))fail('dev_manager_runtime_invalid');
  return value;
 }
-async function readRuntime(){
- try{const info=await fs.lstat(RUNTIME);if(!info.isFile()||info.isSymbolicLink()||info.size>16384)fail('dev_manager_runtime_invalid');
-  return validateRuntime(JSON.parse(await fs.readFile(RUNTIME,'utf8')));
+async function readRuntime(file=RUNTIME){
+ try{const info=await fs.lstat(file);if(!info.isFile()||info.isSymbolicLink()||info.size>16384||!equalPath(await fs.realpath(file),file))fail('dev_manager_runtime_invalid');
+  return validateRuntime(JSON.parse(await fs.readFile(file,'utf8')));
  }catch(error){if(error.code==='ENOENT')return null;if(REASON.test(error.message))throw error;fail('dev_manager_runtime_invalid');}
 }
 async function control(runtime,stop=false){
@@ -140,11 +147,27 @@ async function ensureFreePort(){
  }catch{fail('dev_manager_port_in_use');}
  finally{for(const server of probes)if(server.listening)await new Promise(resolve=>server.close(resolve));}
 }
+
+/** Start-only recovery. Tests supply temporary storage/probes, never a CLI target. */
+export async function recoverRefusedRuntime(previous,{runtimeFile=RUNTIME,requestControl=control,assertPortFree=ensureFreePort}={}){
+ validateRuntime(previous);
+ try{await requestControl(previous);return false;}
+ catch(error){if(error.message!=='dev_manager_http_unavailable'||error.code!=='ECONNREFUSED')throw error;}
+ await assertPortFree();
+ // Re-read after both socket probes: another instance may have changed this file.
+ const current=await readRuntime(runtimeFile);
+ if(!current||JSON.stringify(current)!==JSON.stringify(previous))fail('dev_manager_stale_runtime_changed');
+ const suffix=new Date().toISOString().replace(/[^0-9TZ]/g,'')+'-'+crypto.randomBytes(16).toString('hex');
+ const archive=path.join(path.dirname(runtimeFile),'runtime.stale-'+suffix+'.private.json');
+ try{await fs.rename(runtimeFile,archive);}catch{fail('dev_manager_stale_runtime_archive_failed');}
+ return true;
+}
 function sameToken(received,expected){if(typeof received!=='string')return false;const a=Buffer.from(received),b=Buffer.from(expected);return a.length===b.length&&crypto.timingSafeEqual(a,b);}
 
 async function start(){
  const secrets=await preflight();await prepareData();
- const previous=await readRuntime();if(previous){await control(previous);console.log(JSON.stringify(publicStatus(previous,'already_running')));return;}
+ const previous=await readRuntime();
+ if(previous&&!await recoverRefusedRuntime(previous)){console.log(JSON.stringify(publicStatus(previous,'already_running')));return;}
  try{const built=await fs.lstat(path.join(ROOT,'dist/index.html'));if(!built.isFile()||built.isSymbolicLink())fail('dev_manager_build_required');}catch{fail('dev_manager_build_required');}
  await ensureFreePort();
  let child,server,runtime,closing=false;

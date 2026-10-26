@@ -80,9 +80,13 @@ npm.cmd run dev:local -- stop
 `stop` se comunica con el launcher mediante un canal privado de loopback y sólo
 detiene el hijo que éste creó. No mata procesos buscando su nombre ni usa un PID
 guardado como autorización. Conserva la SQLite y todos sus datos. Si el archivo
-privado de runtime pertenece a un launcher que no responde, el arranque se
-detiene para que se revise esa referencia; no elimina datos ni mata un proceso
-desconocido. Para recoger cambios de interfaz, compilar y reiniciar este Manager
+privado de runtime pertenece a este proyecto y worktree pero su control devuelve
+`ECONNREFUSED`, sólo `start` comprueba que `58090` esté libre en IPv4 e IPv6 y
+archiva esa referencia como `runtime.stale-<fecha>-<nonce>.private.json` dentro
+de su carpeta de datos. No mata PIDs ni modifica SQLite. Timeouts, otro origen,
+puertos ocupados o una referencia que cambie durante la comprobación detienen
+el arranque; `status` y `stop` tampoco recuperan referencias automáticamente.
+Para recoger cambios de interfaz, compilar y reiniciar este Manager
 DEV; el script no publica en PRE ni PROD.
 
 ## Promoción de cambios

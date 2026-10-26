@@ -1,11 +1,11 @@
 # CI/CD de Manager PRE
 
-Manager PRE se publica solo, igual que la web de ConnectToPlay PRE: cada push a `pre` comprueba, empaqueta y publica en la VPS. Producción no cambia: `ctp-manager-prod.service` sigue siendo una publicación manual.
+Manager PRE se publica solo, igual que la web de ConnectToPlay PRE: cada push a `pre` comprueba, empaqueta y publica en la VPS. PROD dispone de un workflow manual separado, con validación sin publicación por defecto; ver [CI_CD_PROD.md](CI_CD_PROD.md).
 
 | Rama | Destino | Inicio |
 | --- | --- | --- |
 | `pre` | `https://pre.manager.playctp.com` (`ctp-manager-pre.service`) | Automático al subir a `pre`; también **Run workflow** sobre `pre`. |
-| `main` | — | `ci.yml` comprueba y genera un artefacto. Nunca publica. |
+| `main` | `https://manager.playctp.com` | CI comprueba y empaqueta; PROD sólo publica con el workflow manual y confirmación explícita. |
 
 ## Qué hace cada push a `pre`
 
@@ -34,9 +34,9 @@ Repositorio `icaceresg/ctp_manager` → *Settings → Secrets and variables → 
 | --- | --- | --- |
 | `MANAGER_VPS_PRE_SSH_KEY` | Secret | Clave privada ed25519 dedicada a este despliegue. |
 | `MANAGER_VPS_KNOWN_HOSTS` | Variable | Línea `knownHosts` que imprime el instalador (la misma clave de host que `CTP_VPS_KNOWN_HOSTS` de ConnectToPlay). |
-| `MANAGER_VPS_HOST` | Variable opcional | Host SSH; por defecto `31.70.157.157`. |
+| `MANAGER_VPS_HOST` | Variable | Host SSH verificado de la VPS. |
 
-El job usa el environment **Preview**. Sin el secret o la variable, el workflow falla al principio con un mensaje claro y no publica nada.
+El job usa el environment **Preview**. La clave es un Secret; el host y su pin son Variables. Antes de publicar ejecuta `check pre` para verificar acceso y runtime sin cambios. Sin el secret o la variable, el workflow falla al principio con un mensaje claro y no publica nada.
 
 ## Instalación única en la VPS
 

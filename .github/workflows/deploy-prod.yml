@@ -1,0 +1,89 @@
+name: Manager PROD manual deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validate checks, package and restricted SSH access without publishing
+        type: boolean
+        required: true
+        default: true
+      confirm:
+        description: For publication only, type PUBLICAR PRODUCCION
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manager-prod-deploy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: Production
+      url: https://manager.playctp.com
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require an explicit production publication request
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [[ "$DRY_RUN" == true || ( "$DRY_RUN" == false && "$CONFIRM" == 'PUBLICAR PRODUCCION' ) ]] || {
+            echo '::error::Publication requires dry_run=false and PUBLICAR PRODUCCION.'; exit 1;
+          }
+      - name: Require PROD deployment configuration
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PROD_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+        run: |
+          [[ -n "$SSH_PRIVATE_KEY" ]] || { echo '::error::Missing secret MANAGER_VPS_PROD_SSH_KEY in Production.'; exit 1; }
+          [[ -n "$VPS_HOST" ]] || { echo '::error::Missing variable MANAGER_VPS_HOST.'; exit 1; }
+          [[ -n "$VPS_KNOWN_HOSTS" ]] || { echo '::error::Missing variable MANAGER_VPS_KNOWN_HOSTS.'; exit 1; }
+      - uses: ./.github/actions/manager-checks
+      - name: Install only the production dependencies from the lockfile
+        run: |
+          set -euo pipefail
+          mkdir -p output/runtime
+          cp package.json package-lock.json output/runtime/
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix output/runtime
+      - name: Package the verified PROD release
+        run: node scripts/package-vps.mjs --out output/ctp-manager.tar.gz --deps output/runtime
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: manager-prod-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ctp-manager.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify restricted PROD access without publishing
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PROD_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+        run: bash scripts/deploy-vps.sh prod check
+      - name: Publish to the PROD VPS and verify the running service
+        if: inputs.dry_run == false
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PROD_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+          DEPLOY_DRY_RUN: ${{ inputs.dry_run }}
+          DEPLOY_CONFIRMATION: ${{ inputs.confirm }}
+        run: bash scripts/deploy-vps.sh prod deploy

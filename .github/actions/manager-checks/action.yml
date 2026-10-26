@@ -1,5 +1,5 @@
 name: Manager checks
-description: Install, audit, test and build CTP Manager. Shared by CI and the PRE deployment.
+description: Install, audit, test and build CTP Manager. Shared by CI and both environment deployments.
 runs:
   using: composite
   steps:

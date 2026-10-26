@@ -36,7 +36,9 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PRE_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
         run: |
+          [[ -n "$VPS_HOST" ]] || { echo '::error::Missing variable MANAGER_VPS_HOST.'; exit 1; }
           [[ -n "$SSH_PRIVATE_KEY" ]] || { echo '::error::Missing secret MANAGER_VPS_PRE_SSH_KEY.'; exit 1; }
           [[ -n "$VPS_KNOWN_HOSTS" ]] || { echo '::error::Missing variable MANAGER_VPS_KNOWN_HOSTS.'; exit 1; }
       - uses: ./.github/actions/manager-checks
@@ -54,40 +56,15 @@ jobs:
           path: output/ctp-manager.tar.gz
           if-no-files-found: error
           retention-days: 14
+      - name: Verify restricted PRE access without publishing
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PRE_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+        run: bash scripts/deploy-vps.sh pre check
       - name: Publish to the PRE VPS and verify the running service
         env:
           SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PRE_SSH_KEY }}
-          VPS_HOST: ${{ vars.MANAGER_VPS_HOST || '31.70.157.157' }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
           VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          [[ "$VPS_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || { echo '::error::Invalid VPS host.'; exit 1; }
-          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]] || exit 1
-          ssh_dir="$(mktemp -d "$RUNNER_TEMP/manager-pre-ssh.XXXXXX")"
-          trap 'rm -rf -- "$ssh_dir"' EXIT
-          chmod 700 "$ssh_dir"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/id"
-          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
-          chmod 600 "$ssh_dir/id" "$ssh_dir/known_hosts"
-          digest="$(sha256sum output/ctp-manager.tar.gz | cut -d ' ' -f 1)"
-          status=0
-          ssh -T -p 22 -i "$ssh_dir/id" \
-            -o BatchMode=yes -o IdentitiesOnly=yes -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$ssh_dir/known_hosts" \
-            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
-            -o LogLevel=ERROR "ctp-manager-deploy-pre@$VPS_HOST" \
-            "deploy pre $GITHUB_SHA $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $digest" \
-            < output/ctp-manager.tar.gz > "$RUNNER_TEMP/receipt.json" 2> "$RUNNER_TEMP/failure.txt" || status=$?
-          # Receipts hold reason codes, release names and hashes only.
-          cat "$RUNNER_TEMP/receipt.json" "$RUNNER_TEMP/failure.txt"
-          {
-            if [[ "$status" -eq 0 ]]; then
-              printf 'Manager PRE deployed: https://pre.manager.playctp.com\n\n'
-            else
-              printf 'Manager PRE was **not** deployed (exit %s).\n\n' "$status"
-            fi
-            printf 'Commit: `%s`\n\nArtifact SHA-256: `%s`\n\n```json\n' "$GITHUB_SHA" "$digest"
-            cat "$RUNNER_TEMP/receipt.json" "$RUNNER_TEMP/failure.txt"
-            printf '\n```\n'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
+        run: bash scripts/deploy-vps.sh pre deploy

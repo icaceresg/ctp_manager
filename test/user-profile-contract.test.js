@@ -1,7 +1,14 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { userProfilePayload, userProfileResponse, USER_PROFILE_ERRORS } from '../server/user-profile-contract.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-profile-contract-'));
+process.env.DATA_DIR = temp; process.env.DB_PATH = path.join(temp, 'profile.db');
+const { userProfilePayload, userProfileResponse, USER_PROFILE_ERRORS } = await import('../server/user-profile-contract.js');
+const { db } = await import('../server/db.js');
+after(() => { db.close(); fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5 }); });
 
 const id = randomUUID();
 
@@ -18,7 +25,7 @@ test('profile edits send only known, changed fields with the read version', () =
 });
 
 test('ActivisionID follows the CTP PRO rule: 2-16 name characters and an optional #number', () => {
-  for (const activision_id of ['sinalmohadilla', 'Nombre#1234567', 'José Pérez#12', 'x_y.z-w', 'ab'])
+  for (const activision_id of ['sinalmohadilla', 'Nombre#1234567', 'José Pérez', 'José Pérez#12', '王者', '名字#123', 'Jose\u0301', 'x_y.z-w', 'ab'])
     assert.equal(userProfilePayload(id, { expected_version: 1, changes: { activision_id } }).changes.activision_id, activision_id);
   for (const activision_id of ['a', 'Nom#', 'Nombre#abc', 'diecisieteletrass', 'emoji🎮'])
     assert.throws(() => userProfilePayload(id, { expected_version: 1, changes: { activision_id } }),

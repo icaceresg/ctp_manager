@@ -15,7 +15,8 @@ const counts = (value, keys) => {
   return Object.fromEntries(keys.map(key => [key, count(value[key])]));
 };
 
-// Explicit projection keeps identities and upstream fields out of this read-only view.
+// Explicit staff projection: queue identities are limited to the account reference
+// and public game names needed to find a player. Never project mail or credentials.
 export function rankedMonitorState(value) {
   if (!value || value.schema_version !== 1) fail();
   const observed_at = date(value.observed_at), window_started_at = date(value.window_started_at);
@@ -44,5 +45,52 @@ export function rankedMonitorState(value) {
   const map_activity = rows(value.map_activity, 64, row => ({game_id: gameId(row.game_id), mode: text(row.mode, 80), map_name: text(row.map_name, 120),
     ...counts(row, ['draws_24h', 'skips_24h']), active_in_pool: typeof row.active_in_pool === 'boolean' ? row.active_in_pool : fail()}));
   const truncated = Object.fromEntries(['queues', 'active_lobbies', 'map_activity'].map(key => [key, typeof value.truncated?.[key] === 'boolean' ? value.truncated[key] : fail()]));
-  return {schema_version: 1, observed_at, window_started_at, summary, queues, lobby_statuses, active_lobbies, activity_24h, map_activity, truncated};
+  const map_plays = value.map_plays == null ? null : rows(value.map_plays, 64, row => ({
+    game_id: gameId(row.game_id), mode: text(row.mode, 80), map_name: text(row.map_name, 120),
+    played_matches: count(row.played_matches), played_matches_24h: count(row.played_matches_24h),
+    last_played_at: row.last_played_at === null ? null : date(row.last_played_at),
+    active_in_pool: typeof row.active_in_pool === 'boolean' ? row.active_in_pool : fail(),
+  }));
+  if (map_plays) {
+    if (value.map_plays_window !== 'all_time' || value.map_plays_criterion !== 'confirmed_results') fail();
+    const references = new Set();
+    for (const row of map_plays) {
+      const reference = JSON.stringify([row.game_id, row.mode, row.map_name]);
+      if (references.has(reference) || row.played_matches_24h > row.played_matches
+        || (row.played_matches === 0) !== (row.last_played_at === null)
+        || row.last_played_at && Date.parse(row.last_played_at) > Date.parse(observed_at)) fail();
+      references.add(reference);
+    }
+  }
+  const queue_players = value.queue_players == null ? null : rows(value.queue_players, 200, row => ({
+    user_id: id(row.user_id), username: text(row.username, 100),
+    gamertag: row.gamertag === null ? null : text(row.gamertag, 100),
+    activision_id: row.activision_id === null ? null : text(row.activision_id, 100),
+    queue_id: id(row.queue_id), queue_title: text(row.queue_title),
+    party_id: row.party_id === null ? null : id(row.party_id), party_size: count(row.party_size),
+    joined_at: date(row.joined_at), presence_expires_at: date(row.presence_expires_at), wait_seconds: seconds(row.wait_seconds),
+  }));
+  if (queue_players) {
+    const users = new Set(), parties = new Map(), observed = Date.parse(observed_at);
+    for (const row of queue_players) {
+      const userKey = row.user_id.toLowerCase();
+      if (users.has(userKey) || !row.username.trim() || row.party_size < 1 || row.party_size > 4
+        || (!row.party_id && row.party_size !== 1) || Date.parse(row.joined_at) > observed
+        || Date.parse(row.presence_expires_at) <= observed
+        || Math.abs(row.wait_seconds - (observed - Date.parse(row.joined_at)) / 1000) > 2) fail();
+      users.add(userKey);
+      if (row.party_id) {
+        const partyKey = row.party_id.toLowerCase(), previous = parties.get(partyKey);
+        if (previous && (previous.queue_id.toLowerCase() !== row.queue_id.toLowerCase() || previous.size !== row.party_size)) fail();
+        parties.set(partyKey, {queue_id: row.queue_id, size: row.party_size, count: (previous?.count || 0) + 1});
+      }
+    }
+    // A limited snapshot may omit whole parties, but may never show half a party.
+    if ([...parties.values()].some(party => party.count !== party.size)) fail();
+  }
+  for (const [key, available] of [['map_plays', map_plays !== null], ['queue_players', queue_players !== null]]) {
+    truncated[key] = available ? typeof value.truncated?.[key] === 'boolean' ? value.truncated[key] : fail() : null;
+  }
+  return {schema_version: 1, observed_at, window_started_at, summary, queues, lobby_statuses, active_lobbies, activity_24h, map_activity,
+    map_plays, map_plays_window: map_plays ? 'all_time' : null, map_plays_criterion: map_plays ? 'confirmed_results' : null, queue_players, truncated};
 }

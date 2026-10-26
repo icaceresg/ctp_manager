@@ -45,7 +45,7 @@ export function ticketThreadResponse(value, id) {
   if (!object(value) || !object(value.ticket) || value.ticket.id !== id || !Array.isArray(value.messages) || !Array.isArray(value.events)
     || value.messages.length > 300 || value.events.length > 300) invalid();
   const t = value.ticket, author = t.author;
-  if (!text(t.code, 64) || !OFFICIAL_CASE_STATUSES.includes(t.status) || !text(t.description, 20000) || !object(author) || !text(author.username, 100)
+  if (!text(t.code, 64) || !OFFICIAL_CASE_STATUSES.includes(t.status) || !text(t.description, 20000) || !object(author) || typeof author.id !== 'string' || !UUID.test(author.id) || !text(author.username, 100)
     || !nullable(author.email, 320) || !nullable(author.gamertag, 100) || !nullable(author.activision_id, 40)
     || t.assigned !== null && (!object(t.assigned) || !text(t.assigned.username, 100))) invalid();
   const messages = value.messages.map(m => {

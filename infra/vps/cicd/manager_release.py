@@ -2,7 +2,7 @@
 """CTP Manager VPS releases: restricted SSH client, root broker and installer.
 
 client   Forced SSH command of the deploy account. Streams the upload to the
-         broker socket and relays its JSON receipt. No shell, no sudo.
+         broker socket, or checks readiness without an upload. No shell, no sudo.
 broker   Root, socket-activated per connection. Verifies the peer, the
          checksum and every file of the manifest, installs an immutable
          release, backs up SQLite, switches `current`, restarts the Manager
@@ -68,6 +68,25 @@ ENVIRONMENTS = {
         'port': 3210,
         'publicOrigin': 'https://pre.manager.playctp.com',
         'ctpOrigin': 'https://pre.playctp.com',
+        'keepReleases': 5,
+        'keepBackups': 10,
+        'startSeconds': 45,
+    },
+    'prod': {
+        'environment': 'prod',
+        'ref': 'refs/heads/main',
+        'deployUser': 'ctp-manager-deploy-prod',
+        'root': '/srv/ctp-manager/prod',
+        'service': 'ctp-manager-prod.service',
+        'serviceUser': 'ctp-manager-prod',
+        'database': '/var/lib/ctp-manager-prod/myredesmanager.db',
+        'state': '/var/lib/ctp-manager-release/prod',
+        'backups': '/var/backups/ctp-manager-release/prod',
+        'socket': '/run/ctp-manager-release/prod.sock',
+        'lock': '/run/lock/ctp-manager-release-prod.lock',
+        'port': 3211,
+        'publicOrigin': 'https://manager.playctp.com',
+        'ctpOrigin': 'https://playctp.com',
         'keepReleases': 5,
         'keepBackups': 10,
         'startSeconds': 45,
@@ -153,12 +172,17 @@ def atomic_json(path, value):
 
 
 def parse_command(original, environment):
+    environment_config(environment)
     require(isinstance(original, str) and len(original) <= 256, 'invalid_command')
+    check = re.fullmatch(r'check (pre|prod)', original)
+    if check:
+        require(check[1] == environment, 'wrong_environment')
+        return {'operation': 'check', 'environment': environment}
     match = re.fullmatch(r'deploy ([a-z]{2,8}) ([0-9a-f]{40}) ([1-9][0-9]{0,19}) ([1-9][0-9]{0,5}) ([0-9a-f]{64})', original)
     require(match is not None, 'invalid_command')
     name, commit, run_id, attempt, checksum = match.groups()
     require(name == environment, 'wrong_environment')
-    return {'environment': name, 'commit': commit, 'runId': run_id, 'attempt': attempt,
+    return {'operation': 'deploy', 'environment': name, 'commit': commit, 'runId': run_id, 'attempt': attempt,
         'checksum': checksum, 'release': f'{commit}-{run_id}-{attempt}'}
 
 
@@ -255,6 +279,7 @@ def validate_manifest(destination, files, env, command):
     require(manifest.get('application') == APPLICATION and manifest.get('repository') == REPOSITORY,
         'manifest_application')
     require(manifest.get('ref') == env['ref'], 'manifest_ref')
+    require(manifest.get('environment', env['environment']) == env['environment'], 'manifest_environment')
     groups = {key: manifest.get(key) for key in ('source', 'build', 'dependencies')}
     require(all(isinstance(group, dict) and isinstance(group.get('files'), list) for group in groups.values()),
         'manifest_groups')
@@ -432,6 +457,13 @@ class System:
             return False
         return (actual.st_dev, actual.st_ino) == (expected.st_dev, expected.st_ino)
 
+    def runs_as(self, pid, username):
+        import pwd
+        try:
+            return os.stat(f'/proc/{pid}').st_uid == pwd.getpwnam(username).pw_uid != 0
+        except (OSError, KeyError):
+            return False
+
     def http_get(self, url, host=None, timeout=10):
         headers = {'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity', 'User-Agent': 'CTP-Manager-release/1'}
         if host:
@@ -479,6 +511,7 @@ def verify_running(env, paths, release, system, *, index_sha256=None, public=Tru
             pid = system.main_pid(service)
             require(pid > 0, 'service_not_running')
             require(system.runs_in(pid, paths.releases / release), 'service_running_other_release')
+            require(system.runs_as(pid, env['serviceUser']), 'service_running_wrong_user')
             status, body = system.http_get(local + '/api/auth/status', host)
             require(status == 200, 'health_status_http')
             check_status(body, env)
@@ -543,6 +576,8 @@ def exclusive_lock(path):
 
 
 def deploy(env, command, source, system, *, paths=None, limits=LIMITS):
+    require(command.get('operation') == 'deploy' and command.get('environment') == env['environment'],
+        'wrong_environment')
     paths = paths or Paths(env)
     started = time.time()
     with exclusive_lock(paths.lock):
@@ -606,6 +641,34 @@ def deploy(env, command, source, system, *, paths=None, limits=LIMITS):
 
 # --- Socket roles ------------------------------------------------------------
 
+def check_ready(env, system, *, paths=None):
+    """Observe the admitted running release without opening SQLite or changing state."""
+    paths = paths or Paths(env)
+    for directory in (paths.root, paths.releases):
+        checked_directory(directory)
+    for directory in (paths.state, paths.backups):
+        checked_directory(directory, private=True)
+    require(not paths.pending.exists() and not paths.pending.is_symlink(), 'release_recovery_required')
+    previous = current_release(paths)
+    require(previous is not None, 'current_release_missing')
+    checked_directory(paths.releases / previous)
+    before_pid = system.main_pid(env['service'])
+    verify_running(env, paths, previous, system, wait=5)
+    require(current_release(paths) == previous and system.main_pid(env['service']) == before_pid
+        and not paths.pending.exists() and not paths.pending.is_symlink(), 'readiness_changed_during_check')
+    return {'status': 'ready', 'environment': env['environment'], 'current': previous,
+        'readOnly': True, 'databaseOpened': False, 'servicesChanged': False,
+        'authenticatedFlowTested': False}
+
+
+def verify_peer(environment, uid, identity=None):
+    env = environment_config(environment)
+    if identity is None:
+        import pwd
+        identity = lambda name: pwd.getpwnam(name).pw_uid
+    require(uid > 0 and uid == identity(env['deployUser']), 'release_peer_denied')
+
+
 def read_header(stream):
     line = stream.readline(1025)
     require(line.endswith(b'\n') and len(line) <= 1024, 'release_request_limit')
@@ -619,7 +682,6 @@ def terminate(signum, frame):
 
 
 def serve(environment):
-    import pwd
     import signal
     require(sys.platform.startswith('linux') and os.geteuid() == 0, 'root_linux_required')
     os.umask(0o077)
@@ -629,15 +691,17 @@ def serve(environment):
     connection.settimeout(600)
     credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i'))
     _, uid, _ = struct.unpack('3i', credentials)
-    require(uid == pwd.getpwnam(env['deployUser']).pw_uid, 'release_peer_denied')
+    verify_peer(environment, uid)
     with connection, connection.makefile('rb', buffering=0) as incoming:
         command = parse_command(read_header(incoming), environment)
+        if command['operation'] == 'check':
+            return check_ready(env, System())
         return deploy(env, command, incoming, System())
 
 
 def client(environment, original, source):
     env = environment_config(environment)
-    parse_command(original, environment)
+    request = parse_command(original, environment)
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.settimeout(660)
     with connection:
@@ -645,10 +709,11 @@ def client(environment, original, source):
         connection.sendall((json.dumps({'command': original}) + '\n').encode())
         total = 0
         try:
-            for block in iter(lambda: source.read(64 * 1024), b''):
-                total += len(block)
-                require(total <= LIMITS['compressed'], 'archive_compressed_limit')
-                connection.sendall(block)
+            if request['operation'] == 'deploy':
+                for block in iter(lambda: source.read(64 * 1024), b''):
+                    total += len(block)
+                    require(total <= LIMITS['compressed'], 'archive_compressed_limit')
+                    connection.sendall(block)
             connection.shutdown(socket.SHUT_WR)
         except (BrokenPipeError, ConnectionResetError):
             pass  # The broker stopped reading early; its reason is in the reply.
@@ -663,7 +728,10 @@ def client(environment, original, source):
             reply.extend(block)
             require(len(reply) <= MIB, 'release_reply_limit')
     result = strict_json(bytes(reply))
-    require(isinstance(result, dict) and result.get('status') in ('deployed', 'failed'), 'release_reply_schema')
+    expected_status = 'ready' if request['operation'] == 'check' else 'deployed'
+    require(isinstance(result, dict) and result.get('status') in (expected_status, 'failed'), 'release_reply_schema')
+    if result.get('status') != 'failed':
+        require(result.get('environment') == environment, 'release_reply_environment')
     return result
 
 
@@ -695,6 +763,7 @@ def parse_public_key(data):
 
 
 def forced_command(environment):
+    environment_config(environment)
     return f'/usr/local/libexec/ctp-manager-deploy-{environment}'
 
 
@@ -754,6 +823,7 @@ WantedBy=sockets.target
 
 
 def service_unit(environment):
+    environment_config(environment)
     return f'''[Unit]
 Description=CTP Manager {environment.upper()} release broker
 CollectMode=inactive-or-failed
@@ -918,7 +988,10 @@ def install(environment, key_file, host, dry_run):
     ensure_directory(paths.backups, 0o700)
     previous_files = {path: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode)) if regular_file(path) else None
         for path in files}
-    with exclusive_lock(paths.lock):
+    # The helper is shared by PRE and PROD. Never replace it during either release.
+    with contextlib.ExitStack() as locks:
+        for name in sorted(ENVIRONMENTS):
+            locks.enter_context(exclusive_lock(ENVIRONMENTS[name]['lock']))
         try:
             if account is None:
                 run(['/usr/sbin/useradd', '--system', '--home-dir', '/var/lib/' + env['deployUser'], '--shell', '/bin/sh',
@@ -981,7 +1054,7 @@ def main(argv=None):
         if args.role == 'broker':
             print(json.dumps(result, separators=(',', ':')), file=sys.stderr, flush=True)
     print(json.dumps(result, separators=(',', ':')), flush=True)
-    return 0 if result.get('status') in ('deployed', 'validated', 'installed') else 1
+    return 0 if result.get('status') in ('deployed', 'validated', 'installed', 'ready') else 1
 
 
 if __name__ == '__main__':

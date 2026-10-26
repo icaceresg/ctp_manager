@@ -125,6 +125,7 @@ test('release can bundle the production dependencies installed from the same loc
   assert.equal(receipt.dependencies, 5);
   const manifest = JSON.parse(execFileSync('tar', ['-xOf', receipt.output, 'manifest.json'], { encoding: 'utf8' }));
   assert.equal(manifest.ref, 'refs/heads/pre');
+  assert.equal(manifest.environment, 'pre');
   assert.deepEqual(manifest.dependencies.files.map(file => file.path), [
     'node_modules/.package-lock.json', 'node_modules/express/index.js', 'node_modules/express/package.json',
     'node_modules/gopd/.eslintrc', 'node_modules/gopd/test/index.js',
@@ -132,6 +133,14 @@ test('release can bundle the production dependencies installed from the same loc
   const entries = execFileSync('tar', ['-tzf', receipt.output], { encoding: 'utf8' }).trim().split(/\r?\n/);
   assert.ok(entries.includes('node_modules/express/package.json'));
   assert.ok(!entries.some(entry => /(?:\.env|data\/)/.test(entry)));
+});
+
+test('production packages bind their manifest to main and the production environment', async t => {
+  const source = fixture(t);
+  const receipt = await packageVps({ cwd: source.directory, out: 'output/prod.tar.gz', env: { GITHUB_REF: 'refs/heads/main' } });
+  const manifest = JSON.parse(execFileSync('tar', ['-xOf', receipt.output, 'manifest.json'], { encoding: 'utf8' }));
+  assert.equal(manifest.ref, 'refs/heads/main');
+  assert.equal(manifest.environment, 'prod');
 });
 
 test('dependency bundling refuses another lockfile, links and leaked credentials', async t => {

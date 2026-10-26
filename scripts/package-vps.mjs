@@ -102,6 +102,7 @@ export async function packageVps({ cwd = process.cwd(), out, deps, env = process
     schemaVersion: 1,
     application: 'ctp-manager',
     repository: 'icaceresg/ctp_manager',
+    environment: env.GITHUB_REF === 'refs/heads/pre' ? 'pre' : env.GITHUB_REF === 'refs/heads/main' ? 'prod' : null,
     ref: /^refs\/heads\/[A-Za-z0-9._/-]{1,100}$/.test(env.GITHUB_REF || '') ? env.GITHUB_REF : null,
     source: { commit, dirty, sha256: digest(JSON.stringify(sourceFiles)), files: sourceFiles },
     build: { sha256: digest(JSON.stringify(builtFiles)), files: builtFiles },

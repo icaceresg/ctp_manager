@@ -72,14 +72,16 @@ def command_for(data, run_id='12', attempt='1', commit=COMMIT):
 class FakeSystem:
     """systemd + HTTP double: the service runs whatever `current` points to when started."""
 
-    def __init__(self, paths):
+    def __init__(self, paths, env=None):
         self.paths = paths
+        self.env = env or release.ENVIRONMENTS['pre']
         self.calls = []
         self.running = None
         self.clock = 0.0
         self.crashing = set()
         self.stale_index = set()
         self.public_down = False
+        self.wrong_user = False
         self.running = release.current_release(paths)
 
     def stop(self, service):
@@ -103,14 +105,17 @@ class FakeSystem:
     def runs_in(self, pid, directory):
         return self.running is not None and Path(directory) == self.paths.releases / self.running
 
+    def runs_as(self, pid, username):
+        return not self.wrong_user and username == self.env['serviceUser']
+
     def http_get(self, url, host=None, timeout=10):
         if url.startswith('https://'):
             release.require(not self.public_down, 'health_unreachable')
-            return 200, json.dumps(STATUS).encode()
-        assert host == 'pre.manager.playctp.com'
+            return 200, json.dumps(dict(STATUS, web_origin=self.env['ctpOrigin'])).encode()
+        assert host == release.urlsplit(self.env['publicOrigin']).netloc
         release.require(self.running is not None, 'health_unreachable')
         if url.endswith('/api/auth/status'):
-            return 200, json.dumps(STATUS).encode()
+            return 200, json.dumps(dict(STATUS, web_origin=self.env['ctpOrigin'])).encode()
         if self.running in self.stale_index:
             return 200, b'<!doctype html>stale'
         return 200, (self.paths.releases / self.running / 'dist/index.html').read_bytes()
@@ -123,6 +128,33 @@ class FakeSystem:
 
 
 class CommandAndPathTests(unittest.TestCase):
+    def test_check_is_exact_and_cannot_cross_environments(self):
+        for environment in ('pre', 'prod'):
+            self.assertEqual(release.parse_command('check ' + environment, environment),
+                {'operation': 'check', 'environment': environment})
+        for command, environment in (('check prod', 'pre'), ('check pre', 'prod'),
+                ('check pre ', 'pre'), ('check prod --dry-run', 'prod'), ('check prod; id', 'prod')):
+            with self.subTest(command=command), self.assertRaises(release.ReleaseError):
+                release.parse_command(command, environment)
+
+    def test_environment_bindings_are_separate(self):
+        pre, prod = (release.environment_config(name) for name in ('pre', 'prod'))
+        for key in ('deployUser', 'root', 'service', 'serviceUser', 'database', 'state',
+                'backups', 'socket', 'lock', 'port', 'publicOrigin', 'ctpOrigin', 'ref'):
+            self.assertNotEqual(pre[key], prod[key], key)
+        self.assertEqual(prod['port'], 3211)
+        self.assertEqual(prod['ref'], 'refs/heads/main')
+        self.assertEqual(prod['database'], '/var/lib/ctp-manager-prod/myredesmanager.db')
+
+    def test_peer_identity_is_environment_specific_and_never_root(self):
+        identities = {'ctp-manager-deploy-pre': 991, 'ctp-manager-deploy-prod': 992}
+        for environment, uid in (('pre', 991), ('prod', 992)):
+            release.verify_peer(environment, uid, identities.__getitem__)
+            for other in (0, 991 if uid == 992 else 992):
+                with self.assertRaises(release.ReleaseError) as caught:
+                    release.verify_peer(environment, other, identities.__getitem__)
+                self.assertEqual(caught.exception.reason, 'release_peer_denied')
+
     def test_command_is_exact(self):
         digest = 'b' * 64
         parsed = release.parse_command(f'deploy pre {COMMIT} 99 2 {digest}', 'pre')
@@ -162,6 +194,15 @@ class ArchiveTests(unittest.TestCase):
         summary = self.check(archive())
         self.assertEqual(summary['files'], 8)
         self.assertEqual(summary['indexSha256'], hashlib.sha256(default_files()['dist/index.html']).hexdigest())
+
+    def test_explicit_environment_must_match_when_present(self):
+        manifest = manifest_for(default_files())
+        manifest['environment'] = 'pre'
+        self.check(archive(manifest=manifest))
+        manifest['environment'] = 'prod'
+        with self.assertRaises(release.ReleaseError) as caught:
+            self.check(archive(manifest=manifest))
+        self.assertEqual(caught.exception.reason, 'manifest_environment')
 
     def test_tampered_or_incomplete_releases_are_refused(self):
         files = default_files()
@@ -278,6 +319,65 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(self.system.calls, [])
         self.assertEqual(sorted(path.name for path in self.paths.releases.iterdir()), ['manual-959d704'])
 
+    def test_check_preserves_release_database_and_state_without_lock_or_lifecycle(self):
+        before = {str(path.relative_to(self.paths.root.parent)): path.read_bytes()
+            for path in self.paths.root.parent.rglob('*') if path.is_file() and not path.is_symlink()}
+        with mock.patch.object(release, 'exclusive_lock', side_effect=AssertionError('check must not create a lock')), \
+                mock.patch.object(release, 'backup_database', side_effect=AssertionError('check must not open SQLite')), \
+                mock.patch.object(release, 'atomic_json', side_effect=AssertionError('check must not write state')):
+            result = release.check_ready(self.env, self.system, paths=self.paths)
+        self.assertEqual(result, {'status': 'ready', 'environment': 'pre', 'current': 'manual-959d704',
+            'readOnly': True, 'databaseOpened': False, 'servicesChanged': False, 'authenticatedFlowTested': False})
+        self.assertEqual(self.system.calls, [])
+        after = {str(path.relative_to(self.paths.root.parent)): path.read_bytes()
+            for path in self.paths.root.parent.rglob('*') if path.is_file() and not path.is_symlink()}
+        self.assertEqual(before, after)
+
+    def test_check_refuses_pending_without_recovery(self):
+        self.paths.pending.write_text('{}')
+        with self.assertRaises(release.ReleaseError) as caught:
+            release.check_ready(self.env, self.system, paths=self.paths)
+        self.assertEqual(caught.exception.reason, 'release_recovery_required')
+        self.assertEqual(self.system.calls, [])
+        self.assertEqual(self.paths.pending.read_text(), '{}')
+
+    def test_check_refuses_wrong_user_or_changing_process(self):
+        self.system.wrong_user = True
+        with self.assertRaises(release.ReleaseError) as caught:
+            release.check_ready(self.env, self.system, paths=self.paths)
+        self.assertEqual(caught.exception.reason, 'service_running_wrong_user')
+        self.system.wrong_user = False
+        with mock.patch.object(self.system, 'main_pid', side_effect=[4242, 4242, 4243]):
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.check_ready(self.env, self.system, paths=self.paths)
+        self.assertEqual(caught.exception.reason, 'readiness_changed_during_check')
+        self.assertEqual(self.system.calls, [])
+
+    def test_cross_environment_request_fails_before_lock_or_archive(self):
+        command = dict(command_for(archive()), environment='prod')
+        with mock.patch.object(release, 'exclusive_lock', side_effect=AssertionError('must refuse before lock')):
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.deploy(self.env, command, io.BytesIO(b''), self.system, paths=self.paths)
+        self.assertEqual(caught.exception.reason, 'wrong_environment')
+        self.assertEqual(self.system.calls, [])
+
+    def test_prod_accepts_only_main_manifest_and_uses_its_own_health_origin(self):
+        prod = dict(release.environment_config('prod'), root=str(self.paths.root), state=str(self.paths.state),
+            backups=str(self.paths.backups), database=str(self.paths.database), lock=str(self.paths.lock))
+        system = FakeSystem(self.paths, prod)
+        pre_data = archive()
+        prod_command = dict(command_for(pre_data), environment='prod')
+        with self.assertRaises(release.ReleaseError) as caught:
+            release.deploy(prod, prod_command, io.BytesIO(pre_data), system, paths=self.paths)
+        self.assertEqual(caught.exception.reason, 'manifest_ref')
+        self.assertEqual(system.calls, [])
+        data = archive(manifest=manifest_for(default_files(), ref='refs/heads/main'))
+        command = release.parse_command(f'deploy prod {COMMIT} 12 1 {hashlib.sha256(data).hexdigest()}', 'prod')
+        receipt = release.deploy(prod, command, io.BytesIO(data), system, paths=self.paths)
+        self.assertEqual(receipt['environment'], 'prod')
+        self.assertEqual(system.calls, ['stop', 'start'])
+        self.assertEqual(release.check_ready(prod, system, paths=self.paths)['status'], 'ready')
+
     def test_invalid_release_never_stops_the_service(self):
         data = archive(manifest=manifest_for(default_files(), ref='refs/heads/main'))
         with self.assertRaises(release.ReleaseError):
@@ -362,6 +462,37 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in self.paths.backups.iterdir()), [f'{COMMIT}-26-1', f'{COMMIT}-27-1'])
 
 
+class ClientProtocolTests(unittest.TestCase):
+    def test_check_does_not_read_stdin_or_send_an_archive(self):
+        source = mock.Mock()
+        source.read.side_effect = AssertionError('check must not read stdin')
+        reply = {'status': 'ready', 'environment': 'prod', 'current': 'manual-959d704', 'readOnly': True}
+        with mock.patch.object(release.socket, 'AF_UNIX', 1, create=True), \
+                mock.patch.object(release.socket, 'socket') as factory:
+            connection = factory.return_value
+            connection.recv.side_effect = [json.dumps(reply).encode(), b'']
+            self.assertEqual(release.client('prod', 'check prod', source), reply)
+            connection.connect.assert_called_once_with('/run/ctp-manager-release/prod.sock')
+            self.assertEqual(connection.sendall.call_count, 1)
+            self.assertEqual(release.strict_json(connection.sendall.call_args.args[0]), {'command': 'check prod'})
+        source.read.assert_not_called()
+
+    def test_cross_environment_check_never_opens_socket(self):
+        with mock.patch.object(release.socket, 'socket') as factory:
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.client('pre', 'check prod', mock.Mock())
+            self.assertEqual(caught.exception.reason, 'wrong_environment')
+            factory.assert_not_called()
+
+    def test_check_rejects_other_environment_or_deploy_reply(self):
+        for reply in ({'status': 'ready', 'environment': 'pre'}, {'status': 'deployed', 'environment': 'prod'}):
+            with mock.patch.object(release.socket, 'AF_UNIX', 1, create=True), \
+                    mock.patch.object(release.socket, 'socket') as factory:
+                factory.return_value.recv.side_effect = [json.dumps(reply).encode(), b'']
+                with self.assertRaises(release.ReleaseError):
+                    release.client('prod', 'check prod', mock.Mock())
+
+
 @unittest.skipUnless(POSIX and hasattr(socket, 'AF_UNIX'), 'needs Unix sockets')
 class ClientTests(unittest.TestCase):
     def serve_once(self, path, reply, read_body=True):
@@ -385,7 +516,7 @@ class ClientTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, 'b.sock')
             original = f'deploy pre {COMMIT} 1 1 {"d" * 64}'
-            thread, received = self.serve_once(path, {'status': 'deployed', 'release': 'x'})
+            thread, received = self.serve_once(path, {'status': 'deployed', 'environment': 'pre', 'release': 'x'})
             with mock.patch.dict(release.ENVIRONMENTS['pre'], {'socket': path}):
                 result = release.client('pre', original, io.BytesIO(b'payload' * 1000))
             thread.join(5)
@@ -410,6 +541,18 @@ class ClientTests(unittest.TestCase):
 
 
 class InstallerRenderTests(unittest.TestCase):
+    def test_prod_files_and_policy_only_overlap_pre_at_shared_helper(self):
+        pre = release.managed_files('pre', 'ssh-ed25519 AAAA', b'helper')
+        prod = release.managed_files('prod', 'ssh-ed25519 BBBB', b'helper')
+        self.assertEqual(set(pre) & set(prod), {Path(release.HELPER)})
+        policy = release.sshd_fragment('prod').decode()
+        self.assertIn('Match User ctp-manager-deploy-prod\n', policy)
+        self.assertIn('AuthorizedKeysFile /etc/ctp-manager-deploy/keys/prod\n', policy)
+        self.assertNotIn('ctp-manager-deploy-pre', policy)
+        self.assertIn('SocketGroup=ctp-manager-deploy-prod', release.socket_unit('prod').decode())
+        self.assertIn('broker --environment prod', release.service_unit('prod').decode())
+        self.assertNotIn('ctp-manager-prod.service', release.service_unit('prod').decode())
+
     @staticmethod
     def key(byte=1, comment=b' laptop'):
         raw = struct.pack('>I', 11) + b'ssh-ed25519' + struct.pack('>I', 32) + bytes([byte]) * 32

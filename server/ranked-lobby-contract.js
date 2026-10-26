@@ -74,7 +74,10 @@ export function rankedLobbyDetail(value,expectedId){
  const open_disputes=number(value.open_disputes);
  const disputes=value.disputes===undefined?null:rows(value.disputes,16,d=>({username:d.username===null?null:text(d.username,100),side:side(d.side),reason:text(d.reason,2000),created_at:date(d.created_at),resolved:bool(d.resolved)}));
  if(disputes&&disputes.filter(d=>!d.resolved).length>open_disputes)fail();
- return {schema_version:1,observed_at:date(value.observed_at),lobby,players,result,chat:{messages,next_before,has_more,can_send:chat.can_send===undefined?false:bool(chat.can_send)},map_draws,open_disputes,disputes,can_moderate:value.can_moderate===undefined?false:bool(value.can_moderate)};
+ // Player reports (CTP 239): who reported whom in this match, why and when. No user ids.
+ // null = this CTP version does not send them yet. reported_slot is the slot the Ranked block expects.
+ const player_reports=value.player_reports===undefined?null:rows(value.player_reports,56,r=>{const reported_slot=number(r.reported_slot);if(reported_slot<1||reported_slot>8)fail();return{reporter:text(r.reporter,100),reporter_side:side(r.reporter_side),reported:text(r.reported,100),reported_side:side(r.reported_side),reported_slot,reason:typeof r.reason==='string'&&/^[a-z_]{1,40}$/.test(r.reason)?r.reason:fail(),details:r.details===null||r.details===undefined?null:text(r.details,500),created_at:date(r.created_at)};});
+ return {schema_version:1,observed_at:date(value.observed_at),lobby,players,result,chat:{messages,next_before,has_more,can_send:chat.can_send===undefined?false:bool(chat.can_send)},map_draws,open_disputes,disputes,player_reports,can_moderate:value.can_moderate===undefined?false:bool(value.can_moderate)};
 }
 
 /** Accept an acknowledged message only for this exact lobby, request and text. */

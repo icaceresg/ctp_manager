@@ -6,7 +6,7 @@ import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClu
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
 import { HttpError } from '../auth.js';
-import { getCaseData,getOfficialIncident,getTicketThread,ticketAction } from '../integration.js';
+import { getCaseData,getOfficialIncident,getTicketThread,ticketAction,getDisciplineOverview,getDisciplineUsers,getDisciplineHistory,writeDiscipline } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
 
 export const integrationRouter = Router();
@@ -31,6 +31,13 @@ integrationRouter.post('/operations/integration/sync', allow('operaciones'), asy
 integrationRouter.post('/operations/integration/commands/:id/send', requireAdmin, async (req, res) => res.json(await sendOperationCommand(req.params.id)));
 integrationRouter.get('/operations/tickets/:id',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getTicketThread(req.user,req.params.id)));
 integrationRouter.post('/operations/tickets/:id/actions',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await ticketAction(req.user,req.params.id,req.body||{})));
+// Sanciones: read straight from CTP; each write is applied by CTP at once.
+integrationRouter.get('/operations/discipline/overview',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getDisciplineOverview(req.user)));
+integrationRouter.get('/operations/discipline/users',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getDisciplineUsers(req.user,req.query)));
+integrationRouter.get('/operations/discipline/users/:id',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getDisciplineHistory(req.user,req.params.id)));
+integrationRouter.post('/operations/discipline/sanctions',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await writeDiscipline(req.user,'sanction',null,req.body||{})));
+for(const action of ['revoke','review'])integrationRouter.post(`/operations/discipline/sanctions/:id/${action}`,requireAuth,allow('arbitraje'),async(req,res)=>res.json(await writeDiscipline(req.user,action,req.params.id,req.body||{})));
+integrationRouter.post('/operations/discipline/bans/:id/lift',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await writeDiscipline(req.user,'lift',req.params.id,req.body||{})));
 integrationRouter.get('/operations/incidents/:id/context', requireAuth, allow('arbitraje'), async (req, res) => res.json(await getIncidentContext(req.user, req.params.id, req.query.cursor)));
 integrationRouter.get('/operations/competition', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getCompetitionData(req.user, req.query)));
 integrationRouter.get('/operations/history', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getOperationHistory(req.user, req.query)));

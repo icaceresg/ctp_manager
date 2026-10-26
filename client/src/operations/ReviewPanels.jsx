@@ -1,12 +1,12 @@
 import { OfficialIncidentStatus } from './CaseControls.jsx';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, FileCheck2, Info, LockKeyhole, Plus, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, FileCheck2, Info, LockKeyhole, Plus } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Modal } from '../components/ui.jsx';
-import { AuditList, Badge, DataTable, Empty, Field, FormDialog, MatchLink, SelectMatch, StatsTable } from './ui.jsx';
-import { dateTime, label, matchName, playersForMap } from './model.js';
+import { AuditList, Badge, Field, FormDialog, MatchLink, SelectMatch } from './ui.jsx';
+import { dateTime, label } from './model.js';
 import { IncidentInbox } from './IncidentInbox.jsx';
 import { elapsedLabel, incidentNextAction } from './staffModel.js';
 import { DecisionPanel } from './DecisionPanel.jsx';
@@ -115,35 +115,3 @@ export function ActionButton({ run, children, disabled, className = 'btn' }) {
 
 export { StatisticsReviewPanel as StatisticsPanel } from './StatisticsReviewPanel.jsx';
 
-export function DisciplinePanel({ data, mutate }) {
-  const [dialog, setDialog] = useState(null);
-  return <><div className="op-section-title"><div><h2>Disciplina y recursos</h2><p>Propuestas justificadas y recursos vinculados a su expediente.</p></div><button className="btn primary" disabled={!data.incidents.length} onClick={() => setDialog({ type: 'new' })}><ShieldCheck size={16} /> Nueva propuesta</button></div>
-    <p className="op-notice">Una propuesta local no restringe a nadie. CTP aplica las sanciones confirmadas a nuevas participaciones durante su vigencia. Recurrir no suspende automáticamente la medida.</p>
-    <DataTable rows={data.sanctions} empty="Sin propuestas disciplinarias" columns={[
-      { key: 'subject', title: 'Afectado', render: (s) => <span>{s.subject_type === 'club' ? 'Club' : 'Jugador'} <strong>{s.subject_name || s.subject_id}</strong></span> },
-      { key: 'reason', title: 'Motivo', render: (s) => <span>{s.reason}{s.appeal_reason && <details><summary>Motivo del recurso</summary><p className="op-text">{s.appeal_reason}</p></details>}{s.review_reason && <details><summary>Resolución del recurso</summary><p className="op-text">{s.review_reason}</p></details>}</span> }, { key: 'restriction', title: 'Medida', render: (s) => <span>{label(s.restriction)}<br /><small>{(s.scopes || []).map((scope) => ({tournament_registration:'Inscripción en torneos',challenges:'Retos',ranked:'Ranked'})[scope]).join(' · ') || 'Sin restricción competitiva'}</small></span> },
-      { key: 'period', title: 'Vigencia propuesta', render: (s) => `${dateTime(s.starts_at)} → ${dateTime(s.ends_at)}` },
-      { key: 'status', title: 'Estado', render: (s) => <div className="op-stack"><Badge value={s.status} /><small>{s.official ? 'Confirmada por CTP' : 'Propuesta interna'}</small>{s.appeal_status === 'pending' && <Badge value="appeal_pending" />}{s.pending_command_id && <small>Decisión pendiente de envío</small>}</div> },
-      { key: 'actions', title: 'Seguimiento', render: (s) => <div className="op-actions">{!s.official && ['draft','reviewed'].includes(s.status) && <ActionButton disabled={s.pending_command_id} run={() => mutate('post', `/sanctions/${encodeURIComponent(s.id)}/submit`, { expected_version: s.version }, 'Aplicación preparada. Pendiente de enviar a CTP.')}>Preparar aplicación</ActionButton>}<button className="btn sm" disabled={s.pending_command_id || s.appeal_status === 'pending' || s.status === 'revoked' || (s.official && s.appeal_status !== 'none')} onClick={() => setDialog({ type: 'appeal', row: s })}>Registrar recurso</button>{(s.status !== 'revoked' && (s.appeal_status === 'pending' || ['appealed', 'appeal_pending'].includes(s.status))) && <button className="btn sm" disabled={s.pending_command_id} onClick={() => setDialog({ type: 'review', row: s })}>Revisar recurso</button>}{s.official && s.status !== 'revoked' && <button className="btn sm" disabled={s.pending_command_id} onClick={() => setDialog({ type: 'revoke', row: s })}>Proponer revocación</button>}</div> },
-    ]} />
-    {dialog?.type === 'new' && <SanctionForm incidents={data.incidents} mutate={mutate} onClose={() => setDialog(null)} />}
-    {dialog?.type === 'appeal' && <FormDialog title="Registrar recurso" onClose={() => setDialog(null)} submit={(body) => mutate('post', `/sanctions/${encodeURIComponent(dialog.row.id)}/appeal`, { ...body, expected_version: dialog.row.version })}><Field label="Motivos del recurso"><textarea name="reason" rows={5} required minLength={12} maxLength={2000} /></Field></FormDialog>}
-    {dialog?.type === 'review' && <FormDialog title="Revisar recurso" onClose={() => setDialog(null)} help="La persona que propuso la sanción o registró el recurso no puede resolverlo." submit={(body) => mutate('post', `/sanctions/${encodeURIComponent(dialog.row.id)}/review`, { ...body, expected_version: dialog.row.version })}><Field label="Decisión"><select name="decision"><option value="revoke">Revocar medida</option><option value="uphold">Mantener medida</option></select></Field><Field label="Motivo"><textarea name="reason" rows={5} required minLength={12} maxLength={2000} /></Field></FormDialog>}
-    {dialog?.type === 'revoke' && <FormDialog title="Revocar sanción" onClose={() => setDialog(null)} submitLabel="Preparar revocación" submit={(body) => mutate('post', `/sanctions/${encodeURIComponent(dialog.row.id)}/revoke`, { ...body, expected_version: dialog.row.version })}><Field label="Motivo de revocación"><textarea name="reason" rows={5} required minLength={12} maxLength={2000} /></Field></FormDialog>}
-  </>;
-}
-
-function SanctionForm({ incidents, mutate, onClose }) {
-  const [restriction, setRestriction] = useState('warning');
-  const scopes = { tournament_registration:'Nuevas inscripciones en torneos', challenges:'Publicar y aceptar retos', ranked:'Entrar en la cola ranked' };
-  return <FormDialog title="Propuesta disciplinaria" onClose={onClose} submitLabel="Registrar propuesta" submit={(body) => {
-    const selected = restriction === 'warning' ? [] : Object.keys(scopes).filter((scope) => body[`scope_${scope}`] === 'on');
-    return mutate('post', '/sanctions', { incident_id:body.incident_id,subject_id:body.subject_id,subject_type:body.subject_type,restriction,scopes:selected,reason:body.reason,starts_at:new Date(body.starts_at).toISOString(),ends_at:new Date(body.ends_at).toISOString() });
-  }}>
-    <Field label="Expediente"><select name="incident_id" required><option value="">Seleccionar expediente</option>{incidents.map((i) => <option value={i.id} key={i.id}>{i.title}</option>)}</select></Field>
-    <div className="op-form-grid"><Field label="Tipo de afectado"><select name="subject_type"><option value="player">Jugador</option><option value="club">Club</option></select></Field><Field label="ID del afectado en CTP"><input name="subject_id" required maxLength={100} /></Field></div>
-    <Field label="Medida propuesta"><select name="restriction" value={restriction} onChange={(e) => setRestriction(e.target.value)}><option value="warning">Amonestación sin restricción</option><option value="competition_suspend">Suspensión competitiva temporal</option></select></Field>
-    {restriction === 'competition_suspend' && <fieldset className="op-scopes"><legend>Alcance de la suspensión</legend>{Object.entries(scopes).map(([scope,name]) => <label key={scope} className="op-check"><input type="checkbox" name={`scope_${scope}`} />{name}</label>)}<p className="muted">Selecciona al menos un alcance. No se expulsa a jugadores de partidos ya iniciados.</p></fieldset>}
-    <div className="op-form-grid"><Field label="Desde"><input name="starts_at" type="datetime-local" required /></Field><Field label="Hasta"><input name="ends_at" type="datetime-local" required /></Field></div><Field label="Motivo y fundamento"><textarea name="reason" rows={4} required minLength={12} maxLength={2000} /></Field>
-  </FormDialog>;
-}

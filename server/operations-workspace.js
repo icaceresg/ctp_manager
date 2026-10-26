@@ -8,7 +8,7 @@ const can=(user,...sections)=>Boolean(user?.is_admin||sections.some(section=>use
 const CLOSED=['resolved','closed','closed_internal','rejected'];
 const DONE=['cancelled','cancelado','closed','finished','completed','finalizado','jugado'];
 const madridDayFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'});
-const VIEWS={overview:null,jornada:'matches',casters:'matches',contenido:'matches',incidencias:'incidents',estadisticas:'stats',clubes:'clubs',discord:'deliveries',disciplina:'sanctions',turnos:'assignments',decisiones:'commands',integracion:'commands',partido:null,torneos:null,historico:null,arbitraje:null,realizacion:'matches',administration:'commands'};
+const VIEWS={overview:null,jornada:'matches',casters:'matches',contenido:'matches',incidencias:'incidents',estadisticas:'stats',clubes:'clubs',discord:'deliveries',disciplina:'sanctions',sanciones:null,turnos:'assignments',decisiones:'commands',integracion:'commands',partido:null,torneos:null,historico:null,arbitraje:null,realizacion:'matches',administration:'commands'};
 const KINDS={matches:['match','operaciones','arbitraje','casters','realizacion','comunicaciones'],incidents:['incident','arbitraje'],stats:['stat','arbitraje'],clubs:['club','clubes'],deliveries:['delivery','comunicaciones'],sanctions:['sanction','arbitraje']};
 const fields={
   match:['kind','title','status','scheduled_at','team_a','team_b','score_a','score_b','confirmed','winner_id','winner_side','best_of','phase','web_path'],

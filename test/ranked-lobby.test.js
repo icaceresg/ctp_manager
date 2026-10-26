@@ -93,3 +93,12 @@ test('disputes name the reporter, their team and what they wrote, without player
   const data=lobbyFixture();data.open_disputes=1;mutate(data);assert.throws(()=>rankedLobbyDetail(data,lobbyId),{status:502});
  }
 });
+
+test('player reports (CTP 239) name reporter and reported with the block slot, without player identities',()=>{
+ assert.equal(rankedLobbyDetail(lobbyFixture(),lobbyId).player_reports,null);
+ const ok={reporter:'Player 6',reporter_side:'b',reported:'Player 2',reported_side:'a',reported_slot:2,reason:'toxicity',details:'Insultos por voz.\nTengo clip.',created_at:'2026-10-23T11:40:00Z'};
+ const clean=rankedLobbyDetail({...lobbyFixture(),player_reports:[{...ok,reporter_id:'secret',reported_id:'secret'},{...ok,reason:'other',details:null}]},lobbyId);
+ assert.deepEqual(clean.player_reports,[ok,{...ok,reason:'other',details:null}]);
+ for(const bad of[{},[null],Array(57).fill(ok),[{...ok,reported_slot:0}],[{...ok,reported_slot:9}],[{...ok,reported_side:'c'}],[{...ok,reason:'Hack!'}],[{...ok,details:'x'.repeat(501)}],[{...ok,reporter:null}],[{...ok,created_at:'ayer'}]])
+  assert.throws(()=>rankedLobbyDetail({...lobbyFixture(),player_reports:bad},lobbyId),{status:502});
+});

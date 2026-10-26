@@ -14,7 +14,7 @@ export function Empty({ title, children }) {
 export function Field({ label: name, children, hint }) {
   return <label className="op-field"><span>{name}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
-export function FormDialog({ title, onClose, submit, children, submitLabel = 'Guardar', help }) {
+export function FormDialog({ title, onClose, submit, children, submitLabel = 'Guardar', help, danger = false }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function onSubmit(e) {
@@ -29,7 +29,7 @@ export function FormDialog({ title, onClose, submit, children, submitLabel = 'Gu
     <form className="op-form" onSubmit={onSubmit}>
       {help && <p className="op-help">{help}</p>}{children}
       {error && <p className="op-error" role="alert">{error}</p>}
-      <div className="op-form-actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy}>{busy && <LoaderCircle size={16} className="spin" />}{submitLabel}</button></div>
+      <div className="op-form-actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>Cancelar</button><button className={`btn ${danger ? 'danger' : 'primary'}`} disabled={busy}>{busy && <LoaderCircle size={16} className="spin" />}{submitLabel}</button></div>
     </form>
   </Modal>;
 }

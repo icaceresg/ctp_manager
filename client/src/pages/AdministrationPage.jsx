@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, CheckCircle2, CircleAlert, Plus, RefreshCw, Settings2, ShieldCheck } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckCircle2, CircleAlert, Plus, RefreshCw, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { Spinner } from '../components/ui.jsx';
@@ -9,6 +9,7 @@ import { DecisionPanel } from '../operations/DecisionPanel.jsx';
 import { dateTime } from '../operations/model.js';
 import AdministrationIntegrations from './AdministrationIntegrations.jsx';
 import '../operations/operations.css';
+import '../operations/sanctions.css';
 
 const SECTIONS=[['resumen','Resumen','summary'],['usuarios','Usuarios CTP','users'],['clubes','Clubes','teams'],['accesos','Accesos al circuito','entitlements'],['mapas','Mapas y modos','maps'],['campanas','Campañas','campaigns'],['ranked','Ranked','ranked_queues'],['integraciones','Integraciones','features'],['auditoria','Auditoría','audit']];
 const ROLE={admin:'Administrador',referee:'Árbitro',player:'Jugador'};
@@ -27,6 +28,7 @@ export default function AdministrationPage(){
   const [search,setSearch]=useState(params.get('q')||'');
   const [dialog,setDialog]=useState(null);
   const [editing,setEditing]=useState(null);
+  const [removing,setRemoving]=useState(null);
   const variant=params.get('view');
   const resource=section==='mapas'&&variant==='modes'?'modes':section==='ranked'&&variant==='lobbies'?'ranked_lobbies':definition?.[2]||'summary';
   const page=Math.max(0,Number(params.get('page'))||0);
@@ -39,7 +41,7 @@ export default function AdministrationPage(){
     return {...result,operations,request_key:requestKey};
   },[resource,page,query,gameId]);
   const data=loaded?.request_key===requestKey?loaded:null;
-  useEffect(()=>{setSearch(query);setDialog(null);setEditing(null);},[section,query,variant]);
+  useEffect(()=>{setSearch(query);setDialog(null);setEditing(null);setRemoving(null);},[section,query,variant]);
   const change=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set(key,String(value)):next.delete(key);if(key!=='page')next.delete('page');return next;},{replace:true});
   if(!me?.is_admin)return <Navigate to="/operaciones/jornada" replace/>;
   if(!definition)return <Navigate to="/administracion/resumen" replace/>;
@@ -52,7 +54,7 @@ export default function AdministrationPage(){
   const propose=(type,row,extra={})=>setDialog({type,row,extra});
   const actionButton=(title,type,row,extra={})=><button type="button" className="btn" disabled={loading||Boolean(error)||!Number.isInteger(row.manager_version)||(type==='admin.ranked.queue.open'&&!(row.map_count>0))} title={type==='admin.ranked.queue.open'&&!(row.map_count>0)?'Añade al menos un mapa activo de Hardpoint antes de abrir la cola.':undefined} onClick={()=>propose(type,row,extra)}>{title}</button>;
   const columns={
-    users:[{key:'username',title:'Cuenta',render:r=><div><strong>{r.username}</strong>{r.email&&<><br/><small>{r.email}</small></>}<br/><small>{[r.gamertag,r.platform||'Sin plataforma'].filter(Boolean).join(' · ')}</small></div>},{key:'role',title:'Rol',render:r=>ROLE[r.role]||r.role},{key:'points',title:'Puntos'},{key:'record',title:'V / D',render:r=>`${r.wins??0} / ${r.losses??0}`},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><button type="button" className="btn" onClick={()=>setEditing(r.id)}>Editar datos</button>{r.role==='admin'?<Badge value="active">Administrador CTP</Badge>:<Link className="btn" to={`/usuarios?q=${encodeURIComponent(r.username)}`}>Asignar función de staff</Link>}</div>}],
+    users:[{key:'username',title:'Cuenta',render:r=><div><strong>{r.username}</strong>{r.email&&<><br/><small>{r.email}</small></>}<br/><small>{[r.gamertag,r.platform||'Sin plataforma'].filter(Boolean).join(' · ')}</small></div>},{key:'role',title:'Rol',render:r=>ROLE[r.role]||r.role},{key:'points',title:'Puntos'},{key:'record',title:'V / D',render:r=>`${r.wins??0} / ${r.losses??0}`},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><button type="button" className="btn" onClick={()=>setEditing(r.id)}>Editar datos</button>{r.role==='admin'?<Badge value="active">Administrador CTP</Badge>:<Link className="btn" to={`/usuarios?q=${encodeURIComponent(r.username)}`}>Asignar función de staff</Link>}{r.role==='player'&&<button type="button" className="btn" aria-label={`Eliminar la cuenta ${r.username}`} onClick={()=>setRemoving(r)}><Trash2 size={15}/> Eliminar</button>}</div>}],
     teams:[{key:'name',title:'Club',render:r=><div style={{display:'flex',alignItems:'center',gap:10}}>{safeImage(r.logo)&&<img alt="" src={r.logo} width="36" height="36" style={{objectFit:'contain'}}/>}<div><strong>{r.name}</strong><br/><small>{r.tag}</small></div></div>},{key:'leader',title:'Responsable',render:r=>r.leader_name||r.leader_username||'Sin identificar'},{key:'points',title:'Puntos'},{key:'verified',title:'Verificación',render:r=><Badge value={r.verified||r.is_verified?'approved':'pending'}/>},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><Link className="btn" to={`/operaciones/clubes?club=${encodeURIComponent(r.id)}`}>Identidad y revisión</Link><button className="btn" onClick={()=>propose('admin.entitlement.grant',null,{team:r})}>Conceder acceso</button></div>}],
     entitlements:[{key:'team',title:'Club',render:r=>r.team_name||r.club_name||r.team_id},{key:'kind',title:'Acceso',render:r=>ACCESS[r.kind]||r.kind},{key:'season',title:'Season',render:r=>r.season||r.season_label||'Circuito'},{key:'status',title:'Estado',render:r=><Badge value={r.revoked_at||r.status==='revoked'?'revoked':'active'}/>},{key:'created_at',title:'Concedido',render:r=>dateTime(r.created_at)},{key:'actions',title:'Acciones',render:r=>!r.revoked_at&&r.status!=='revoked'&&actionButton('Retirar acceso','admin.entitlement.revoke',r)}],
     modes:[{key:'name',title:'Modo',render:r=><strong>{r.name}</strong>},{key:'game',title:'Juego',render:r=>gameName(data,r.game_id)},{key:'status',title:'Estado',render:r=><Badge value={r.active?'active':'paused'}/>},{key:'sort_order',title:'Orden'},{key:'actions',title:'Acciones',render:r=><div className="op-actions">{actionButton('Editar','admin.mode.update',r)}<button className="btn" aria-label={`Subir ${r.name}`} onClick={()=>propose('admin.mode.update',r,{move:-1})}><ArrowUp size={15}/></button><button className="btn" aria-label={`Bajar ${r.name}`} onClick={()=>propose('admin.mode.update',r,{move:1})}><ArrowDown size={15}/></button>{actionButton('Eliminar','admin.mode.delete',r)}</div>}],
@@ -84,6 +86,7 @@ export default function AdministrationPage(){
       {commands.length>0&&<DecisionPanel data={{...data.operations,commands}} reload={reload} onChanged={reload}/>}
     </>:!error&&<Empty title="Sin datos disponibles">Actualiza para volver a consultar CTP.</Empty>}
     {dialog&&<AdministrationDialog key={`${dialog.type}:${dialog.row?.id||'new'}`} action={dialog} data={data} onClose={()=>setDialog(null)} prepare={prepare}/>}
+    {removing&&<DeleteUserDialog key={removing.id} user={removing} onClose={()=>setRemoving(null)} onDeleted={result=>{toast(result.mode==='deleted'?`Cuenta de ${removing.username} eliminada por completo.`:`Cuenta de ${removing.username} cerrada y anonimizada. Sus partidas se conservan como «Cuenta eliminada».`);setRemoving(null);reload();}}/>}
     {editing&&<UserProfileDialog key={editing} id={editing} onClose={()=>setEditing(null)} onSaved={()=>{toast('Datos de la cuenta actualizados en CTP.');reload();}}/>}
   </div>;
 }
@@ -117,6 +120,32 @@ function UserProfileDialog({id,onClose,onSaved}){
     </div>
     <Field label="Biografía"><textarea name="bio" rows={3} maxLength={500} defaultValue={profile.bio||''}/></Field>
     <label className="op-check"><input type="checkbox" name="confirm_email"/> Si cambio el correo, el jugador pasará a iniciar sesión con el nuevo inmediatamente.</label>
+  </FormDialog>;
+}
+
+/** Closing a CTP account cannot be undone; the typed username is the confirmation. */
+function DeleteUserDialog({user,onClose,onDeleted}){
+  const {data:profile,loading,error,reload}=useData(()=>api.get(`/administration/users/${user.id}`),[user.id]);
+  const [typed,setTyped]=useState('');
+  const ready=profile&&typed===profile.username;
+  return <FormDialog title="Eliminar cuenta de CTP" submitLabel="Eliminar cuenta definitivamente" danger onClose={onClose} submit={async body=>{
+    if(!profile)throw new Error(error?'Vuelve a cargar la cuenta.':'Espera a que se cargue la cuenta.');
+    if(!ready)throw new Error('Escribe exactamente el nombre de usuario para confirmar.');
+    if(body.confirm!=='on')throw new Error('Marca la casilla para confirmar que entiendes que no se puede deshacer.');
+    onDeleted(await api.post(`/administration/users/${user.id}/delete`,{expected_version:profile.manager_version,confirm_username:typed}));
+  }}>
+    {loading&&!profile&&<p role="status"><Spinner/> Cargando cuenta…</p>}
+    {error&&!profile&&<p className="op-error" role="alert">{error.message}<button className="btn" type="button" onClick={reload}>Reintentar</button></p>}
+    {profile&&<>
+      <p><strong>{profile.username}</strong> · {profile.email||'sin correo'} · alta {dateTime(profile.created_at)}</p>
+      <div className="op-danger-zone">
+        <p><strong>No se puede deshacer.</strong> La persona pierde el acceso y se borran sus datos personales: correo, contraseña, perfil, redes, foto, notificaciones, club y búsquedas de Ranked.</p>
+        <p>Si no tiene historial compartido, la cuenta desaparece del todo. Si ya jugó partidas, torneos o Ranked, o tiene pagos, la cuenta queda cerrada y anónima como «Cuenta eliminada» para no alterar los resultados de rivales y compañeros.</p>
+        <p>Los administradores y árbitros no se pueden eliminar: quítales antes su rol. Si lidera un club con más miembros, transfiere antes el liderazgo.</p>
+      </div>
+      <Field label={`Escribe «${profile.username}» para confirmar`}><input value={typed} onChange={event=>setTyped(event.target.value)} autoComplete="off" spellCheck={false} maxLength={100}/></Field>
+      <label className="op-check"><input type="checkbox" name="confirm"/> Entiendo que esta acción es definitiva.</label>
+    </>}
   </FormDialog>;
 }
 

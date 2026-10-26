@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OP_TABS } from '../client/src/operations/model.js';
 import { managerNavigation, matchReturnPath, navigationSearch } from '../client/src/navigation.js';
+import { metricsAllowedHost } from '../client/src/pages/metricsModel.js';
 
 test('all permitted operational areas are discoverable without granting another role', () => {
   for (const section of ['arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones', 'operaciones']) {
@@ -19,6 +20,20 @@ test('admin tools occur once and navigation targets remain unique', () => {
   const items = managerNavigation(() => true, true);
   assert.equal(new Set(items.map(item => item.to)).size, items.length);
   assert.equal(items.filter(item => item.id === 'integracion').length, 1);
+});
+
+test('private metrics are discoverable once for administrators on PRE and PROD only', () => {
+  for (const hostname of ['pre.manager.playctp.com', 'manager.playctp.com', 'localhost', '127.0.0.1', '[::1]', '::1']) {
+    assert.equal(metricsAllowedHost(hostname), true);
+    assert.equal(managerNavigation(() => true, true, false, false, hostname).filter(item => item.id === 'metrics').length, 1);
+    for (const managesUsers of [false, true]) {
+      assert.equal(managerNavigation(() => true, false, managesUsers, true, hostname).some(item => item.id === 'metrics'), false);
+    }
+  }
+  for (const hostname of ['evil.manager.playctp.com', 'manager.playctp.com.evil.invalid', 'ruleta.playctp.com', 'pre.playctp.com']) {
+    assert.equal(metricsAllowedHost(hostname), false);
+    assert.equal(managerNavigation(() => true, true, false, false, hostname).some(item => item.id === 'metrics'), false);
+  }
 });
 
 test('Ranked supervision adds only the monitor without granting admin tools', () => {

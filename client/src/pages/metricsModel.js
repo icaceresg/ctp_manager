@@ -1,5 +1,5 @@
 export const METRICS_REFRESH_MS = 60_000;
-export const metricsAllowedHost = hostname => ['pre.manager.playctp.com', 'localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
+export const metricsAllowedHost = hostname => ['pre.manager.playctp.com', 'manager.playctp.com', 'localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
 export const numeric = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 export const metricNumber = (value, digits = 1) => numeric(value) ? new Intl.NumberFormat('es-ES', { maximumFractionDigits: digits }).format(value) : 'Sin datos';
 export const metricPercent = value => numeric(value) ? `${metricNumber(value)} %` : 'Sin datos';

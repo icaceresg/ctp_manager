@@ -12,7 +12,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-metrics-api-'));
 const file = path.join(directory, 'snapshot.json');
 const children = [];
-let server, adminCookie, staffCookie;
+let server, production, adminCookie, staffCookie, prodAdminCookie, prodStaffCookie;
 const password = 'metrics-test-local-password';
 const snapshot = { schemaVersion: 1, generatedAt: new Date().toISOString(), available: true,
   source: { collectionStartedAt: new Date().toISOString(), intervalSeconds: 60, retentionHours: 24 },
@@ -83,6 +83,9 @@ before(async () => {
   server = await start({ PUBLIC_ORIGIN: 'https://pre.manager.playctp.com' });
   adminCookie = await login(server);
   staffCookie = await login(server, 'metricsstaff');
+  production = await start({ PUBLIC_ORIGIN: 'https://manager.playctp.com' });
+  prodAdminCookie = await login(production);
+  prodStaffCookie = await login(production, 'metricsstaff');
 });
 
 after(async () => {
@@ -105,32 +108,38 @@ test('real PRE endpoint denies anonymous and production staff, while administrat
   assert.equal((await request(server, 'GET', '/operations/integration', { cookie: staffCookie })).status, 200);
 });
 
-test('metrics preserve existing exact Host/Origin boundary and cannot select a file, source or environment from browser input', async () => {
-  for (const headers of [{ Host: 'manager.playctp.com' }, { Host: 'evil.invalid', 'X-Forwarded-Host': server.host }, { Origin: 'https://manager.playctp.com' }, { 'Sec-Fetch-Site': 'cross-site' }]) {
-    assert.equal((await request(server, 'GET', '/administration/metrics', { cookie: adminCookie, headers })).status, 403);
+test('PRE and PROD metrics preserve exact Host/Origin boundaries and ignore browser file/source selectors', async () => {
+  for (const [target, cookie, otherHost] of [[server, adminCookie, production.host], [production, prodAdminCookie, server.host]]) {
+    for (const headers of [{ Host: otherHost }, { Host: 'evil.invalid', 'X-Forwarded-Host': target.host }, { Origin: `https://${otherHost}` }, { 'Sec-Fetch-Site': 'cross-site' }]) {
+      assert.equal((await request(target, 'GET', '/administration/metrics', { cookie, headers })).status, 403);
+    }
+    const result = await request(target, 'GET', '/administration/metrics?file=%2Fetc%2Fpasswd&environment=prod&url=https%3A%2F%2Fevil.invalid', { cookie, headers: { 'X-Metrics-File': '/etc/passwd' } });
+    assert.equal(result.status, 200); assert.equal(result.data.environments.pre.traffic.requests24h, 25);
+    assert.equal(result.data.environments.prod.traffic.requests24h, 125);
+    assert.equal(result.headers['cache-control'], 'no-store');
   }
-  const result = await request(server, 'GET', '/administration/metrics?file=%2Fetc%2Fpasswd&environment=prod&url=https%3A%2F%2Fevil.invalid', { cookie: adminCookie, headers: { 'X-Metrics-File': '/etc/passwd' } });
-  assert.equal(result.status, 200); assert.equal(result.data.environments.pre.traffic.requests24h, 25);
+});
+
+test('production metrics admit only administrators and return only aggregate DTO fields', async () => {
+  assert.equal((await request(production, 'GET', '/administration/metrics')).status, 401);
+  assert.equal((await request(production, 'GET', '/administration/metrics', { cookie: prodStaffCookie })).status, 403);
+  const result = await request(production, 'GET', '/administration/metrics', { cookie: prodAdminCookie });
+  assert.equal(result.status, 200); assert.equal(result.headers['cache-control'], 'no-store');
+  assert.equal(result.data.schemaVersion, 1); assert.equal(result.data.host.cpuPercent, 1.5);
+  assert.equal(result.data.environments.pre.traffic.requests24h, 25);
   assert.equal(result.data.environments.prod.traffic.requests24h, 125);
+  assert(!JSON.stringify(result).includes('PRIVATE-CANARY'));
 });
 
-test('production Manager stays disabled even when local opt-in and valid snapshot are configured', async () => {
-  const production = await start({ PUBLIC_ORIGIN: 'https://manager.playctp.com', CTP_METRICS_ENABLED: '1' });
-  try {
-    const cookie = await login(production);
-    const result = await request(production, 'GET', '/administration/metrics', { cookie });
-    assert.equal(result.status, 404); assert.equal(result.headers['cache-control'], 'no-store');
-    assert.equal(result.data.schemaVersion, undefined);
-  } finally { await stop(production.child); }
-});
-
-test('missing snapshot on PRE returns generic503 without exposing server paths or parse details', async () => {
-  const unavailable = await start({ PUBLIC_ORIGIN: 'https://pre.manager.playctp.com', CTP_METRICS_FILE: path.join(directory, 'PRIVATE-MISSING-FILE.json') });
-  try {
-    const cookie = await login(unavailable);
-    const result = await request(unavailable, 'GET', '/administration/metrics', { cookie });
-    assert.equal(result.status, 503); assert.equal(result.headers['cache-control'], 'no-store');
-    assert(!JSON.stringify(result).includes('PRIVATE-MISSING-FILE')); assert(!JSON.stringify(result).includes(directory));
-    assert.deepEqual(Object.keys(result.data), ['error']);
-  } finally { await stop(unavailable.child); }
+test('missing snapshots on both Manager origins return generic503 without exposing server paths', async () => {
+  for (const origin of ['https://pre.manager.playctp.com', 'https://manager.playctp.com']) {
+    const unavailable = await start({ PUBLIC_ORIGIN: origin, CTP_METRICS_FILE: path.join(directory, 'PRIVATE-MISSING-FILE.json') });
+    try {
+      const cookie = await login(unavailable);
+      const result = await request(unavailable, 'GET', '/administration/metrics', { cookie });
+      assert.equal(result.status, 503); assert.equal(result.headers['cache-control'], 'no-store');
+      assert(!JSON.stringify(result).includes('PRIVATE-MISSING-FILE')); assert(!JSON.stringify(result).includes(directory));
+      assert.deepEqual(Object.keys(result.data), ['error']);
+    } finally { await stop(unavailable.child); }
+  }
 });

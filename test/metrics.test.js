@@ -22,11 +22,12 @@ const snapshot = (extra = {}) => ({ schemaVersion: 1, generatedAt: iso(0), avail
   history: [{ at: iso(-60_000), cpuPercent: 11.5, preRequests: 12.5, prod5xx: 0.5, preWaitingPlayers: 1 }],
   alerts: [{ code: 'memory_low', severity: 'warning', scope: 'host', value: 1_024, threshold: 2_048 }], ...extra });
 
-test('metrics are enabled only for exact PRE origin or explicit local development', () => {
+test('metrics are enabled only for exact PRE/PROD Manager origins or explicit local development', () => {
   assert.equal(metricsConfiguration({ PUBLIC_ORIGIN: 'https://pre.manager.playctp.com' }).enabled, true);
+  assert.equal(metricsConfiguration({ PUBLIC_ORIGIN: 'https://manager.playctp.com' }).enabled, true);
   assert.equal(metricsConfiguration({ CTP_METRICS_ENABLED: '1' }).enabled, true);
   assert.equal(metricsConfiguration({}).enabled, false);
-  for (const origin of ['https://manager.playctp.com', 'https://ruleta.playctp.com', 'https://evil.pre.manager.playctp.com', 'https://pre.manager.playctp.com/', 'https://pre.manager.playctp.com?token=x', 'http://pre.manager.playctp.com']) {
+  for (const origin of ['https://ruleta.playctp.com', 'https://evil.pre.manager.playctp.com', 'https://evil.manager.playctp.com', 'https://pre.manager.playctp.com/', 'https://manager.playctp.com/', 'https://pre.manager.playctp.com?token=x', 'https://manager.playctp.com?token=x', 'http://pre.manager.playctp.com', 'http://manager.playctp.com']) {
     assert.equal(metricsConfiguration({ PUBLIC_ORIGIN: origin, CTP_METRICS_ENABLED: '1' }).enabled, false, origin);
   }
   assert.equal(metricsConfiguration({}).file, METRICS_DEFAULT_FILE);
@@ -106,9 +107,9 @@ test('history omits invalid, future and expired points and sorts in ascending ti
   assert.deepEqual(result.history.map(row => row.at), [iso(-120_000), iso(-60_000)]);
 });
 
-test('disabled reader performs no disk read, including attempted opt-in on production', async () => {
+test('disabled reader performs no disk read, including attempted opt-in on an unrelated public origin', async () => {
   let reads = 0;
-  for (const env of [{}, { PUBLIC_ORIGIN: 'https://manager.playctp.com', CTP_METRICS_ENABLED: '1', CTP_METRICS_FILE: enabled.CTP_METRICS_FILE }]) {
+  for (const env of [{}, { PUBLIC_ORIGIN: 'https://other.invalid', CTP_METRICS_ENABLED: '1', CTP_METRICS_FILE: enabled.CTP_METRICS_FILE }]) {
     const read = createMetricsReader({ env, read: async () => { reads++; return snapshot(); } });
     assert.equal((await read()).status, 404);
   }

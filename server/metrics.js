@@ -6,6 +6,7 @@ import { METRICS_SCHEMA_VERSION, METRICS_ROUTE_FAMILIES, METRICS_ALERT_CODES, ME
 export { METRICS_ROUTE_FAMILIES, METRICS_ALERT_CODES } from '../shared/metrics-contract.js';
 
 export const METRICS_PRE_ORIGIN = 'https://pre.manager.playctp.com';
+export const METRICS_PROD_ORIGIN = 'https://manager.playctp.com';
 export const METRICS_DEFAULT_FILE = '/var/lib/ctp-manager-pre-metrics/snapshot.json';
 export const METRICS_MAX_BYTES = 4 * 1024 * 1024;
 export const METRICS_CACHE_MS = 15_000;
@@ -30,8 +31,10 @@ const fields = (source, names, convert = numeric) => Object.fromEntries(names.ma
 const limited = (value, maximum) => Array.isArray(value) ? value.slice(0, maximum) : [];
 
 export function metricsConfiguration(env = process.env) {
-  // A local opt-in can never turn the feature on at the production Manager.
-  const enabled = env.PUBLIC_ORIGIN === METRICS_PRE_ORIGIN || (!env.PUBLIC_ORIGIN && env.CTP_METRICS_ENABLED === '1');
+  // Only the two exact Manager origins or explicitly enabled local development.
+  // Authentication and administrator access are enforced by the route middleware.
+  const enabled = [METRICS_PRE_ORIGIN, METRICS_PROD_ORIGIN].includes(env.PUBLIC_ORIGIN)
+    || (!env.PUBLIC_ORIGIN && env.CTP_METRICS_ENABLED === '1');
   const file = env.CTP_METRICS_FILE || METRICS_DEFAULT_FILE;
   return { enabled, file: typeof file === 'string' && path.isAbsolute(file) ? file : null };
 }

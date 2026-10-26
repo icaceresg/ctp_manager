@@ -1,0 +1,70 @@
+name: Manager PRE automatic deployment
+
+on:
+  push:
+    branches: [pre]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manager-pre-deploy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/pre'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: Preview
+      url: https://pre.manager.playctp.com
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require PRE deployment configuration
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PRE_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
+        run: |
+          [[ -n "$VPS_HOST" ]] || { echo '::error::Missing variable MANAGER_VPS_HOST.'; exit 1; }
+          [[ -n "$SSH_PRIVATE_KEY" ]] || { echo '::error::Missing secret MANAGER_VPS_PRE_SSH_KEY.'; exit 1; }
+          [[ -n "$VPS_KNOWN_HOSTS" ]] || { echo '::error::Missing variable MANAGER_VPS_KNOWN_HOSTS.'; exit 1; }
+      - uses: ./.github/actions/manager-checks
+      - name: Install only the production dependencies from the lockfile
+        run: |
+          set -euo pipefail
+          mkdir -p output/runtime
+          cp package.json package-lock.json output/runtime/
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix output/runtime
+      - name: Package the verified PRE release
+        run: node scripts/package-vps.mjs --out output/ctp-manager.tar.gz --deps output/runtime
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: manager-pre-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ctp-manager.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify restricted PRE access without publishing
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PRE_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+        run: bash scripts/deploy-vps.sh pre check
+      - name: Publish to the PRE VPS and verify the running service
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_VPS_PRE_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_VPS_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_VPS_KNOWN_HOSTS }}
+        run: bash scripts/deploy-vps.sh pre deploy

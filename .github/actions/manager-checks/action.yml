@@ -1,0 +1,20 @@
+name: Manager checks
+description: Install, audit, test and build CTP Manager. Shared by CI and both environment deployments.
+runs:
+  using: composite
+  steps:
+    - run: npm ci
+      shell: bash
+    - name: Reject known high-severity dependency vulnerabilities
+      run: npm audit --audit-level=high
+      shell: bash
+    - run: npm test
+      shell: bash
+    - name: Check the aggregate observer and the VPS release tool
+      run: |
+        python3 -B test/metrics-traffic.test.py
+        python3 -B test/metrics-collector.test.py
+        python3 -B test/manager-release.test.py
+      shell: bash
+    - run: npm run build
+      shell: bash

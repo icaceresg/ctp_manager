@@ -24,3 +24,16 @@ Excluye PC Check completo y los bloques móviles UGC/avatar/eliminación/privaci
 - `git diff --check` correcto y base `origin/main` conservada como ancestro.
 
 Logs y recibo filtrado bajo `validation.local/qa/`, fuera de Git. SQLite temporal y CTP sintético no acreditan el stack real; no se ha arrancado este candidato ni usado su base persistente en estos checks. El arranque y los flujos locales siguientes tienen recibos separados y datos propios. PRE se integra tras QA y revisión/CI. PROD queda fuera.
+
+## Buscador: contexto de apilamiento
+
+La prueba del candidato local detectó que el contenido principal interceptaba
+los clics sobre resultados del buscador. El modal se montaba dentro de la barra
+lateral sticky. QuickNavigation ahora monta únicamente su modal mediante
+`createPortal` en `document.body`; conserva contexto React, permisos y rutas,
+y no modifica el Modal común. El estado inicial cerrado conserva SSR.
+
+Tras este ajuste se repitieron las453 pruebas Node:448 PASS,0 fallos y las
+mismas5 omisiones POSIX; build correcto. Recibo filtrado
+`validation.local/qa/quick-navigation-portal-20261027.json`. El clic real tras
+recargar el candidato se registra por separado; estos checks no lo sustituyen.

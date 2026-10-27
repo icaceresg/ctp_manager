@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowUpRight, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Modal } from './ui.jsx';
@@ -43,7 +44,7 @@ export function QuickNavigation({ items }) {
   const firstRemote=['players','tickets','lobby'].find(kind=>current[kind].status==='ready'&&current[kind].items.length);
   return <>
     <button type="button" className="manager-search-button" onClick={() => { setQuery(''); setRemote(null);setOpen(true); }} aria-label="Buscar jugadores, incidencias, partidas o herramientas"><Search size={16} /><span>Buscar…</span><kbd>Ctrl K</kbd></button>
-    {open && <Modal title="¿Qué necesitas hacer?" onClose={close}>
+    {open && createPortal(<Modal title="¿Qué necesitas hacer?" onClose={close}>
       <form className="manager-tool-search" onSubmit={event => { event.preventDefault(); document.getElementById('manager-first-result')?.click(); }}>
         <label htmlFor="manager-tool-query">Buscar jugador, incidencia, ID de partida o herramienta</label>
         <input id="manager-tool-query" type="search" value={query} maxLength={120} onChange={event => setQuery(event.target.value)} placeholder="Nickname, Activision ID, ticket o ID de partida…" autoComplete="off" />
@@ -67,6 +68,6 @@ export function QuickNavigation({ items }) {
         <QuickSearchGroup title="Partida por ID" state={current.lobby} onClose={close} firstId={!results.length&&firstRemote==='lobby'?'manager-first-result':undefined}/>
         {['players','tickets','lobby'].some(kind=>['error','session'].includes(current[kind].status))&&<button type="button" className="btn" onClick={()=>setRetry(value=>value+1)}>Reintentar búsqueda</button>}
       </>}
-    </Modal>}
+    </Modal>, document.body)}
   </>;
 }

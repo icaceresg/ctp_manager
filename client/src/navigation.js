@@ -3,11 +3,11 @@ import { metricsAllowedHost } from './pages/metricsModel.js';
 
 const groups = {
   jornada: 'Trabajo diario', turnos: 'Trabajo diario', decisiones: 'Trabajo diario',
-  torneos: 'Competición', incidencias: 'Competición', arbitraje: 'Competición', estadisticas: 'Competición', sanciones: 'Competición', clubes: 'Competición', historico: 'Competición',
+  torneos: 'Competición', incidencias: 'Competición', arbitraje: 'Competición', sanciones: 'Competición', historico: 'Competición',
   casters: 'Emisión y comunidad', realizacion: 'Emisión y comunidad', discord: 'Emisión y comunidad', contenido: 'Emisión y comunidad',
 };
 const titles = { torneos: 'Torneos', incidencias: 'Incidencias', turnos: 'Turnos de staff', casters: 'Dossiers de partidos', realizacion: 'Preparar directo', decisiones: 'Decisiones pendientes' };
-const aliases = { jornada: 'inicio tareas agenda', incidencias: 'arbitraje árbitro disputa reto expediente soporte ticket', arbitraje: 'partidos actas resultado veto pick ban', sanciones: 'disciplina amonestación amonestar suspensión ban bloqueo castigo jugadores cuentas historial recurso', historico: 'búsqueda partidos pasados', estadisticas: 'ocr captura revisión bajas muertes', clubes: 'verificar identidad logo escudo', casters: 'narración roster mapas', realizacion: 'emisión streaming obs', decisiones: 'enviar propuestas pendientes' };
+const aliases = { jornada: 'inicio tareas agenda', incidencias: 'arbitraje árbitro disputa reto expediente soporte ticket', arbitraje: 'partidos actas resultado veto pick ban', sanciones: 'disciplina amonestación amonestar suspensión ban bloqueo castigo jugadores cuentas historial recurso', historico: 'búsqueda partidos pasados', casters: 'narración roster mapas', realizacion: 'emisión streaming obs', decisiones: 'enviar propuestas pendientes' };
 const editorial = [
   { section: 'calendario', to: '/calendario', title: 'Calendario editorial', keywords: 'publicaciones redes' },
   { section: 'escaleta', to: '/escaleta', title: 'Escaleta', keywords: 'guion emisión' },
@@ -15,7 +15,7 @@ const editorial = [
   { section: 'tablero', to: '/tablero', title: 'Tablero', keywords: 'contenido tareas' },
 ];
 export function managerNavigation(can, isAdmin, staffManager = false, rankedStaff = false, hostname = '') {
-  const items = OP_TABS.filter(tab => tab.sections.some(can)).map(tab => ({
+  const items = OP_TABS.filter(tab => tab.menu !== false && tab.sections.some(can)).map(tab => ({
     id: tab.id, to: `/operaciones/${tab.id}`, title: titles[tab.id] || tab.title, group: groups[tab.id],
     keywords: `${tab.title} ${tab.id} ${aliases[tab.id] || ''}`,
   }));

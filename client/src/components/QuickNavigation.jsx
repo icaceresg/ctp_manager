@@ -23,7 +23,7 @@ export function QuickNavigation({ items }) {
     {open && <Modal title="¿Qué necesitas hacer?" onClose={close}>
       <form className="manager-tool-search" onSubmit={event => { event.preventDefault(); if (results.length) document.getElementById('manager-first-result')?.click(); }}>
         <label htmlFor="manager-tool-query">Buscar sección o herramienta</label>
-        <input id="manager-tool-query" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Estadísticas, árbitro, turnos…" autoComplete="off" />
+        <input id="manager-tool-query" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Sanciones, árbitro, turnos…" autoComplete="off" />
       </form>
       <div className="manager-search-results" aria-label="Herramientas disponibles">
         {results.map((item, index) => {

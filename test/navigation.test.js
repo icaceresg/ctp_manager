@@ -7,7 +7,7 @@ import { metricsAllowedHost } from '../client/src/pages/metricsModel.js';
 test('all permitted operational areas are discoverable without granting another role', () => {
   for (const section of ['arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones', 'operaciones']) {
     const items = managerNavigation(value => value === section, false);
-    assert.deepEqual(items.map(item => item.id), OP_TABS.filter(tab => tab.sections.includes(section)).map(tab => tab.id));
+    assert.deepEqual(items.map(item => item.id), OP_TABS.filter(tab => tab.menu !== false && tab.sections.includes(section)).map(tab => tab.id));
     assert.equal(items.some(item => ['usuarios', 'integracion'].includes(item.id)), false);
     assert(items.every(item => item.group && item.to.startsWith('/')));
   }
@@ -52,7 +52,8 @@ test('coordination receives only delegated user management in addition to its ow
 });
 test('tool search matches accents and multiple words only within allowed tools', () => {
   const items = managerNavigation(value => value === 'arbitraje', false);
-  assert.deepEqual(navigationSearch(items, 'ESTADISTICAS').map(item => item.id), ['estadisticas']);
+  assert.deepEqual(navigationSearch(items, 'HISTORICO').map(item => item.id), ['historico']);
+  assert.deepEqual(navigationSearch(items, 'estadisticas'), [], 'Estadísticas ya no está en el menú');
   assert.deepEqual(navigationSearch(items, 'competicion arbitraje').map(item => item.id), ['incidencias','arbitraje']);
   assert.deepEqual(navigationSearch(items, 'usuarios'), []);
 });

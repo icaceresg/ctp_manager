@@ -91,7 +91,7 @@ test('el menú agrupa Competición sin pestañas duplicadas y redirige Disciplin
   const items = managerNavigation(() => true, false);
   const group = name => items.filter(entry => entry.group === name).map(entry => entry.id);
   assert.deepEqual(group('Trabajo diario'), ['jornada', 'disponibilidad', 'turnos', 'decisiones']);
-  assert.deepEqual(group('Competición'), ['torneos', 'incidencias', 'arbitraje', 'estadisticas', 'sanciones', 'clubes', 'historico']);
+  assert.deepEqual(group('Competición'), ['torneos', 'incidencias', 'arbitraje', 'sanciones', 'historico']);
   assert.equal(items.some(entry => entry.group === 'Seguimiento' || entry.id === 'disciplina'), false);
   assert.equal(new Set(items.map(entry => entry.title)).size, items.length, 'cada pestaña tiene un nombre distinto');
   assert.equal(items.find(entry => entry.id === 'incidencias').title, 'Incidencias');

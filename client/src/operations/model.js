@@ -1,6 +1,8 @@
 export const OP_SECTIONS = ['operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones'];
 // Order is the sidebar order inside each group (Trabajo diario, Competición,
 // Emisión y comunidad). Disciplina was replaced by Sanciones.
+// `menu: false` keeps the page reachable from its links (match dossier,
+// Mi jornada, Administración → Clubes) but out of the sidebar.
 export const OP_TABS = [
   { id: 'jornada', title: 'Mi jornada', sections: OP_SECTIONS },
   { id: 'turnos', title: 'Planificador', sections: ['operaciones', 'casters', 'arbitraje', 'realizacion'] },
@@ -8,9 +10,9 @@ export const OP_TABS = [
   { id: 'torneos', title: 'Torneos', sections: ['operaciones'] },
   { id: 'incidencias', title: 'Incidencias', sections: ['arbitraje'] },
   { id: 'arbitraje', title: 'Actas y resultados', sections: ['arbitraje'] },
-  { id: 'estadisticas', title: 'Estadísticas', sections: ['arbitraje'] },
+  { id: 'estadisticas', title: 'Estadísticas', sections: ['arbitraje'], menu: false },
   { id: 'sanciones', title: 'Sanciones', sections: ['arbitraje'] },
-  { id: 'clubes', title: 'Clubes', sections: ['clubes'] },
+  { id: 'clubes', title: 'Clubes', sections: ['clubes'], menu: false },
   { id: 'historico', title: 'Histórico', sections: ['operaciones', 'arbitraje'] },
   { id: 'casters', title: 'Dossier', sections: ['casters', 'operaciones', 'realizacion'] },
   { id: 'realizacion', title: 'Preparación', sections: ['realizacion'] },

@@ -67,7 +67,7 @@ export default function AdministrationPage(){
     features:[{key:'key',title:'Función',render:r=>r.key==='ranked'?'Ranked':r.key},{key:'enabled',title:'Visibilidad',render:r=><Badge value={r.enabled?'active':'paused'}>{r.enabled?'Visible':'Oculta'}</Badge>},{key:'actions',title:'Cambiar',render:r=>actionButton(r.enabled?'Ocultar Ranked':'Publicar Ranked','admin.feature.set',r,{key:r.key,enabled:!r.enabled})}],
     audit:[{key:'created_at',title:'Fecha',render:r=>dateTime(r.created_at)},{key:'actor',title:'Responsable',render:r=>r.actor_name||r.actor_username||'Sistema CTP'},{key:'action',title:'Acción'},{key:'detail',title:'Detalle',render:r=><span style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{typeof r.detail==='string'?r.detail:'Cambio registrado en CTP'}</span>}],
     ranked_queues:[{key:'name',title:'Cola',render:r=>r.title||r.name||gameName(data,r.game_id)||'Ranked'},{key:'status',title:'Estado',render:r=><Badge value={state(r)}/>},{key:'waiting',title:'Esperando',render:r=>r.waiting_players??r.waiting_count??r.players_count??'—'},{key:'actions',title:'Operación',render:r=><div className="op-actions">{!r.is_open&&actionButton('Abrir cola','admin.ranked.queue.open',r)}{r.is_open&&actionButton('Pausar','admin.ranked.queue.pause',r)}</div>}],
-    ranked_lobbies:[{key:'name',title:'Partida',render:r=>r.name||`Ranked · ${r.id.slice(0,8)}`},{key:'status',title:'Estado',render:r=><Badge value={state(r)}/>},{key:'created_at',title:'Creada',render:r=>dateTime(r.created_at)},{key:'actions',title:'Arbitraje',render:r=><div className="op-actions">{actionButton('Registrar ganador','admin.ranked.lobby.resolve',r)}{actionButton('Cancelar partida','admin.ranked.lobby.cancel',r)}</div>}],
+    ranked_lobbies:[{key:'name',title:'Partida',render:r=>r.name||`Ranked · ${r.id.slice(0,8)}`},{key:'status',title:'Estado',render:r=><Badge value={state(r)}/>},{key:'created_at',title:'Creada',render:r=>dateTime(r.created_at)},{key:'actions',title:'Arbitraje',render:r=><RankedAdministrationLink row={r}/>}],
   }[resource]||[];
   const createType=resource==='entitlements'?'admin.entitlement.grant':resource==='maps'?'admin.map.create':resource==='modes'?'admin.mode.create':resource==='campaigns'?'admin.campaign.create':null;
   const commands=(data?.operations?.commands||[]).filter(command=>(command.type||command.action||'').startsWith('admin.'));
@@ -86,7 +86,7 @@ export default function AdministrationPage(){
           <div className="op-actions"><button className="btn" disabled={loading||page===0} onClick={()=>change('page',page-1)}>Anterior</button><span>Página {page+1}</span><button className="btn" disabled={loading||!(data.has_more??data.total>(page+1)*20)} onClick={()=>change('page',page+1)}>Siguiente</button></div>
         </section>
         {section==='clubes'&&<div className="op-actions"><Link className="btn primary" to="/operaciones/clubes">Crear club y revisar identidad</Link></div>}
-        {section==='ranked'&&<Link className="btn" to="/operaciones/torneos">Programar season y reinicio de divisiones</Link>}
+        {section==='ranked'&&<div className="op-actions"><Link className="btn" to="/ranked/monitor">Supervisar colas y partidas</Link><Link className="btn" to="/operaciones/torneos">Programar season y reinicio de divisiones</Link></div>}
         {section==='integraciones'&&<AdministrationIntegrations/>}
       </>}
       {commands.length>0&&<DecisionPanel data={{...data.operations,commands}} reload={reload} onChanged={reload}/>}
@@ -95,6 +95,11 @@ export default function AdministrationPage(){
     {removing&&<DeleteUserDialog key={removing.id} user={removing} onClose={()=>setRemoving(null)} onDeleted={result=>{toast(result.mode==='deleted'?`Cuenta de ${removing.username} eliminada por completo.`:`Cuenta de ${removing.username} cerrada y anonimizada. Sus partidas se conservan como «Cuenta eliminada».`);setRemoving(null);reload();}}/>}
     {editing&&<UserProfileDialog key={editing} id={editing} onClose={()=>setEditing(null)} onSaved={()=>{toast('Datos de la cuenta actualizados en CTP.');reload();}}/>}
   </div>;
+}
+
+/** Configuration lists link to the full arbitration context instead of choosing a winner here. */
+export function RankedAdministrationLink({row}) {
+  return <Link className="btn" to={`/ranked/partidas/${encodeURIComponent(row.id)}`}>{['closed','cancelled'].includes(state(row))?'Consultar partida':'Abrir partida y resolver'}</Link>;
 }
 
 /** Closing a CTP account cannot be undone; the typed username is the confirmation. */
@@ -143,9 +148,9 @@ function AdministrationDialog({action,data,onClose,prepare}){
   const [uploading,setUploading]=useState(false);
   const [uploadError,setUploadError]=useState('');
   const imageRequest=useRef(null);
-  const titles={'admin.user.role':'Cambiar rol de CTP','admin.entitlement.grant':'Conceder acceso al club','admin.entitlement.revoke':'Retirar acceso','admin.mode.create':'Crear modo de juego','admin.mode.update':'Editar modo','admin.mode.delete':'Eliminar modo','admin.map.create':'Crear mapa','admin.map.update':'Editar mapa','admin.map.delete':'Eliminar mapa','admin.campaign.create':'Preparar campaña','admin.campaign.queue':'Revisar envío de campaña','admin.campaign.cancel':'Cancelar campaña','admin.feature.set':'Cambiar visibilidad de Ranked','admin.ranked.queue.open':'Abrir cola Ranked','admin.ranked.queue.pause':'Pausar cola Ranked','admin.ranked.queue.sync':'Sincronizar colas con Discord','admin.ranked.lobby.resolve':'Resolver partida Ranked','admin.ranked.lobby.cancel':'Cancelar partida Ranked'};
+  const titles={'admin.user.role':'Cambiar rol de CTP','admin.entitlement.grant':'Conceder acceso al club','admin.entitlement.revoke':'Retirar acceso','admin.mode.create':'Crear modo de juego','admin.mode.update':'Editar modo','admin.mode.delete':'Eliminar modo','admin.map.create':'Crear mapa','admin.map.update':'Editar mapa','admin.map.delete':'Eliminar mapa','admin.campaign.create':'Preparar campaña','admin.campaign.queue':'Revisar envío de campaña','admin.campaign.cancel':'Cancelar campaña','admin.feature.set':'Cambiar visibilidad de Ranked','admin.ranked.queue.open':'Abrir cola Ranked','admin.ranked.queue.pause':'Pausar cola Ranked','admin.ranked.queue.sync':'Sincronizar colas con Discord'};
   const simple=type==='admin.user.role'||type==='admin.feature.set'||type.endsWith('.delete')||type==='admin.entitlement.revoke'||type==='admin.campaign.queue'||type==='admin.campaign.cancel'||type.startsWith('admin.ranked.')||extra.move!==undefined;
-  const confirmRequired=type.endsWith('.delete')||['admin.campaign.queue','admin.entitlement.revoke','admin.ranked.lobby.cancel'].includes(type);
+  const confirmRequired=type.endsWith('.delete')||['admin.campaign.queue','admin.entitlement.revoke'].includes(type);
   const reasonRequired=type==='admin.entitlement.revoke'||type.startsWith('admin.ranked.');
   const upload=async event=>{
     const file=event.target.files?.[0];if(!file)return;
@@ -176,7 +181,6 @@ function AdministrationDialog({action,data,onClose,prepare}){
       Object.assign(payload,{content,link:body.link});
     }
     else if(type==='admin.campaign.queue')payload.confirm_id=target(row);
-    else if(type==='admin.ranked.lobby.resolve')payload.side=body.side;
     return prepare(type,row,payload);
   }}>
     {row&&<p><strong>{name(row)}</strong></p>}
@@ -207,7 +211,6 @@ function AdministrationDialog({action,data,onClose,prepare}){
       <Field label="Destino dentro de CTP"><input name="link" required maxLength={512} defaultValue="/tournaments"/></Field>
     </>}
     {type==='admin.campaign.queue'&&<><p className="op-notice">Esta acción prepara el envío comercial a las personas que hayan dado su consentimiento. El envío efectivo requiere la confirmación posterior de la propuesta.</p>{LOCALES.map(([locale,title])=><details key={locale}><summary>{title}</summary><h3>{row.content?.[locale]?.title||'Sin asunto'}</h3><p style={{whiteSpace:'pre-wrap'}}>{row.content?.[locale]?.body||'Sin mensaje'}</p></details>)}</>}
-    {type==='admin.ranked.lobby.resolve'&&<Field label="Equipo ganador"><select name="side"><option value="a">Equipo A</option><option value="b">Equipo B</option></select></Field>}
     {type==='admin.ranked.queue.pause'&&<p className="op-notice">La cola dejará de admitir jugadores y se retirará a quienes estén esperando. Las partidas ya creadas se gestionan desde «Partidas».</p>}
     {type.endsWith('.delete')&&<p className="op-notice">CTP bloqueará la eliminación si el registro ya está en uso o tiene dependencias.</p>}
     {extra.move!==undefined&&<p>El modo se moverá una posición <strong>{extra.move<0?'arriba':'abajo'}</strong>.</p>}

@@ -1,4 +1,5 @@
 import {HttpError} from './auth.js';
+import {safeRankedClipUrl} from '../shared/ranked-lobby-presentation.js';
 const fail=()=>{throw new HttpError(502,'CTP ha devuelto un detalle de Ranked incompleto.');};
 export function rankedLobbyId(value){if(typeof value!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))throw new HttpError(400,'La referencia de la partida no es válida.');return value.toLowerCase();}
 export function rankedChatCursor(value){if(value==null)return null;if(typeof value!=='string'||!/^[1-9][0-9]{0,18}$/.test(value)||BigInt(value)>9223372036854775807n)throw new HttpError(400,'La página del chat no es válida.');return value;}
@@ -72,7 +73,9 @@ export function rankedLobbyDetail(value,expectedId){
  // Player disputes (CTP 238): who opened each one, their team, what they wrote and whether it is resolved.
  // null = this CTP version does not send them yet; the open count still comes alone.
  const open_disputes=number(value.open_disputes);
- const disputes=value.disputes===undefined?null:rows(value.disputes,16,d=>({username:d.username===null?null:text(d.username,100),side:side(d.side),reason:text(d.reason,2000),created_at:date(d.created_at),resolved:bool(d.resolved)}));
+ const disputes=value.disputes===undefined?null:rows(value.disputes,16,d=>({username:d.username===null?null:text(d.username,100),side:side(d.side),reason:text(d.reason,2000),created_at:date(d.created_at),resolved:bool(d.resolved),
+  // CTP 242 adds a clip; historical disputes legitimately have no link.
+  clip_url:d.clip_url===undefined||d.clip_url===null?null:safeRankedClipUrl(text(d.clip_url,500))}));
  if(disputes&&disputes.filter(d=>!d.resolved).length>open_disputes)fail();
  // Player reports (CTP 239): who reported whom in this match, why and when. No user ids.
  // null = this CTP version does not send them yet. reported_slot is the slot the Ranked block expects.

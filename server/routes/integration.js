@@ -6,6 +6,7 @@ import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClu
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
 import { HttpError } from '../auth.js';
+import {getPlayerWorkspace} from '../integration.js';
 import { getCaseData,getOfficialIncident,getTicketThread,ticketAction,getDisciplineOverview,getDisciplineUsers,getDisciplineHistory,writeDiscipline } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
 
@@ -73,4 +74,19 @@ integrationRouter.post('/operations/guard/commands/:id/send',requireAuth,allow('
  const command=getCommand(req.params.id);
  if(!GUARD_ACTIONS.includes(command.type)||(!req.user.is_admin&&command.actor_id!==req.user.id))throw new HttpError(403,'Solo puedes enviar tus propias decisiones Guard.');
  res.json(await sendOperationCommand(req.params.id));
+});
+
+const playerQuery=(query,keys)=>{
+ if(Object.keys(query).some(key=>!keys.includes(key)))throw new HttpError(400,'La consulta de jugadores no es válida.');
+ const out={...query};
+ for(const key of keys.filter(key=>key==='limit'||key.endsWith('offset'))){
+  if(out[key]!==undefined){if(typeof out[key]!=='string'||!/^(0|[1-9][0-9]{0,5})$/.test(out[key]))throw new HttpError(400,'La paginación no es válida.');out[key]=Number(out[key]);}
+ }
+ return out;
+};
+integrationRouter.get('/players',requireAuth,requireRanked,async(req,res)=>{
+ res.json(await getPlayerWorkspace(req.user,{...playerQuery(req.query,['query','offset','limit']),operation:'search'}));
+});
+integrationRouter.get('/players/:userId',requireAuth,requireRanked,async(req,res)=>{
+ res.json(await getPlayerWorkspace(req.user,{...playerQuery(req.query,['limit','results_offset','tickets_offset','sanctions_offset']),operation:'detail',user_id:req.params.userId}));
 });

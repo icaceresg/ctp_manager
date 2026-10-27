@@ -80,7 +80,7 @@ export function OperationsPage() {
   const connection = data?.connection || {};
   const lastSync = connection.last_sync_at || connection.last_success_at;
   const stale = !connection.configured || Boolean(connection.last_error) || !lastSync || Date.now() - new Date(lastSync).getTime() > 120000;
-  const currentTitle = matchId ? 'Ficha de partido' : view === 'integracion' ? 'Conexión CTP' : tabs.find((tab) => tab.id === view)?.title || 'Mi jornada';
+  const currentTitle = matchId ? 'Ficha de partido' : view === 'integracion' ? 'Conexión CTP' : view === 'jornada' ? 'Inicio' : tabs.find((tab) => tab.id === view)?.title || 'Mi jornada';
   const props = { data, mutate, reload, can, me };
   return <div className="page wide op-page">
     <header className="op-heading op-heading-compact">

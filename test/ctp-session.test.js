@@ -11,6 +11,7 @@ const key = crypto.randomBytes(32);
 const admin = '10000000-0000-4000-8000-000000000001', referee = '10000000-0000-4000-8000-000000000002', player = '10000000-0000-4000-8000-000000000003';
 const caster = '10000000-0000-4000-8000-000000000004';
 const coordinator = '10000000-0000-4000-8000-000000000005';
+const erasureSubject='10000000-0000-4000-8000-000000000006';
 Object.assign(process.env, { DATA_DIR: temporary, DB_PATH: path.join(temporary, 'session.db'), CTP_AUTH_MODE: 'ctp',
   CTP_AUTH_URL: 'https://pre.playctp.com', CTP_WEB_ORIGIN: 'https://pre.playctp.com', CTP_AUTH_TOKEN_KEY: key.toString('base64url'),
   CTP_AUTH_ANON_KEY: `e30.${Buffer.from('{"role":"anon","exp":4102444800}').toString('base64url')}.fixture`,
@@ -18,6 +19,7 @@ Object.assign(process.env, { DATA_DIR: temporary, DB_PATH: path.join(temporary, 
 const roles = new Map([[admin, 'admin'], [referee, 'referee'], [player, 'player'], [caster, 'caster'], [coordinator, 'operations']]);
 const sessions = new Map();
 let unavailable = false, refreshed = 0, heldLogin = null, heldLoginRequests = 0;
+let heldIdentity=null,identityRequested=null;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   if (unavailable) return Response.json({}, { status: 503 });
@@ -25,7 +27,7 @@ globalThis.fetch = async (url, init) => {
   if (url.includes('grant_type=password')) {
     if (heldLogin) { heldLoginRequests++; await heldLogin; return Response.json({}, { status: 401 }); }
     if (body.password !== 'central-test-password') return Response.json({}, { status: 401 });
-    const id = body.email.startsWith('admin') ? admin : body.email.startsWith('ref') ? referee : body.email.startsWith('caster') ? caster : body.email.startsWith('coord') ? coordinator : player;
+    const id = body.email.startsWith('admin') ? admin : body.email.startsWith('ref') ? referee : body.email.startsWith('caster') ? caster : body.email.startsWith('coord') ? coordinator : body.email.startsWith('erasure')?erasureSubject:player;
     const access = `access-${crypto.randomUUID()}`; sessions.set(access, id);
     return Response.json({ user: { id }, access_token: access, refresh_token: `refresh:${id}`, expires_in: 3600 });
   }
@@ -38,6 +40,7 @@ globalThis.fetch = async (url, init) => {
   }
   const id = sessions.get(init.headers.Authorization?.replace('Bearer ', ''));
   if (!id || roles.get(id) === 'player') return Response.json({}, { status: 403 });
+  if(id===erasureSubject&&heldIdentity){identityRequested();await heldIdentity;}
   const staff = ['operations', 'production', 'caster', 'communications', 'clubs', 'executive'].includes(roles.get(id));
   return Response.json({ ctp_user_id: id, username: id === admin ? 'CTP Admin' : id === caster ? 'CTP Caster' : 'CTP Referee',
     role: staff ? 'staff' : roles.get(id), ...(staff ? { staff_kind: roles.get(id) } : {}), actor_id: `ctp:${id}`, scopes: staff ? ['staff.access'] : ['incident.reply'] });
@@ -59,6 +62,22 @@ async function signIn(email = 'admin@example.invalid') {
   const user = await auth.loginCtp(email, 'central-test-password', { cookie(name, value) { assert.equal(name, 'mrm_session'); token = value; } });
   return { user, token, request: () => ({ headers: { cookie: `mrm_session=${token}` } }) };
 }
+
+test('an identity response held across a real local erasure cannot recreate a profile or encrypted session',async()=>{
+  const {createErasureInspector}=await import('../server/erasure-local.js');
+  await import('../server/operations.js');
+  let release,arrived;heldIdentity=new Promise(resolve=>{release=resolve;});const requested=new Promise(resolve=>{arrived=resolve;});identityRequested=arrived;roles.set(erasureSubject,'admin');
+  const count=db.prepare('SELECT count(*) n FROM sessions').get().n;
+  const pending=assert.rejects(signIn('erasure-late@example.invalid'),{status:403});
+  try{
+    await requested;
+    const result=createErasureInspector(db)({job_id:crypto.randomUUID(),user_id:erasureSubject,version:3,phase:'external',progress:{database_sanitized:true,auth_closed:true,storage_verified:true}});
+    assert.equal(result.status,'clear',JSON.stringify(result.report));release();
+    await pending;
+    assert.equal(db.prepare('SELECT 1 FROM users WHERE ctp_user_id=?').get(erasureSubject),undefined);
+    assert.equal(db.prepare('SELECT count(*) n FROM sessions').get().n,count);
+  }finally{release();await pending;heldIdentity=null;identityRequested=null;roles.delete(erasureSubject);}
+});
 
 test('same CTP identity is mirrored without storing a password or exposing provider credentials', async () => {
   const first = await signIn(), second = await signIn();

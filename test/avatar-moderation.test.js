@@ -22,7 +22,7 @@ const user=randomUUID(),report=randomUUID(),jobId=randomUUID(),nonce=randomUUID(
 const admin={id:1,is_admin:true,auth_mode:'ctp',ctp_role:'admin'};
 const body=()=>({expected_report_version:1,expected_user_version:3,reason:'Synthetic reason for removing this avatar',request_id:nonce});
 const dto=()=>({schema_version:1,report:{id:report,ticket_id:randomUUID(),ticket_code:'CTP-123',context:'user',reason:'abuse',details:'Synthetic avatar report',status:'pending',version:1,created_at:'2026-10-27T08:00:00Z',target_id:user,target_username:'PlayerFixture',message_id:null,lobby_id:null,evidence:{avatar:'https://external.invalid/tracking.png',username:'Old nickname'},hidden:false,reviewed_at:null,review_note:null},
-  user:{id:user,username:'PlayerFixture',avatar:'https://external.invalid/current.png',bio:'<script>private fixture</script>',manager_version:3},job:null,preview:{reported_avatar_url:null,current_avatar_url:`https://playctp.com/storage/v1/object/public/avatars/${user}/avatar.png`}});
+  user:{id:user,username:'PlayerFixture',avatar:'https://external.invalid/current.png',bio:'<script>private fixture</script>',manager_version:3},job:null,eligibility:{matches_reported_avatar:true,avatar_present:true,can_remove:true},preview:{reported_avatar_url:null,current_avatar_url:`https://playctp.com/storage/v1/object/public/avatars/${user}/avatar.png`}});
 const job=()=>({job_id:jobId,report_id:report,user_id:user,state:'retryable',phase:'storage',kind:'owned',version:2,display_detached:true,storage_verified:false,object_removed:false,error_code:'storage_unavailable',created_at:'2026-10-27T08:00:00Z',completed_at:null});
 
 test('avatar intent binds report/user versions, reason and nonce and rejects arbitrary authority or object paths',()=>{
@@ -39,7 +39,7 @@ test('avatar DTO limits preview to the trusted origin and exact owner namespace 
   const safe=avatarModerationResponse({...current,user:{...current.user,access_token:'NEVER RELAY'}},{action:'get',report_id:report});assert.equal(safe.user.access_token,undefined);
 });
 test('detaching a profile is not Storage acknowledgement and no owned completion is accepted without it',()=>{
-  const current={...dto(),job:job()};
+  const current={...dto(),job:job(),eligibility:{matches_reported_avatar:false,avatar_present:false,can_remove:false}};
   assert.equal(avatarModerationResponse(current,{action:'remove',report_id:report}).job.state,'retryable');
   assert.throws(()=>avatarModerationResponse({...current,job:{...current.job,state:'completed',phase:'complete',completed_at:'2026-10-27T08:01:00Z'}},{action:'remove',report_id:report}),{status:502});
   const complete={...current,job:{...current.job,state:'completed',phase:'complete',storage_verified:true,object_removed:true,completed_at:'2026-10-27T08:01:00Z',error_code:null}};
@@ -67,7 +67,7 @@ test('lost remove response retains one nonce and both original CAS versions unti
 });
 test('private avatar service stamps actor and service after local admin/write and closed-body checks',async t=>{
   const database=new DatabaseSync(':memory:');t.after(()=>database.close());const observed=[];let writes=true;
-  const client=createMobileSafetyClient({database,writesEnabled:()=>writes,actorFor:actor=>`ctp:${actor.id}`,request:async envelope=>{observed.push(envelope);return{...dto(),job:envelope.payload.action==='get'?null:job()};}});
+  const client=createMobileSafetyClient({database,writesEnabled:()=>writes,actorFor:actor=>`ctp:${actor.id}`,request:async envelope=>{observed.push(envelope);const read=envelope.payload.action==='get';return{...dto(),job:read?null:job(),eligibility:{matches_reported_avatar:read,avatar_present:read,can_remove:read}};}});
   const count=()=>observed.length;
   await assert.rejects(client.avatarRemove({...admin,ctp_role:'staff'},report,body()),{status:403});
   writes=false;await assert.rejects(client.avatarRemove(admin,report,body()),{status:403});assert.equal(count(),0);
@@ -83,4 +83,34 @@ test('avatar view escapes current profile, embeds only typed preview, and distin
   const displayOnly=render({...current,job:{...job(),kind:'display_only',state:'completed',phase:'complete',completed_at:'2026-10-27T08:01:00Z',error_code:null}});
   assert.ok(displayOnly.includes('No se ha eliminado ningún archivo externo'));assert.equal(displayOnly.includes('Reintentar comprobación'),false);
   assert.ok(render(current).includes('Corregir nombre o biografía'));assert.ok(render(current).includes('maxLength="500"'));
+});
+
+test('only three authoritative eligibility booleans authorize removal; omitted/null previews establish no equality',()=>{
+  const current=dto(),expected={action:'get',report_id:report};
+  const absent={...current};delete absent.eligibility;
+  assert.deepEqual(avatarModerationResponse(absent,expected).eligibility,{matches_reported_avatar:false,avatar_present:false,can_remove:false});
+  for(const eligibility of [null,{},true,{matches_reported_avatar:true,avatar_present:true,can_remove:'true'},
+    {matches_reported_avatar:false,avatar_present:true,can_remove:true},{matches_reported_avatar:true,avatar_present:false,can_remove:true}]){
+    assert.throws(()=>avatarModerationResponse({...current,eligibility},expected),{status:502});
+  }
+  assert.throws(()=>avatarModerationResponse({...current,job:job()},expected),{status:502});
+  assert.throws(()=>avatarModerationResponse({...current,report:{...current.report,status:'dismissed'}},expected),{status:502});
+  const huge='data:image/png;base64,'+'A'.repeat(100000),bounded={...current,report:{...current.report,evidence:{...current.report.evidence,avatar:huge}},user:{...current.user,avatar:huge}};
+  const render=value=>renderToStaticMarkup(createElement(AvatarModerationView,{value,reason:'Synthetic removal reason',busy:false,locked:false,onReason(){},onRemove(){},onRetry(){},onEdit(){}}));
+  const allowed=avatarModerationResponse(bounded,expected);assert.equal(allowed.user.avatar,null);assert.equal(allowed.eligibility.can_remove,true);assert.ok(render(allowed).includes('Retirar avatar actual'));
+  for(const value of [avatarModerationResponse(absent,expected),avatarModerationResponse({...bounded,eligibility:{matches_reported_avatar:false,avatar_present:true,can_remove:false}},expected)]){
+    const html=render(value);assert.equal(html.includes('Retirar avatar actual'),false);assert.equal(html.includes('Reintentar la misma retirada'),false);
+    assert.equal(html.includes('El avatar actual ha cambiado desde esta denuncia'),value.eligibility.avatar_present);
+  }
+  assert.equal(render({...current,eligibility:{can_remove:true}}).includes('Retirar avatar actual'),false);
+});
+
+test('a vanished subject preserves its report and other list rows without a profile edit or removal capability',()=>{
+  const ordinary=dto(),gone={...ordinary,report:{...ordinary.report,target_id:null,target_username:null},user:null,eligibility:{matches_reported_avatar:false,avatar_present:false,can_remove:false},preview:{reported_avatar_url:null,current_avatar_url:null}};
+  const expected={action:'get',report_id:report},safe=avatarModerationResponse(gone,expected);
+  assert.equal(safe.user,null);assert.equal(safe.report.target_id,null);
+  const html=renderToStaticMarkup(createElement(AvatarModerationView,{value:safe,reason:'',busy:false,locked:false,onReason(){},onRemove(){},onRetry(){},onEdit(){}}));
+  assert.ok(html.includes('La cuenta denunciada ya no está disponible'));assert.equal(html.includes('<button'),false);
+  for(const value of [{...gone,eligibility:{...gone.eligibility,can_remove:true}},{...gone,preview:{...gone.preview,current_avatar_url:'https://external.invalid/avatar'}},{...gone,job:job()}])assert.throws(()=>avatarModerationResponse(value,expected),{status:502});
+  assert.throws(()=>avatarModerationResponse(gone,{action:'remove',report_id:report}),{status:502});
 });

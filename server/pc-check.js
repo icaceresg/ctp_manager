@@ -109,6 +109,15 @@ const cleanJson = buffer => {
 export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers = () => [] } = {}) {
   const evidenceKey = key instanceof Uint8Array && key.byteLength === 32 ? Buffer.from(key) : null;
   let ready = false;
+  function privacyWrite(fn) {
+    init();db.exec('SAVEPOINT pc_check_privacy_write');
+    try{
+      // Acquire SQLite's writer before reading the mark/token. This no-op
+      // touches no row and composes with an enclosing transaction on Node22.
+      db.prepare('UPDATE pc_check_migrations SET applied_at=applied_at WHERE 0').run();
+      const result=fn();db.exec('RELEASE pc_check_privacy_write');return result;
+    }catch(error){db.exec('ROLLBACK TO pc_check_privacy_write');db.exec('RELEASE pc_check_privacy_write');throw error;}
+  }
   function init() {
     if (!evidenceKey) fail(503, 'PC Check necesita configurar una clave de custodia separada.');
     if (ready) return;
@@ -179,6 +188,7 @@ export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers 
   }
   function native(id, accessToken) {
     const item = row(id);
+    if(isErasedSubject(db,item.player_id))fail(410,'La recogida de datos de esta cuenta está cerrada por privacidad.');
     if (!TOKEN.test(accessToken || '') || !item.token_hash || !crypto.timingSafeEqual(Buffer.from(digest(accessToken)), Buffer.from(item.token_hash))) fail(401, 'Asignación no válida.');
     active(item);
     if (item.token_expires_at <= now()) fail(410, 'La asignación ha caducado.');
@@ -203,6 +213,7 @@ export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers 
     init,
     create(user, input) {
       staff(user); init();
+      return privacyWrite(()=>{
       if (!object(input) || !UUID.test(input.playerId || '') || !validScopes(input.allowedScopes) || !Number.isSafeInteger(input.retentionDays) || input.retentionDays < 1 || input.retentionDays > 30) fail(400, 'Jugador, alcances o conservación no válidos.');
       if (isErasedSubject(db,input.playerId)) fail(409,'La cuenta tiene un proceso de privacidad; no admite nuevas recogidas de datos.');
       const declaredPlayerAlias = playerAlias(input.playerAlias), purpose = text(input.purpose, 10, 500);
@@ -211,6 +222,7 @@ export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers 
         .run(id, input.playerId.toLowerCase(), declaredPlayerAlias, user.id, operatorAlias, purpose, input.retentionDays, input.allowedScopes, created, created + input.retentionDays * 86400000);
       audit('case.created', id, user.id);
       return dto(row(id));
+      });
     },
     list(user, query = {}) {
       staff(user);
@@ -235,12 +247,15 @@ export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers 
       return { case: dto(item), reviews, reviewers: assignedReviewers, canAssignReviewers: Boolean(user.is_admin || item.assigned_operator_id === user.id) };
     },
     issue(user, id) {
+      return privacyWrite(()=>{
       const item = owned(user, id, true);
+      if(isErasedSubject(db,item.player_id))fail(409,'La cuenta tiene un proceso de privacidad; no admite nuevas recogidas de datos.');
       if (item.receipt_id) fail(409, 'La evidencia recibida es inmutable; crea otro expediente para un nuevo check.');
       const token = crypto.randomBytes(32).toString('base64url');
       db.prepare('UPDATE pc_check_cases SET token_hash=?,token_expires_at=? WHERE id=?').run(digest(token), Math.min(now() + 86400000, item.expires_at), id);
       audit('assignment.issued', id, user.id);
       return { ...assignment(row(id)), accessToken: token };
+      });
     },
     authenticateAssignment(id, token) { return assignment(native(id, token)); },
     reviewerCandidates(user) { staff(user); init(); return { reviewers: reviewers().map(x=>({id:x.id,name:x.name||x.username})).slice(0,200) }; },
@@ -254,6 +269,7 @@ export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers 
     },
     getAssignment(id, token) { const item = native(id, token); audit('assignment.read', id); return assignment(item); },
     upload(id, token, input) {
+      return privacyWrite(()=>{
       const item = native(id, token);
       const checked = validateUpload(item, input, now());
       if (item.receipt_id) {
@@ -271,6 +287,7 @@ export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers 
       }
       audit('evidence.received', id);
       return receipt(row(id));
+      });
     },
     evidence(user, id) { const item = owned(user, id); if (!item.receipt_id) fail(404, 'Todavía no hay evidencia recibida.'); const evidence = decryptEvidence(item); audit('evidence.read', id, user.id); return { receipt: receipt(item), evidence }; },
     review(user, id, input) {

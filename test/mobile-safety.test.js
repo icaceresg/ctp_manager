@@ -52,6 +52,12 @@ test('a valid report without notes and a hostile legacy avatar cannot take down 
   const clamped={...legacy,evidence:{avatar:null},meta:{avatar_preview_omitted:true,content_omitted:true}};
   assert.equal(contract.ugcResponse({schema_version:1,report:clamped},{action:'get',report_id:legacy.id}).report.meta.avatar_preview_omitted,true);
 });
+
+test('an Auth-cascaded nullable target remains a bounded historical report beside active subjects',()=>{
+  const historical={...report(),target_id:null,target_username:null},ordinary=report();
+  const value=contract.ugcResponse({schema_version:1,total:2,items:[historical,ordinary]},{action:'list',status:'pending',limit:20});
+  assert.equal(value.items.length,2);assert.equal(value.items[0].target_id,null);assert.equal(value.items[1].target_id,subject);
+});
 test('erasure actions admit only current versions and completed requires every real backend gate',()=>{
   const current=job();assert.equal(contract.erasureResponse(current,{job_id:jobId}).state,'running');
   for(const bad of [{expected_version:3,status:'clear'},{expected_version:3,receipt_sha256:'a'.repeat(64)},{expected_version:3,actor_id:'admin'},{expected_version:3,recipient_email:'fixture@example.invalid'},{}])assert.throws(()=>contract.erasurePayload('inspect',jobId,bad),{status:400});

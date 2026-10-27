@@ -174,3 +174,9 @@ test/            pruebas de extremo a extremo
 ```
 
 Para añadir redes, formatos o estados, edita `shared/catalog.js`. Para añadir secciones nuevas, `shared/access.js`.
+
+### Privacidad y moderación de Ranked
+
+La validación local del 27 de octubre está en [el informe de seguridad](docs/manager-google-safety-qa-20261027.md) y su [recibo con hashes](docs/manager-google-safety-receipt-20261027.json). Cubre SQLite, respuestas tardías y la composición lista/detalle/avatar con fixtures aisladas; no acredita un borrado real, correo ni despliegue de CTP. La batería dio 508 PASS de 514 pruebas y seis omisiones existentes (cinco pruebas POSIX en Windows y una interoperabilidad .NET sin configurar); duró 8,82 s y el build final 0,63 s, sin representar un SLA.
+
+Al perder una lectura válida, se retiran el detalle y sus controles; sus callbacks anteriores no pueden publicar datos. Esto no cancela físicamente un HTTP que ya se haya enviado. El reintento incierto conserva nonce y versiones hasta leer el estado; la retirada de avatar necesita la autorización explícita del backend y no se deduce de vistas previas vacías.

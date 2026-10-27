@@ -178,8 +178,9 @@ export async function draw(user, body = {}) {
     throw new HttpError(400, 'Lista de exclusiones no válida.');
   }
   const { people, source } = await listParticipants();
+  return tx(()=>{
   const skip = new Set(excluded);
-  const pool = people.filter((p) => !skip.has(p.key));
+  const pool = people.filter((p) => !skip.has(p.key)&&!isErasedSubject(db,p.key));
   if (!pool.length) throw new HttpError(400, 'No hay nadie en el sorteo. Elige al menos a una persona.');
   const winner = pool[crypto.randomInt(pool.length)];
   const createdAt = Date.now();
@@ -190,6 +191,7 @@ export async function draw(user, body = {}) {
   const sample = pool.length <= 400 ? pool : [winner, ...Array.from({ length: 399 }, () => pool[crypto.randomInt(pool.length)])];
   const unique = [...new Map(sample.map((p) => [p.key, p])).values()];
   return { id: Number(lastInsertRowid), winner, participants: unique, participant_count: pool.length, created_at: createdAt };
+  },{immediate:true});
 }
 
 export function listDraws(limit = 15) {

@@ -305,8 +305,8 @@ if (hasLegacy) {
 }
 
 /** Ejecuta fn dentro de una transacción. */
-export function tx(fn) {
-  db.exec('BEGIN');
+export function tx(fn, { immediate = false } = {}) {
+  db.exec(immediate ? 'BEGIN IMMEDIATE' : 'BEGIN');
   try {
     const result = fn();
     db.exec('COMMIT');

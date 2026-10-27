@@ -39,15 +39,7 @@ function scrub(value, id, aliases, parentKey = '') {
   }
   return result;
 }
-const collectIds = value => {
-  const found = new Set();
-  const visit = item => {
-    if (Array.isArray(item)) return item.forEach(visit);
-    if (!item || typeof item !== 'object') return;
-    for (const [key,child] of Object.entries(item)) { if (identityKeys.has(key) && typeof child === 'string' && UUID.test(child)) found.add(child.toLowerCase()); else if (child && typeof child === 'object') visit(child); }
-  };
-  visit(value); return [...found];
-};
+const collectIds = value => new Set((JSON.stringify(value)?.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi) || []).map(id=>id.toLowerCase()));
 function unclassifiedReference(value,id,key='') {
   if (typeof value === 'string') return contains(value,id) && !(identityKeys.has(key) && equals(value,id));
   if (Array.isArray(value)) return value.some(item => unclassifiedReference(item,id,key));
@@ -55,26 +47,34 @@ function unclassifiedReference(value,id,key='') {
   // A new profile field needs a deliberate privacy policy. Knowing its UUID
   // does not justify classifying arbitrary sibling text as a sporting result.
   const owned=Object.entries(value).some(([childKey,child])=>identityKeys.has(childKey)&&equals(child,id));
-  return owned && Object.keys(value).some(childKey=>!ownedProjectionKeys.has(childKey))
+  return Object.keys(value).some(childKey=>contains(childKey,id))
+    || owned && Object.keys(value).some(childKey=>!ownedProjectionKeys.has(childKey))
     || Object.entries(value).some(([childKey,child]) => unclassifiedReference(child,id,childKey));
 }
 
-/** Applied to subsequent snapshots too: an in-flight stale read cannot restore
- * a previously removed player profile to a local operational projection. */
-export function redactErasedProjection(db, kind, input) {
-  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_erasure_subjects'").get()) return input;
-  let value = input;
-  for (const id of collectIds(input)) {
-    if (!db.prepare('SELECT 1 FROM account_erasure_subjects WHERE subject_id=?').get(id)) continue;
-    value = scrub(value,id);
-    if (evidenceKinds.has(kind)) {
-      // New evidence is retained for policy review; it invalidates any earlier
-      // local clear receipt and is never silently called erased.
-      db.prepare("UPDATE account_erasure_subjects SET requires_review=1 WHERE subject_id=?").run(id);
+/** Capture marks only inside the writer's transaction. The inspector commits
+ * its permanent mark and purge together. A late poll then cannot reintroduce
+ * PII while its clear receipt is being acknowledged by CTP (or afterwards).
+ * Evidence already held locally remains under custody; new copies are refused,
+ * rather than storing them and trying to revoke an in-flight clear receipt. */
+export function createErasureProjectionFence(db) {
+  const marked = new Set(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_erasure_subjects'").get()
+    ? db.prepare('SELECT subject_id FROM account_erasure_subjects').all().map(row=>row.subject_id.toLowerCase()) : []);
+  if(!marked.size)return(_kind,input)=>input;
+  return (kind,input) => {
+    let value=input;
+    for(const id of collectIds(input)) {
+      if(!marked.has(id))continue;
+      if(!historicalKinds.has(kind)||evidenceKinds.has(kind))throw Object.assign(Error('La entrada contiene datos de una cuenta marcada para eliminación. No se ha guardado; actualiza desde CTP.'),{status:409,code:'erased_projection_refused'});
+      value=scrub(value,id);
+      // Knowing an ID does not classify arbitrary prose or sibling fields as
+      // competitive history. No raw payload or quarantine copy is persisted.
+      if(unclassifiedReference(value,id))throw Object.assign(Error('La entrada contiene referencias personales sin clasificar de una cuenta marcada para eliminación. No se ha guardado.'),{status:409,code:'erased_projection_refused'});
     }
-  }
-  return value;
+    return value;
+  };
 }
+export function redactErasedProjection(db,kind,input) {return createErasureProjectionFence(db)(kind,input);}
 export const isErasedSubject = (db,id) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_erasure_subjects'").get()
   && db.prepare('SELECT 1 FROM account_erasure_subjects WHERE subject_id=?').get(id.toLowerCase()));
 
@@ -90,6 +90,10 @@ export function createErasureInspector(db, { now = Date.now, maximumRows = 50000
     const retained = reason => { reasons.add(reason); counts.retained_evidence++; if (status !== 'retryable') status = 'blocked_policy'; };
     let transaction = false;
     try {
+      // Schema, custody counts and the final decision must see one locked
+      // database. Counting PC Check before this lock allowed another writer
+      // to create a case between that count and a false clear receipt.
+      db.exec('PRAGMA secure_delete=ON; BEGIN IMMEDIATE'); transaction = true;
       const schema = tables(db);
       const requireColumns = (table,columns) => {
         if (!schema.has(table) || columns.some(key => !schema.get(table).has(key))) throw Error('schema_unrecognized');
@@ -113,7 +117,6 @@ export function createErasureInspector(db, { now = Date.now, maximumRows = 50000
         if (scanned > maximumRows) throw Error('inspection_batch_limit');
       }
       if (db.prepare('SELECT coalesce(sum(length(CAST(data AS BLOB))),0) bytes FROM operation_records').get().bytes > 32*1024*1024) throw Error('inspection_batch_limit');
-      db.exec('PRAGMA secure_delete=ON; BEGIN IMMEDIATE'); transaction = true;
       db.prepare('INSERT OR IGNORE INTO account_erasure_subjects(subject_id,created_at) VALUES(?,?)').run(id,now());
       const subjects = db.prepare('SELECT requires_review FROM account_erasure_subjects WHERE subject_id=?').get(id);
       if (subjects.requires_review) retained('late_evidence_policy_required');

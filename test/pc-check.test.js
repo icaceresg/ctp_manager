@@ -33,6 +33,19 @@ function packageFor(item,{scopes=1,state='complete',data={},status='complete',ra
   files.set('manifest.json',Buffer.from(JSON.stringify(manifest)));
   return {format:'ctp-pc-check-upload/v1',caseId:item.id,manifestSha256:sha(files.get('manifest.json')),artifacts:[...files].map(([name,bytes])=>({name,base64:bytes.toString('base64')}))};
 }
+
+test('a permanent privacy mark rejects late case creation, assignment and uploads without touching custodied bytes',t=>{
+  const f=fixture();t.after(f.close);
+  const item=create(f.store),assignment=f.store.issue(owner,item.id),upload=packageFor(item);
+  f.db.exec('CREATE TABLE account_erasure_subjects(subject_id TEXT PRIMARY KEY,requires_review INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL)');
+  f.db.prepare('INSERT INTO account_erasure_subjects VALUES(?,0,0)').run(playerId);
+  const before=f.db.prepare('SELECT * FROM pc_check_cases WHERE id=?').get(item.id);
+  assert.throws(()=>create(f.store),{status:409});assert.throws(()=>f.store.issue(owner,item.id),{status:409});
+  assert.throws(()=>f.store.authenticateAssignment(item.id,assignment.accessToken),{status:410});
+  assert.throws(()=>f.store.upload(item.id,assignment.accessToken,upload),{status:410});
+  assert.deepEqual(f.db.prepare('SELECT * FROM pc_check_cases WHERE id=?').get(item.id),before);
+  assert.equal(f.db.prepare('SELECT count(*) n FROM pc_check_cases').get().n,1);
+});
 const gameTitle='Call of Duty: Modern Warfare 4';
 const currentConsent={policyVersion:'ctp-pc-check/2026-10-26.3'};
 const currentRequest={gameTitle,gameDistribution:'xbox-pc',gameBuildLabel:null};

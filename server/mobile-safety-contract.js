@@ -28,7 +28,7 @@ function reportDto(row) {
   if (!object(row) || !uuid(row.id) || !uuid(row.ticket_id) || !text(row.ticket_code,64)
     || !['message','user'].includes(row.context) || !['abuse','hate','sexual','child_safety','privacy','scam','other'].includes(row.reason)
     || !nullableText(row.details,1000) || !['pending','hidden','dismissed'].includes(row.status) || !positive(row.version)
-    || !timestamp(row.created_at) || !uuid(row.target_id) || !nullableText(row.target_username,100)
+    || !timestamp(row.created_at) || !(row.target_id===null||uuid(row.target_id)) || !nullableText(row.target_username,100)
     || !nullableText(row.message_id,100) || !(row.lobby_id === null || uuid(row.lobby_id)) || typeof row.hidden !== 'boolean'
     || !(row.reviewed_at === null || timestamp(row.reviewed_at)) || !nullableText(row.review_note,500) || !object(row.evidence)) upstream();
   const evidence = {},meta={avatar_preview_omitted:row.meta?.avatar_preview_omitted===true,content_omitted:row.meta?.content_omitted===true};
@@ -80,9 +80,18 @@ function avatarPreview(value,userId,origin) {
   return url.href;
 }
 export function avatarModerationResponse(value,expected,origin='https://playctp.com') {
-  if(!object(value)||value.schema_version!==1||!object(value.user)||!object(value.preview))upstream();
+  if(!object(value)||value.schema_version!==1||!object(value.preview))upstream();
   const report=reportDto(value.report),user=value.user;
-  if(report.context!=='user'||!uuid(user.id)||user.id!==report.target_id||!text(user.username,100)||!positive(user.manager_version)
+  if(report.context!=='user'||expected.report_id&&report.id!==expected.report_id)upstream();
+  if(user===null){
+    // Auth DELETE can leave the legitimate moderated report without its
+    // former subject. Preserve the report; grant no edit/removal capability.
+    if(expected.action!=='get'||value.job!==null||!fields(value.eligibility,['matches_reported_avatar','avatar_present','can_remove'])
+      ||Object.values(value.eligibility).some(flag=>flag!==false)||!fields(value.preview,['reported_avatar_url','current_avatar_url'])
+      ||Object.values(value.preview).some(url=>url!==null))upstream();
+    return{schema_version:1,report,user:null,job:null,eligibility:{matches_reported_avatar:false,avatar_present:false,can_remove:false},preview:{reported_avatar_url:null,current_avatar_url:null}};
+  }
+  if(!object(user)||!uuid(user.id)||user.id!==report.target_id||!text(user.username,100)||!positive(user.manager_version)
     ||expected.report_id&&report.id!==expected.report_id)upstream();
   let job=null;
   if(value.job!==null){
@@ -100,8 +109,16 @@ export function avatarModerationResponse(value,expected,origin='https://playctp.
   if(expected.action!=='get'&&!job)upstream();
   const avatarOmitted=!nullableText(user.avatar,2048),bioOmitted=!nullableText(user.bio,2000);
   const meta={avatar_preview_omitted:user.meta?.avatar_preview_omitted===true||avatarOmitted,content_omitted:user.meta?.content_omitted===true||avatarOmitted||bioOmitted};
+  // Bounded/omitted avatar strings never establish equality. Only the backend
+  // can authorize removal after comparing the original current/report values.
+  const eligibility={matches_reported_avatar:false,avatar_present:false,can_remove:false};
+  if(value.eligibility!==undefined){
+    if(!object(value.eligibility)||Object.keys(eligibility).some(key=>typeof value.eligibility[key]!=='boolean'))upstream();
+    Object.assign(eligibility,Object.fromEntries(Object.keys(eligibility).map(key=>[key,value.eligibility[key]])));
+    if(eligibility.can_remove&&(!eligibility.matches_reported_avatar||!eligibility.avatar_present||report.status!=='pending'||job))upstream();
+  }
   return{schema_version:1,report,user:{id:user.id,username:user.username,avatar:avatarOmitted?null:user.avatar,bio:bioOmitted?null:user.bio,manager_version:user.manager_version,meta},job,
-    preview:{reported_avatar_url:report.meta.avatar_preview_omitted?null:avatarPreview(value.preview.reported_avatar_url,user.id,origin),current_avatar_url:meta.avatar_preview_omitted?null:avatarPreview(value.preview.current_avatar_url,user.id,origin)}};
+    eligibility,preview:{reported_avatar_url:report.meta.avatar_preview_omitted?null:avatarPreview(value.preview.reported_avatar_url,user.id,origin),current_avatar_url:meta.avatar_preview_omitted?null:avatarPreview(value.preview.current_avatar_url,user.id,origin)}};
 }
 
 export function erasureListQuery(query = {}) {

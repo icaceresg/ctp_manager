@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "verified_at_utc": "2026-10-27T03:47:32.6518922Z",
+  "scope": "LOCAL_SYNTHETIC_ONLY",
+  "base_commit": "28af3ff",
+  "branch": "codex/ctp-mobile-google-20261027",
+  "shared_database_modified": false,
+  "ctp_migrations_modified": false,
+  "pre_or_prod_contacted": false,
+  "tests": {
+    "command": "npm.cmd test",
+    "exit_code": 0,
+    "total": 514,
+    "pass": 508,
+    "fail": 0,
+    "skipped": 6,
+    "duration_ms": 8817.2552,
+    "omissions": [
+      "5 POSIX deployment-script cases skipped on Windows",
+      "1 .NET interoperability case without PC_CHECK_INTEROP_DLL"
+    ]
+  },
+  "build": {
+    "command": "npm.cmd run build",
+    "exit_code": 0,
+    "duration_ms": 634
+  },
+  "browser": {
+    "engine": "Chromium, isolated Playwright session",
+    "data": "synthetic local HTTP replies; real compiled components",
+    "uncertain_attempts": 2,
+    "identical_nonce_reason_and_versions": true,
+    "changed_avatar_remove_not_offered": true,
+    "changed_avatar_profile_correction_available": true,
+    "revoked_profile_and_reason_absent": true,
+    "composition_list_403_cleared_detail_avatar_evidence": true,
+    "late_action_response_no_callback_or_repopulation": true,
+    "composition_list_gets": 2,
+    "physical_http_abort_claimed": false,
+    "session_and_harness_closed": true,
+    "console_limit": "Only missing local favicon in the successful harness",
+    "screenshots": [
+      {
+        "path": "output/playwright/manager-safety-uncertain.png",
+        "sha256": "4b474a5a0eab72075177517a4599704b6e365db241bcca52fd1f19195283cdca"
+      },
+      {
+        "path": "output/playwright/manager-safety-changed-avatar.png",
+        "sha256": "ac115100ab03346088b2ef4bffd0b7527e31cf29d6b8684ae89c4e40b2041cd1"
+      },
+      {
+        "path": "output/playwright/manager-safety-permission-revoked.png",
+        "sha256": "805383261f310fd69b616e2dc2981176348c18856f68a93791cc4f466829d99e"
+      },
+      {
+        "path": "output/playwright/manager-safety-composition-list403.png",
+        "sha256": "8e69245ee5ffd00dc5c778f763604e14fa37851ce007cb5027dc709972c05b99"
+      }
+    ]
+  },
+  "source_files": [
+    {
+      "path": "client/src/pages/AdministrationSafetyPage.jsx",
+      "sha256": "8ac6d0ec3c705666e7bec878faab6fc8901e942e8c47130a023efd845970ff84"
+    },
+    {
+      "path": "client/src/pages/AvatarModerationPanel.jsx",
+      "sha256": "2716cd7eb66e2fa6b2e666dee337b2ef6fce05e2f36282f8c63d1d9dfe8b1ac3"
+    },
+    {
+      "path": "client/src/pages/safetyModel.js",
+      "sha256": "d20c3fab4df4f097162a02c1a793361ae0271cf8a472914d26117c4806932339"
+    },
+    {
+      "path": "client/src/pages/safetyResource.js",
+      "sha256": "d175d5d99032cc94cb4eecfd921bba79706d298409fecfcbcf365c27ed59140e"
+    },
+    {
+      "path": "client/src/pages/useSafetyResource.jsx",
+      "sha256": "37033e1a7adcdf5b570ab6ec70eabc87e9cabdf7b93366cc963c66c2062711c2"
+    },
+    {
+      "path": "docs/manager-google-safety-qa-20261027.md",
+      "sha256": "d6ba1a1405280eccf67355551b3f1e07764e5b722b49376c0df5d5e5843b6255"
+    },
+    {
+      "path": "README.md",
+      "sha256": "9918f29c48e395366a037486ce986b860938ea09201ad0e5f5ad0de35ef28f55"
+    },
+    {
+      "path": "server/auth.js",
+      "sha256": "d64c9e4fbb72d2ead74ac2aa441a0c6fe063dd3649a2faa62a5a7d32fecea525"
+    },
+    {
+      "path": "server/db.js",
+      "sha256": "ad10e23d6a1ccb6e970f92451f48a084d7b922b1ca67e5c6972df35f7a18f673"
+    },
+    {
+      "path": "server/erasure-local.js",
+      "sha256": "ef232b9cc43af6aa1d2a153b265b8b46e80a88a9e49ef4fe2324c578f4f7deb5"
+    },
+    {
+      "path": "server/mobile-safety-contract.js",
+      "sha256": "9c0d7fa5fe6154f0921a54813cac0f786eeee40e0eb955cec44b6e50a99fe467"
+    },
+    {
+      "path": "server/operations.js",
+      "sha256": "3dedea27c0acf7ee8b55fdd7ede5a080444f0d4f1eb74dcdd5941cf8f1907c18"
+    },
+    {
+      "path": "server/pc-check.js",
+      "sha256": "4ca391df0ec479a5a872afa8a50dd4f5e7647687611d8ec794bf855d5077257e"
+    },
+    {
+      "path": "server/ruleta.js",
+      "sha256": "947ec4014e25b6f080ca31830f0f55714799070c326f4cad69f2451a7a2cf2e9"
+    },
+    {
+      "path": "test/avatar-moderation.test.js",
+      "sha256": "398b4f4b06d7ad440a56d631989ac84a9010d9cdbde0f62ad0606ab1b82fda6e"
+    },
+    {
+      "path": "test/ctp-session.test.js",
+      "sha256": "ea83dc4c98236734f8ad0dc8d12acb4e902b87c60ad3b9a45440a70f3b5120a1"
+    },
+    {
+      "path": "test/erasure-ingestion-fence.test.js",
+      "sha256": "73b4974f1b4b4a474cf55a3697af0b791a3409e0b8c50078afe88a5c246651e8"
+    },
+    {
+      "path": "test/mobile-safety.test.js",
+      "sha256": "c87db33cb4f89210f1bbc9d4e09a1755da8ac5f16aae0a5f2d240102773a252c"
+    },
+    {
+      "path": "test/operations-workspace.test.js",
+      "sha256": "ae30dd29876de56a1778e08031dd1b4a899f63066f0372fac63f4c1b0dccbccb"
+    },
+    {
+      "path": "test/pc-check.test.js",
+      "sha256": "4f0f0de1267852955d2af4f5348d96af7f62cd956045e8096d1d2b0b53f2fb16"
+    },
+    {
+      "path": "test/safety-composition.test.js",
+      "sha256": "2a4c3f0cad26d8292be94f5b424dcab247e6bcc77e4ba65a40bb3c290245d13c"
+    },
+    {
+      "path": "test/safety-resource.test.js",
+      "sha256": "e7d14fdda644f872d492f62713167e8247d8d71cc7658f03e02469caadd46142"
+    }
+  ],
+  "logs": {
+    "test_sha256": "de827430facbf92548ec8fe66bb8b12af53887606f7fa1e5ec18b2653af282f5",
+    "build_sha256": "39a615ba2e6cc63aebddd4c62bcd3b2182b49a8792f50285fedaaed1e6a90f88",
+    "local_test_log": "validation.local/manager-safety-final-tests.log",
+    "local_build_log": "validation.local/manager-safety-final-build.log"
+  }
+}

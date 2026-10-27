@@ -74,9 +74,12 @@ test('details keep all eight statistics rows and query only the requested match'
 });
 
 test('an unchanged thousand-record sync reuses bounded reads rather than querying each row',()=>{
+  db.exec('CREATE TABLE IF NOT EXISTS account_erasure_subjects(subject_id TEXT PRIMARY KEY,requires_review INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL)');
   const result=measured(()=>ingestSnapshot({matches:matches.slice(1)}));
   assert.equal(result.value.changed,0);assert.equal(result.value.received,1006);
-  assert.ok(result.calls<=3,`Expected 3 batches for 1006 records, got ${result.calls}`);
+  // Three incoming-ID batches plus fresh erasure-schema and marker reads.
+  // The privacy check remains constant per batch, never one SELECT per row.
+  assert.ok(result.calls<=5,`Expected 3 batches + two privacy fence reads for 1006 records, got ${result.calls}`);
 });
 
 test('old pending commands remain visible despite a thousand newer acknowledgements, with current source metadata',()=>{

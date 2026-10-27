@@ -4,6 +4,7 @@ import { DEPLOYMENT, SECURE_COOKIES, SESSION_COOKIE, SESSION_DAYS } from './conf
 import { SECTION_IDS, STAFF_SECTION_CAPS, STAFF_KINDS, isStaffUser } from '../shared/access.js';
 import { ctpAuthConfig, createCtpAuthClient, CtpAuthError, encryptTokens, decryptTokens } from './ctp-auth.js';
 import { createLoginLimiter, LoginLimitError } from './login-limiter.js';
+import {isErasedSubject} from './erasure-local.js';
 
 export const AUTH_CONFIG = ctpAuthConfig();
 export const CTP_AUTH_ENABLED = AUTH_CONFIG.mode === 'ctp';
@@ -212,8 +213,9 @@ function ctpError(error) {
   return new HttpError(error.status, messages[error.status] || messages[503]);
 }
 
-function mirrorCtpIdentity(identity) {
+function mirrorCtpIdentity(identity,onMirror=user=>user) {
   return tx(() => {
+    if(isErasedSubject(db,identity.ctp_user_id))throw new HttpError(403,'Esta cuenta tiene una solicitud de eliminación en curso. No se ha guardado una sesión.');
     let user = db.prepare('SELECT * FROM users WHERE ctp_user_id=?').get(identity.ctp_user_id);
     const previousRole = user?.ctp_role;
     const previousStaffKind = user?.ctp_staff_kind;
@@ -237,8 +239,8 @@ function mirrorCtpIdentity(identity) {
     }
     db.prepare('INSERT INTO operation_operator_identities(user_id,external_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET external_id=excluded.external_id')
       .run(user.id, identity.actor_id, Date.now());
-    return db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
-  });
+    return onMirror(db.prepare('SELECT * FROM users WHERE id=?').get(user.id));
+  },{immediate:true});
 }
 
 export async function loginCtp(email, password, res, peer, captchaToken) {
@@ -250,12 +252,16 @@ export async function loginCtp(email, password, res, peer, captchaToken) {
   try {
     const tokens = await ctp.login(email, password, captchaToken);
     const identity = await ctp.identity(tokens);
-    const user = mirrorCtpIdentity(identity);
     const opaque = crypto.randomBytes(32).toString('base64url');
     const encrypted = encryptTokens(AUTH_CONFIG.key, tokens, `manager:${opaque}:${identity.ctp_user_id}`);
     const now = Date.now();
-    db.prepare("INSERT INTO sessions(token,user_id,created_at,expires_at,auth_mode,ctp_tokens) VALUES(?,?,?,?,'ctp',?)")
-      .run(opaque, user.id, now, now + SESSION_MS, encrypted);
+    // The mirror, erasure fence and credentials commit under the same write
+    // lock. A purge cannot fit between the identity check and session insert.
+    const user = mirrorCtpIdentity(identity,user=>{
+      db.prepare("INSERT INTO sessions(token,user_id,created_at,expires_at,auth_mode,ctp_tokens) VALUES(?,?,?,?,'ctp',?)")
+        .run(opaque, user.id, now, now + SESSION_MS, encrypted);
+      return user;
+    });
     res.cookie(SESSION_COOKIE, opaque, { httpOnly: true, secure: SECURE_COOKIES, sameSite: 'lax', maxAge: SESSION_MS, path: '/' });
     success = true;
     return describeUser(user);

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { redactErasedProjection } from './erasure-local.js';
+import { redactErasedProjection,createErasureProjectionFence } from './erasure-local.js';
 import { db, tx } from './db.js';
 import { describeUser, HttpError } from './auth.js';
 import { competitionPayload, COMPETITION_ACTIONS, correctionPayload } from './competition-contract.js';
@@ -92,7 +92,7 @@ export function getOperatorIdentity(userId) {
 function unpack(row) { return row ? { ...parse(row.data, {}), id: row.id, source: row.source, version: row.version, updated_at: row.updated_at } : null; }
 function record(kind, key, includeRetired = false) { const item = unpack(db.prepare('SELECT * FROM operation_records WHERE kind=? AND id=?').get(kind, id(key))); if (!item || (!includeRetired&&item.in_feed===false)) throw new HttpError(404, 'Registro no encontrado.'); return item; }
 function rows(kind, matchId) { return db.prepare(`SELECT id,data,version,source,updated_at FROM operation_records WHERE kind=? AND COALESCE(json_extract(data,'$.in_feed'),1)!=0 ${matchId===undefined?'':"AND json_extract(data,'$.match_id')=?"} ORDER BY updated_at DESC,id`).all(...(matchId===undefined?[kind]:[kind,matchId])).map(unpack); }
-function save(kind, item, source = item.source || 'manager') { const old = db.prepare('SELECT version FROM operation_records WHERE kind=? AND id=?').get(kind, item.id); const data = { ...redactErasedProjection(db,kind,item) }; delete data.version; delete data.source; delete data.updated_at; db.prepare(`INSERT INTO operation_records(kind,id,data,version,source,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data,version=excluded.version,source=excluded.source,updated_at=excluded.updated_at`).run(kind, item.id, json(data), (old?.version || 0) + 1, source, now()); return record(kind, item.id, true); }
+function save(kind, item, source = item.source || 'manager', fence) { const old = db.prepare('SELECT version FROM operation_records WHERE kind=? AND id=?').get(kind, item.id); const data = { ...(fence || createErasureProjectionFence(db))(kind,item) }; delete data.version; delete data.source; delete data.updated_at; db.prepare(`INSERT INTO operation_records(kind,id,data,version,source,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data,version=excluded.version,source=excluded.source,updated_at=excluded.updated_at`).run(kind, item.id, json(data), (old?.version || 0) + 1, source, now()); return record(kind, item.id, true); }
 /** Record a decision applied directly in CTP (Sanciones, account removal) in Manager's own audit. */
 export function auditDirectDecision(kind, key, action, actor, details = {}) { audit(kind, key, action, actor, details); }
 function audit(kind, key, action, actor, details = {}) { db.prepare('INSERT INTO operation_audit(resource_type,resource_id,action,actor_id,details,created_at) VALUES(?,?,?,?,?,?)').run(kind, key, action, actor?.id || null, json(details), now()); }
@@ -162,8 +162,11 @@ function normalize(kind, input) {
 export function ingestSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new HttpError(400,'Snapshot no válido.');
   const groups = [['matches','match'],['incidents','incident'],[snapshot.stats?'stats':'statistics','stat'],['clubs','club'],['deliveries','delivery'],['sanctions','sanction']];
-  const prepared = groups.flatMap(([key,kind])=>{if(snapshot[key]===undefined)return[];if(!Array.isArray(snapshot[key])||snapshot[key].length>20000)throw new HttpError(400,`Colección ${key} no válida.`); const seen=new Set();return snapshot[key].map(input=>{const value=normalize(kind,input);if(seen.has(value.id))throw new HttpError(400,'Identificador CTP duplicado.');seen.add(value.id);return[kind,value];});});
   return tx(()=>{
+    const fence=createErasureProjectionFence(db);
+    // Inspect the raw object too: normalization must not discard its only
+    // subject identity before personal prose or unknown fields are checked.
+    const prepared = groups.flatMap(([key,kind])=>{if(snapshot[key]===undefined)return[];if(!Array.isArray(snapshot[key])||snapshot[key].length>20000)throw new HttpError(400,`Colección ${key} no válida.`); const seen=new Set();return snapshot[key].map(input=>{const value=normalize(kind,fence(kind,input));if(seen.has(value.id))throw new HttpError(400,'Identificador CTP duplicado.');seen.add(value.id);return[kind,value];});});
     let changed=0;
     const previousById=new Map();
     const incomingByKind=new Map();
@@ -187,7 +190,7 @@ export function ingestSnapshot(snapshot) {
       const merged={...previous,...value};
       if(kind==='incident'&&old&&value.source_version===previous.source_version&&value.source_status===previous.source_status)merged.status=previous.status;
       if(old && json(merged)===old.data)continue;
-      save(kind,merged,'ctp');changed++;
+      save(kind,merged,'ctp',fence);changed++;
     }
     // A complete feed can retire a projection, but its history and linked local work remain.
     // Truncated feeds cannot establish that an absent resource has left the source.
@@ -195,11 +198,11 @@ export function ingestSnapshot(snapshot) {
       for(const [key,kind]of groups){
         if(snapshot[key]===undefined)continue;
         const visible=new Set(prepared.filter(([k])=>k===kind).map(([,value])=>value.id));
-        for(const item of rows(kind))if(item.source==='ctp'&&!visible.has(item.id)){save(kind,{...item,in_feed:false},'ctp');changed++;}
+        for(const item of rows(kind))if(item.source==='ctp'&&!visible.has(item.id)){save(kind,{...item,in_feed:false},'ctp',fence);changed++;}
       }
     }
     return{received:prepared.length,changed};
-  });
+  },{immediate:true});
 }
 
 export function getIntegrationStatus() { const row=db.prepare("SELECT value FROM settings WHERE key='operations_integration'").get();return {configured:false,write_enabled:false,last_sync_at:null,last_error:null,supported_actions:[],...parse(row?.value,{})}; }
@@ -453,6 +456,7 @@ export function correctStatistics(user,key,input) {
 /** Cache only resources returned by the authenticated shared backend, preserving local command links. */
 export function rememberCompetitionData(resource,result) {
   if(resource==='statistics')return tx(()=>{
+    result=redactErasedProjection(db,'stat',result);
     if(!Array.isArray(result.items)||result.items.length>100||!Array.isArray(result.roster)||result.roster.length>100)throw new HttpError(502,'CTP ha devuelto estadísticas no válidas.');
     const roster=new Map(result.roster.map(player=>[player.user_id,player]));
     const items=result.items.map(raw=>{
@@ -469,8 +473,11 @@ export function rememberCompetitionData(resource,result) {
   });
   const collections=resource==='tournaments'?[['tournament',result.items]]:resource==='tournament'?[['tournament',[result.tournament]],['registration',result.participants],['fixture',result.matches]]:resource==='match'?[['fixture',[result.match]]]:resource==='referee_queue'?[['fixture',result.items]]:[];
   return tx(()=>{
+    // Fence the full returned envelope as well as the persisted projection;
+    // raw dossier/chat fields must not escape through the HTTP/memory result.
+    result=redactErasedProjection(db,'fixture',result);
     if(resource==='match'&&result.dossier){
-      const normalized=normalize('match',result.dossier);
+      const normalized=normalize('match',redactErasedProjection(db,'match',result.dossier));
       if(normalized.id!==result.match?.id||normalized.source_version!==result.match?.manager_version)throw new HttpError(502,'CTP ha devuelto un dossier incoherente.');
       let old=null;try{old=record('match',normalized.id,true);}catch{}
       if(old&&old.source_version>normalized.source_version)throw new HttpError(409,'El dossier recibido está obsoleto. Actualiza el partido.');
@@ -610,6 +617,7 @@ export function prepareCompetitionCommand(user,input) {
 
 export function rememberAdministrationData(result) {
   return tx(() => {
+    result=redactErasedProjection(db,'administration',result);
     if (typeof result.sync_target_id === 'string' && /^[a-f0-9-]{36}$/i.test(result.sync_target_id) && Number.isSafeInteger(result.sync_version)) {
       let old; try { old = record('administration', result.sync_target_id, true); } catch { /* First bounded sync target. */ }
       if (!old || old.source_version <= result.sync_version) save('administration', { id:result.sync_target_id,source_version:result.sync_version,in_feed:true,pending_command_id:old?.pending_command_id||null },'ctp');
@@ -653,6 +661,7 @@ export function prepareAdministrationCommand(user, input = {}) {
 /** A direct ticket action already applied in CTP; mirror it so the inbox reflects it before the next feed. */
 export function rememberTicketThread(thread) {
   return tx(()=>{
+    thread=redactErasedProjection(db,'incident',thread);
     let item;try{item=record('incident',thread.ticket.id,true);}catch{return thread;/* Not in the local feed yet. */}
     const t=thread.ticket,last=thread.messages.at(-1);
     // The person who replied need not own the ticket. Resolve the official
@@ -670,6 +679,7 @@ export function rememberTicketThread(thread) {
 
 export function rememberCaseData(resource,result) {
   return tx(()=>{
+    result=redactErasedProjection(db,resource==='incident'?'case_incident':'case_match',result);
     const raw=resource==='incident'?result.incident:result.match,kind=resource==='incident'?'case_incident':'case_match';
     let old;try{old=record(kind,raw.id,true);}catch{/* First official lookup. */}
     if(!old||old.source_version<=raw.manager_version)save(kind,{...raw,source_version:raw.manager_version,in_feed:true,pending_command_id:old?.pending_command_id||null},'ctp');

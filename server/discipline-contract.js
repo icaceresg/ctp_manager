@@ -24,6 +24,22 @@ export const USER_DELETE_ERRORS = Object.freeze({
   user_delete_conflict: 'La cuenta ha cambiado mientras la revisabas. Vuelve a abrirla.',
   user_delete_confirm: 'Escribe exactamente el nombre de usuario para confirmar.',
   user_delete_club_leader: 'Lidera un club con más miembros. Transfiere antes el liderazgo o disuelve el club.',
+  user_delete_forbidden: 'CTP ha rechazado los permisos de borrado. Comprueba que tu cuenta conserva el rol de administrador y el acceso a Manager.',
+  user_delete_busy: 'CTP está terminando otra operación sobre la cuenta o Ranked. Espera unos segundos y vuelve a cargar la cuenta antes de decidir si repites el borrado.',
+  user_delete_timeout: 'CTP ha agotado el tiempo de borrado. El resultado no está confirmado: vuelve a cargar la cuenta antes de repetirlo.',
+  user_delete_schema_pending: 'El servicio de borrado de CTP no coincide con el esquema publicado. Administración debe revisar el despliegue; la solicitud no se reintentará automáticamente.',
+  user_delete_dependency: 'CTP conserva una referencia que impide cerrar la cuenta. Administración debe revisar sus dependencias; no se ha confirmado el borrado.',
+  user_delete_identity_conflict: 'CTP ha detectado un conflicto de identidad al cerrar la cuenta. Vuelve a cargarla y consulta con administración antes de repetirlo.',
+  user_delete_unavailable: 'CTP no ha podido confirmar el borrado. Vuelve a cargar la cuenta y conserva este aviso para que administración revise el servicio.',
+});
+export const USER_DELETE_FAILURE_STATUS = Object.freeze({
+  user_delete_forbidden: 403,
+  user_delete_busy: 409,
+  user_delete_timeout: 504,
+  user_delete_schema_pending: 503,
+  user_delete_dependency: 409,
+  user_delete_identity_conflict: 409,
+  user_delete_unavailable: 503,
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

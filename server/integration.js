@@ -16,7 +16,7 @@ import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffA
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import {
-  DISCIPLINE_ERRORS, USER_DELETE_ERRORS,
+  DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS,
   disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
   disciplineSanctionPayload, disciplineRevokePayload, disciplineReviewPayload, disciplineLiftPayload,
   disciplineOverviewResponse, disciplineUsersResponse, disciplineHistoryResponse, disciplineWriteResponse,
@@ -134,7 +134,10 @@ async function ownerServiceFailure(body, response) {
       return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
     }
     if (body.service === 'users' && typeof error?.delete_error === 'string') {
-      return Object.hasOwn(USER_DELETE_ERRORS, error.delete_error) ? integrationError(error.delete_error === 'user_delete_conflict' ? 409 : 422, USER_DELETE_ERRORS[error.delete_error]) : null;
+      if (!Object.hasOwn(USER_DELETE_ERRORS, error.delete_error)) return null;
+      const expectedStatus = USER_DELETE_FAILURE_STATUS[error.delete_error];
+      if (expectedStatus && response.status !== expectedStatus) return null;
+      return integrationError(expectedStatus || (error.delete_error === 'user_delete_conflict' ? 409 : 422), USER_DELETE_ERRORS[error.delete_error]);
     }
     if (body.service === 'users') {
       const message = typeof error?.profile_error === 'string' && Object.hasOwn(USER_PROFILE_ERRORS, error.profile_error) ? USER_PROFILE_ERRORS[error.profile_error] : null;

@@ -77,6 +77,24 @@ test('los errores del puente de sanciones usan mensajes propios', async () => {
   await assert.rejects(invoke(remove, { code: 'invalid_request', delete_error: 'user_delete_staff' }), error => error.message.includes('staff'));
 });
 
+test('el borrado conserva el diagnóstico acotado de CTP y nunca se reintenta automáticamente', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: 'ctp-test-secret-is-only-on-server-0123456789', CTP_SIGNING_SECRET: 'ctp-independent-signing-test-secret-0123456789' });
+  const remove = { action: 'admin_service', service: 'users', payload: { action: 'delete' } };
+  for(const [code,status,phrase]of [
+    ['user_delete_busy',409,'otra operación'],['user_delete_timeout',504,'resultado no está confirmado'],
+    ['user_delete_schema_pending',503,'esquema publicado'],['user_delete_dependency',409,'referencia'],
+    ['user_delete_identity_conflict',409,'conflicto de identidad'],['user_delete_forbidden',403,'permisos'],
+    ['user_delete_unavailable',503,'no ha podido confirmar'],
+  ]) {
+    let calls=0;
+    const request=createOperationsTransport(config,async()=>{calls++;return Response.json({code:'bridge_unavailable',delete_error:code,delete_diagnostic:{stage:'database',category:'private account',sqlstate:'private SQL body'},details:'private token'},{status});});
+    await assert.rejects(request(remove),error=>error.status===status&&error.message.includes(phrase)&&!error.message.includes('private'));
+    assert.equal(calls,1);
+  }
+  const mismatch=createOperationsTransport(config,async()=>Response.json({delete_error:'user_delete_schema_pending'},{status:422}));
+  await assert.rejects(mismatch(remove),error=>error.status===422&&!error.message.includes('esquema publicado'));
+});
+
 test('sanciones y borrado comprueban permisos antes de llamar a CTP', async () => {
   const editorial = { id: 9, is_admin: false, sections: ['calendario'] };
   await assert.rejects(getDisciplineOverview(editorial), { status: 403 });

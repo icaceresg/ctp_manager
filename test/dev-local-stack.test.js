@@ -5,7 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {validateSecrets,managerEnvironment,validateStackProof,validateRuntime,jsonRequest,recoverRefusedRuntime,validateDevProfile,requireOwnerWorktree,CANDIDATE_PROFILE,PROJECT,ROOT,API,WEB,MANAGER,DATA} from '../scripts/dev-local-stack.mjs';
+import {validateSecrets,managerEnvironment,validateStackProof,validateRuntime,jsonRequest,recoverRefusedRuntime,validateDevProfile,requireOwnerWorktree,assertOwnSqliteFiles,CANDIDATE_PROFILE,PROJECT,ROOT,API,WEB,MANAGER,DATA} from '../scripts/dev-local-stack.mjs';
 import {ctpAuthConfig} from '../server/ctp-auth.js';
 
 const jwt=role=>`e30.${Buffer.from(JSON.stringify({role,exp:4102444800})).toString('base64url')}.fixture`;
@@ -37,6 +37,29 @@ test('candidate profiles are finite, immutable, loopback-only and tied to their 
  assert.throws(()=>validateDevProfile({...CANDIDATE_PROFILE},'D:/CTP/worktrees/ctp-manager-dev-local-20261026'),/dev_manager_profile_invalid/);
  assert.throws(()=>requireOwnerWorktree(CANDIDATE_PROFILE.managerRoot),/dev_manager_profile_required/);
  assert.doesNotThrow(()=>requireOwnerWorktree('D:/CTP/worktrees/ctp-manager-dev-local-20261026'));
+});
+
+test('candidate SQLite paths accept only absent or individually owned regular files',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ctp-manager-sqlite-isolation-'));
+ const data=path.join(directory,'manager'),outside=path.join(directory,'other-owned-fixture');
+ await fs.mkdir(data);await fs.writeFile(outside,'isolated test sentinel');
+ try{
+  await assertOwnSqliteFiles(data);
+  for(const suffix of ['', '-wal', '-shm'])await fs.writeFile(path.join(data,'manager-dev.sqlite'+suffix),'not an opened SQLite database');
+  await assertOwnSqliteFiles(data);
+  for(const suffix of ['', '-wal', '-shm']){
+   const file=path.join(data,'manager-dev.sqlite'+suffix);await fs.unlink(file);await fs.link(outside,file);
+   await assert.rejects(()=>assertOwnSqliteFiles(data),/dev_manager_sqlite_path_invalid/);
+   assert.equal(await fs.readFile(outside,'utf8'),'isolated test sentinel');
+   await fs.unlink(file);await fs.writeFile(file,'not an opened SQLite database');
+  }
+  const file=path.join(data,'manager-dev.sqlite');await fs.unlink(file);await fs.mkdir(file);
+  await assert.rejects(()=>assertOwnSqliteFiles(data),/dev_manager_sqlite_path_invalid/);
+ }finally{
+  assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));
+  assert.ok(path.basename(directory).startsWith('ctp-manager-sqlite-isolation-'));
+  await fs.rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:50});
+ }
 });
 
 test('DEV process inherits only OS settings and fixed local paths, never the service role or another app environment',()=>{

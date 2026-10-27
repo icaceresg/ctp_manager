@@ -30,7 +30,7 @@ npm run dev:local -- status --profile D:/CTP/dev/pre-candidate-20261027/manager-
 npm run dev:local -- stop --profile D:/CTP/dev/pre-candidate-20261027/manager-profile.json
 ```
 
-Usa SQLite `dataRoot/manager/manager-dev.sqlite`, secretos propios `dataRoot/ctp/secrets.private.json`, marcador de propietario con proyecto/sourceRoot y referencias privadas de runtime propias. Sirve el build en59090 y control privado en59091; este launcher no inicia Vite. No admite clave ni opciones PC Check. No lee ni modifica las bases, sesiones o secretos del DEV anterior.
+Usa SQLite `dataRoot/manager/manager-dev.sqlite`, secretos propios `dataRoot/ctp/secrets.private.json`, marcador de propietario con proyecto/sourceRoot y referencias privadas de runtime propias. Antes de arrancar comprueba SQLite y sus archivos `-wal`/`-shm`: si existen deben ser regulares, sin enlaces, con ruta real exacta y un único enlace físico. Sirve el build en59090 y control privado en59091; este launcher no inicia Vite. No admite clave ni opciones PC Check. No lee ni modifica las bases, sesiones o secretos del DEV anterior.
 
 ## Modo Auth local
 

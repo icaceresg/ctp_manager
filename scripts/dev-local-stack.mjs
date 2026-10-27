@@ -145,6 +145,13 @@ async function preflight(){
 }
 
 let ownerRecord={schemaVersion:1,projectId:PROJECT,kind:'ctp-manager-dev-local',dataRoot:DATA};
+export async function assertOwnSqliteFiles(directory=DATA){
+ for(const suffix of ['', '-wal', '-shm']){
+  const file=path.join(directory,'manager-dev.sqlite'+suffix);
+  let info;try{info=await fs.lstat(file);}catch(error){if(error.code==='ENOENT')continue;fail('dev_manager_sqlite_path_invalid');}
+  if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||!equalPath(await fs.realpath(file),file))fail('dev_manager_sqlite_path_invalid');
+ }
+}
 async function prepareData(){
  if(!equalPath(await fs.realpath(path.dirname(DATA)),path.dirname(DATA)))fail('dev_manager_data_parent_changed');
  try{await fs.mkdir(DATA);}catch(error){if(error.code!=='EEXIST')throw error;}
@@ -202,7 +209,7 @@ export async function recoverRefusedRuntime(previous,{runtimeFile=RUNTIME,reques
 function sameToken(received,expected){if(typeof received!=='string')return false;const a=Buffer.from(received),b=Buffer.from(expected);return a.length===b.length&&crypto.timingSafeEqual(a,b);}
 
 async function start(){
- const secrets=await preflight();await prepareData();
+ const secrets=await preflight();await prepareData();await assertOwnSqliteFiles();
  const previous=await readRuntime();
  if(previous&&!await recoverRefusedRuntime(previous)){console.log(JSON.stringify(publicStatus(previous,'already_running')));return;}
  try{const built=await fs.lstat(path.join(ROOT,'dist/index.html'));if(!built.isFile()||built.isSymbolicLink())fail('dev_manager_build_required');}catch{fail('dev_manager_build_required');}

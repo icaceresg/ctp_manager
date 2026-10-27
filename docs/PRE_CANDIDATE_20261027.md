@@ -18,7 +18,7 @@ Excluye PC Check completo y los bloques móviles UGC/avatar/eliminación/privaci
 
 - Dependencias instaladas en este worktree, con caché aislada; ningún `node_modules` compartido.
 - Auditoría: cero vulnerabilidades.
-- Node:452 casos,447 PASS,0 FAIL y5 omitidos explícitos de scripts POSIX en Windows. La prueba HTTP autenticada comprueba404 en diez rutas PC ausentes.
+- Node:453 casos,448 PASS,0 FAIL y5 omitidos explícitos de scripts POSIX en Windows. La prueba HTTP autenticada comprueba404 en diez rutas PC ausentes. El launcher rechaza enlaces físicos a otras SQLite y archivos auxiliares usando fixtures temporales sin abrir bases.
 - Python:19 pruebas de tráfico y13 del colector correctas;38 casos del release, con19 omitidos explícitos por plataforma Windows y el resto correctos. Las omisiones se deben repetir en el CI Linux.
 - Build web correcto. Inventario empaquetable:175 archivos/4519386 bytes, sin código, endpoints o assets PC ni módulos móviles excluidos; comprobación de credenciales privadas del empaquetador correcta.
 - `git diff --check` correcto y base `origin/main` conservada como ancestro.

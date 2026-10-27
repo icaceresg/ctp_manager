@@ -12,6 +12,7 @@
 //    quite todos sus roles.
 //  - Sin puente (desarrollo local): los usuarios activos del propio Manager.
 import crypto from 'node:crypto';
+import { isErasedSubject } from './erasure-local.js';
 import { db, tx } from './db.js';
 import { HttpError } from './auth.js';
 import { ctpBridgeConfigured, getRegisteredPlayers } from './integration.js';
@@ -117,7 +118,7 @@ function refreshFromCtp() {
       tx(() => {
         db.prepare('DELETE FROM ruleta_people').run();
         const insert = db.prepare('INSERT INTO ruleta_people(ctp_id,name,role,staff_kind,staff_enabled,email_confirmed) VALUES(?,?,?,?,?,?)');
-        for (const p of people) insert.run(p.ctp_id, p.name, p.role, p.staff_kind, p.staff_enabled ? 1 : 0, p.email_confirmed ? 1 : 0);
+        for (const p of people.filter(person=>!isErasedSubject(db,person.ctp_id))) insert.run(p.ctp_id, p.name, p.role, p.staff_kind, p.staff_enabled ? 1 : 0, p.email_confirmed ? 1 : 0);
         saveSetting('ruleta_refreshed_at', Date.now());
         saveSetting('ruleta_total', total);
         saveSetting('ruleta_truncated', truncated ? 1 : 0);

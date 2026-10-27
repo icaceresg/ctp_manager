@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { redactErasedProjection } from './erasure-local.js';
 import { db, tx } from './db.js';
 import { describeUser, HttpError } from './auth.js';
 import { competitionPayload, COMPETITION_ACTIONS, correctionPayload } from './competition-contract.js';
@@ -91,7 +92,7 @@ export function getOperatorIdentity(userId) {
 function unpack(row) { return row ? { ...parse(row.data, {}), id: row.id, source: row.source, version: row.version, updated_at: row.updated_at } : null; }
 function record(kind, key, includeRetired = false) { const item = unpack(db.prepare('SELECT * FROM operation_records WHERE kind=? AND id=?').get(kind, id(key))); if (!item || (!includeRetired&&item.in_feed===false)) throw new HttpError(404, 'Registro no encontrado.'); return item; }
 function rows(kind, matchId) { return db.prepare(`SELECT id,data,version,source,updated_at FROM operation_records WHERE kind=? AND COALESCE(json_extract(data,'$.in_feed'),1)!=0 ${matchId===undefined?'':"AND json_extract(data,'$.match_id')=?"} ORDER BY updated_at DESC,id`).all(...(matchId===undefined?[kind]:[kind,matchId])).map(unpack); }
-function save(kind, item, source = item.source || 'manager') { const old = db.prepare('SELECT version FROM operation_records WHERE kind=? AND id=?').get(kind, item.id); const data = { ...item }; delete data.version; delete data.source; delete data.updated_at; db.prepare(`INSERT INTO operation_records(kind,id,data,version,source,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data,version=excluded.version,source=excluded.source,updated_at=excluded.updated_at`).run(kind, item.id, json(data), (old?.version || 0) + 1, source, now()); return record(kind, item.id, true); }
+function save(kind, item, source = item.source || 'manager') { const old = db.prepare('SELECT version FROM operation_records WHERE kind=? AND id=?').get(kind, item.id); const data = { ...redactErasedProjection(db,kind,item) }; delete data.version; delete data.source; delete data.updated_at; db.prepare(`INSERT INTO operation_records(kind,id,data,version,source,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data,version=excluded.version,source=excluded.source,updated_at=excluded.updated_at`).run(kind, item.id, json(data), (old?.version || 0) + 1, source, now()); return record(kind, item.id, true); }
 /** Record a decision applied directly in CTP (Sanciones, account removal) in Manager's own audit. */
 export function auditDirectDecision(kind, key, action, actor, details = {}) { audit(kind, key, action, actor, details); }
 function audit(kind, key, action, actor, details = {}) { db.prepare('INSERT INTO operation_audit(resource_type,resource_id,action,actor_id,details,created_at) VALUES(?,?,?,?,?,?)').run(kind, key, action, actor?.id || null, json(details), now()); }

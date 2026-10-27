@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isErasedSubject } from './erasure-local.js';
 import { readFileSync } from 'node:fs';
 
 const DRIVER_CATALOGUE = JSON.parse(readFileSync(new URL('./pc-check-vulnerable-drivers.catalog.json',import.meta.url),'utf8'));
@@ -203,6 +204,7 @@ export function createPcCheckStore(db, { origin, now = Date.now, key, reviewers 
     create(user, input) {
       staff(user); init();
       if (!object(input) || !UUID.test(input.playerId || '') || !validScopes(input.allowedScopes) || !Number.isSafeInteger(input.retentionDays) || input.retentionDays < 1 || input.retentionDays > 30) fail(400, 'Jugador, alcances o conservación no válidos.');
+      if (isErasedSubject(db,input.playerId)) fail(409,'La cuenta tiene un proceso de privacidad; no admite nuevas recogidas de datos.');
       const declaredPlayerAlias = playerAlias(input.playerAlias), purpose = text(input.purpose, 10, 500);
       const operatorAlias = text(user.name || user.username, 1, 80), id = crypto.randomUUID(), created = now();
       db.prepare('INSERT INTO pc_check_cases(id,player_id,player_alias,assigned_operator_id,operator_alias,purpose,retention_days,allowed_scopes,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)')

@@ -3,7 +3,7 @@ import { requireAuth,requireAdmin } from '../auth.js';
 import { queryAdministration,proposeAdministration } from '../administration.js';
 import { integrationServicesStatus,ownerAction,uploadAdministrationImage,staffAlertsAction } from '../administration-services.js';
 import { crmAction } from '../crm.js';
-import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser } from '../integration.js';
+import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,mobileSafety } from '../integration.js';
 import { metricsHandler } from '../metrics.js';
 
 export const administrationRouter=Router();
@@ -20,3 +20,11 @@ administrationRouter.get('/administration/users/:id',async(req,res)=>res.json(aw
 administrationRouter.patch('/administration/users/:id',async(req,res)=>res.json(await updateCtpUserProfile(req.user,req.params.id,req.body||{})));
 administrationRouter.post('/administration/users/:id/delete',async(req,res)=>res.json(await deleteCtpUser(req.user,req.params.id,req.body||{})));
 administrationRouter.post('/administration/images',async(req,res)=>res.json(await uploadAdministrationImage(req.user,req.body)));
+administrationRouter.get('/administration/ugc',async(req,res)=>res.json(await mobileSafety.ugcList(req.user,req.query)));
+administrationRouter.get('/administration/ugc/:id',async(req,res)=>res.json(await mobileSafety.ugcGet(req.user,req.params.id)));
+administrationRouter.post('/administration/ugc/:id',async(req,res)=>res.json(await mobileSafety.ugcWrite(req.user,req.params.id,req.body)));
+administrationRouter.get('/administration/erasure',async(req,res)=>res.json(await mobileSafety.erasureList(req.user,req.query)));
+administrationRouter.get('/administration/erasure/requests/:id',async(req,res)=>res.json(await mobileSafety.erasureStatus(req.user,req.params.id)));
+administrationRouter.post('/administration/erasure/requests/:id/prepare',async(req,res)=>res.json(await mobileSafety.erasurePrepare(req.user,req.params.id,req.body)));
+administrationRouter.post('/administration/erasure/jobs/:id/process',async(req,res)=>res.json(await mobileSafety.erasureProcess(req.user,req.params.id,req.body)));
+administrationRouter.post('/administration/erasure/jobs/:id/inspect',async(req,res)=>res.json(await mobileSafety.erasureInspect(req.user,req.params.id,req.body)));

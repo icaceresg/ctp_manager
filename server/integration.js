@@ -20,12 +20,12 @@ import {
   disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
   disciplineSanctionPayload, disciplineRevokePayload, disciplineReviewPayload, disciplineLiftPayload,
   disciplineOverviewResponse, disciplineUsersResponse, disciplineHistoryResponse, disciplineWriteResponse,
-  userDeletePayload, userDeleteResponse,
 } from './discipline-contract.js';
 import { collectRegisteredPlayers } from './ruleta-contract.js';
 import {createPlayerWorkspaceReader} from './player-workspace-client.js';
 import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
 import {createStaffAlertsClient} from './staff-alerts-client.js';
+import {createMobileSafetyClient} from './mobile-safety-services.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -722,10 +722,7 @@ export async function writeDiscipline(user, action, id, body) {
 export async function deleteCtpUser(user, id, body) {
   if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'Esta sección requiere administración CTP.');
   if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
-  const payload = userDeletePayload(id, body);
-  const result = userDeleteResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
-  auditDirectDecision('administration', payload.user_id, 'admin.user.delete', user, { mode: result.mode, kept: result.kept.length });
-  return result;
+  throw integrationError(422,'El borrado se tramita desde Administración → Privacidad, ligado a la solicitud de la cuenta y sus comprobaciones.');
 }
 
 /** Optional read polling only; writes always require a deliberate authenticated request. */
@@ -738,3 +735,4 @@ export function startOperationsSync() {
 
 // Read-only player context shares the authenticated caller and the HMAC bridge.
 export const getPlayerWorkspace=createPlayerWorkspaceReader({request,actorFor:user=>getOperatorIdentity(user.id)});
+export const mobileSafety=createMobileSafetyClient({request,actorFor:user=>getOperatorIdentity(user.id),database:db,writesEnabled:()=>config.writes});

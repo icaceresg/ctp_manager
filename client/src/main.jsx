@@ -24,6 +24,7 @@ import { AvailabilityPage } from './pages/AvailabilityPage.jsx';
 import { BoardPage } from './pages/BoardPage.jsx';
 import { OperationsPage } from './operations/OperationsPage.jsx';
 import AdministrationPage from './pages/AdministrationPage.jsx';
+import AdministrationSafetyPage from './pages/AdministrationSafetyPage.jsx';
 import RankedMonitorPage from './pages/RankedMonitorPage.jsx';
 import RankedLobbyPage from './pages/RankedLobbyPage.jsx';
 import PlayerWorkspacePage from './pages/PlayerWorkspacePage.jsx';
@@ -124,6 +125,8 @@ function App() {
           <Route path="tablero" element={guard('tablero', <BoardPage />)} />
           <Route path="usuarios" element={canManageStaff(me) ? <UsersPage /> : <Navigate to={home} replace />} />
           <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
+          <Route path="administracion/moderacion" element={me.is_admin ? <AdministrationSafetyPage section="moderacion"/> : <Navigate to={home} replace/>}/>
+          <Route path="administracion/privacidad" element={me.is_admin ? <AdministrationSafetyPage section="privacidad"/> : <Navigate to={home} replace/>}/>
           <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />
           <Route path="administration/metrics" element={me.is_admin === true && metricsAllowedHost(window.location.hostname) ? <MetricsPage /> : <Navigate to={home} replace />} />
           <Route path="pc-checks" element={guard('arbitraje',<PcCheckPage/>)}/>

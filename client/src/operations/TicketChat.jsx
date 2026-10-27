@@ -75,6 +75,7 @@ export function TicketThreadView({thread,me,returnTo,busy,error,text,onReload,on
       {thread.can_change_status && <label className="op-field">Estado<select value={ticket.status} disabled={busy} onChange={(event) => onAction('status', event.target.value)}>{Object.entries(STATUS).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>}
     </div>
     {profilePath && <p className="muted">La ficha corresponde al autor de este ticket y permite volver al caso. Consultarla no responde ni cierra la incidencia.</p>}
+    {me?.is_admin && ticket.description?.startsWith('[CTP_ACCOUNT_DELETION_REQUEST]\n') && <p><Link className="btn danger" to={`/administracion/privacidad?ticket=${encodeURIComponent(ticket.id)}`}>Tramitar solicitud de privacidad</Link></p>}
     {proof && <p><a className="btn sm" href={proof} target="_blank" rel="noopener noreferrer">Ver prueba adjunta ↗</a></p>}
     {error && <p className="op-error" role="alert">{error} Si no se ha confirmado, reintenta la misma acción para comprobarla sin duplicarla.</p>}
     <ol className="op-notes">{timeline.map((item) => item.e

@@ -25,6 +25,7 @@ import {
 import { collectRegisteredPlayers } from './ruleta-contract.js';
 import {createPlayerWorkspaceReader} from './player-workspace-client.js';
 import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
+import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -298,6 +299,7 @@ let activeSync = null;
 const sending = new Set();
 const config = integrationConfig();
 const request = createOperationsTransport(config);
+const staffAlertsService=createStaffAlertsClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 setIntegrationStatus({ configured: config.configured, write_enabled: config.configured && config.writes, local_test_mode: config.localTestMode === true, web_origin: webOrigin() });
 
 export function integrationStatus() {
@@ -588,6 +590,7 @@ export async function getAdministrationData(user, query = {}) {
 }
 
 export async function getAdministrationService(user, service, payload) {
+  if(service==='staff_alerts')return staffAlertsService(user,payload);
   if (!user?.is_admin) throw integrationError(403, 'Esta sección requiere administración CTP.');
   if (!['twitch','push','image','crm'].includes(service)) throw integrationError(400, 'Servicio no admitido.');
   const read = service === 'crm' ? crmIsRead(payload?.action) : service === 'push' || payload?.action === 'status';

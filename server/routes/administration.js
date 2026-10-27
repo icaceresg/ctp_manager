@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth,requireAdmin } from '../auth.js';
 import { queryAdministration,proposeAdministration } from '../administration.js';
-import { integrationServicesStatus,ownerAction,uploadAdministrationImage } from '../administration-services.js';
+import { integrationServicesStatus,ownerAction,uploadAdministrationImage,staffAlertsAction } from '../administration-services.js';
 import { crmAction } from '../crm.js';
 import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser } from '../integration.js';
 import { metricsHandler } from '../metrics.js';
@@ -12,6 +12,8 @@ administrationRouter.get('/administration/metrics',metricsHandler);
 administrationRouter.get('/administration',async(req,res)=>res.json(await queryAdministration(req.user,req.query)));
 administrationRouter.post('/administration/commands',(req,res)=>res.json(proposeAdministration(req.user,req.body||{})));
 administrationRouter.get('/administration/integrations',async(req,res)=>res.json(await integrationServicesStatus(req.user)));
+administrationRouter.get('/administration/integrations/staff-alerts',async(req,res)=>res.json(await staffAlertsAction(req.user,{action:'status'})));
+administrationRouter.post('/administration/integrations/staff-alerts',async(req,res)=>res.json(await staffAlertsAction(req.user,req.body)));
 administrationRouter.post('/administration/integrations/twitch',async(req,res)=>res.json(await ownerAction(req)));
 administrationRouter.post('/administration/crm',async(req,res)=>res.json(await crmAction(req.user,req.body||{})));
 administrationRouter.get('/administration/users/:id',async(req,res)=>res.json(await getCtpUserProfile(req.user,req.params.id)));

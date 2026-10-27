@@ -12,17 +12,19 @@ const VIEWS={overview:null,jornada:'matches',casters:'matches',contenido:'matche
 const KINDS={matches:['match','operaciones','arbitraje','casters','realizacion','comunicaciones'],incidents:['incident','arbitraje'],stats:['stat','arbitraje'],clubs:['club','clubes'],deliveries:['delivery','comunicaciones'],sanctions:['sanction','arbitraje']};
 const fields={
   match:['kind','title','status','scheduled_at','team_a','team_b','score_a','score_b','confirmed','winner_id','winner_side','best_of','phase','web_path'],
-  incident:['match_id','kind','title','status','source_status','created_at','priority','assignee_id','pending_command_id'],
+  incident:['match_id','kind','title','status','source_status','created_at','priority','assignee_id','reporter_id','reporter_name','assigned_name','awaiting_staff','last_message_at','pending_command_id'],
   stat:['match_id','status','revision','created_at','map_number','map_name','mode','objective_label','pending_command_id'],
   club:['name','verified','pass_active','status','pending_command_id'],
   delivery:['status','kind','error','match_id','pending_command_id'],
   sanction:['incident_id','subject_id','subject_type','subject_name','reason','starts_at','ends_at','restriction','scopes','status','appeal_status','appeal_reason','review_reason','revoke_reason','official','pending_command_id'],
 };
 const col=(key,alias='r')=>`json_extract(${alias}.data,'$.${key}')`;
+const incidentAssignee = (alias='r') => `COALESCE(${col('assignee_id',alias)},(SELECT id FROM users WHERE ctp_user_id=${col('assignee_ctp_id',alias)} LIMIT 1))`;
+const incidentUnassigned = (alias='r') => `(${incidentAssignee(alias)} IS NULL AND NULLIF(trim(${col('assigned_name',alias)}),'') IS NULL AND NULLIF(${col('assignee_ctp_id',alias)},'') IS NULL)`;
 const visible=alias=>`COALESCE(${col('in_feed',alias)},1)=1`;
-const jsonProjection=(kind,alias='r')=>`json_object(${[...fields[kind],'source_version'].map(key=>`'${key}',${col(key,alias)}`).join(',')}${kind==='stat'?`, 'player_count',COALESCE(json_array_length(${alias}.data,'$.players'),0)`:''}) AS data`;
+const jsonProjection=(kind,alias='r')=>`json_object(${[...fields[kind],'source_version'].map(key=>`'${key}',${kind==='incident'&&key==='assignee_id'?incidentAssignee(alias):col(key,alias)}`).join(',')}${kind==='stat'?`, 'player_count',COALESCE(json_array_length(${alias}.data,'$.players'),0)`:''}) AS data`;
 const projection=(kind,alias='r')=>`${alias}.id,${jsonProjection(kind,alias)},${alias}.version,${alias}.source,${alias}.updated_at`;
-const unpack=row=>{const value={...JSON.parse(row.data),id:row.id,version:row.version,source:row.source,updated_at:row.updated_at};for(const key of ['confirmed','verified','pass_active','official'])if(key in value)value[key]=Boolean(value[key]);if(value.official&&value.status!=='revoked')value.status=Date.parse(value.ends_at)<=Date.now()?'expired':Date.parse(value.starts_at)>Date.now()?'scheduled':'active';return value;};
+const unpack=row=>{const value={...JSON.parse(row.data),id:row.id,version:row.version,source:row.source,updated_at:row.updated_at};for(const key of ['confirmed','verified','pass_active','official','awaiting_staff'])if(key in value)value[key]=Boolean(value[key]);if(value.official&&value.status!=='revoked')value.status=Date.parse(value.ends_at)<=Date.now()?'expired':Date.parse(value.starts_at)>Date.now()?'scheduled':'active';return value;};
 const marks=items=>items.map(()=>'?').join(',');
 const assignmentCols='a.id,a.match_id,a.user_id,a.role,a.starts_at,a.ends_at,a.status,a.version,a.created_by,a.created_at,a.updated_at,u.name user_name,u.username';
 const commandCols='c.id,c.idempotency_key,c.action,c.resource_type,c.resource_id,c.actor_id,c.expected_version,c.payload,c.status,c.attempts,c.last_error,c.result,c.created_at,c.updated_at';
@@ -83,11 +85,11 @@ function conditions(kind,p,user) {
   if(kind==='incident') {
     const state=p.view==='overview'?'all':p.view==='incidencias'?(p.state||'active'):'active';
     if(state!=='all'){where.push(`${col('status')} ${state==='resolved'?'IN':'NOT IN'} (${marks(CLOSED)})`);args.push(...CLOSED);}
-    if(p.bucket==='mine')where.push(`${col('assignee_id')}=?`),args.push(user.id);
-    if(p.bucket==='unassigned')where.push(`${col('assignee_id')} IS NULL`);
+    if(p.bucket==='mine')where.push(`${incidentAssignee()}=?`),args.push(user.id);
+    if(p.bucket==='unassigned')where.push(incidentUnassigned());
     if(p.bucket==='urgent')where.push(`${col('priority')}='urgent'`);
-    if(p.view==='jornada')where.push(`(${col('assignee_id')} IS NULL OR ${col('assignee_id')}=?)`),args.push(user.id);
-    search(where,args,p.q,[`COALESCE(${col('title')},'')`,`COALESCE(${col('reason')},'')`,`r.id`,`COALESCE((SELECT json_extract(m.data,'$.team_a.name')||' '||json_extract(m.data,'$.team_b.name') FROM operation_records m WHERE m.kind='match' AND m.id=${col('match_id')}),'')`,`COALESCE((SELECT name FROM users WHERE id=${col('assignee_id')}),'')`]);
+    if(p.view==='jornada')where.push(`(${incidentUnassigned()} OR ${incidentAssignee()}=?)`),args.push(user.id);
+    search(where,args,p.q,[`COALESCE(${col('title')},'')`,`COALESCE(${col('reason')},'')`,`COALESCE(${col('reporter_name')},'')`,`COALESCE(${col('reporter_id')},'')`,`COALESCE(${col('reporter_gamertag')},'')`,`COALESCE(${col('reporter_activision_id')},'')`,`COALESCE(${col('assigned_name')},'')`,`r.id`,`COALESCE((SELECT json_extract(m.data,'$.team_a.name')||' '||json_extract(m.data,'$.team_b.name') FROM operation_records m WHERE m.kind='match' AND m.id=${col('match_id')}),'')`,`COALESCE((SELECT name FROM users WHERE id=${col('assignee_id')}),'')`]);
   }
   if(kind==='stat') {
     const state=p.state||(p.view==='overview'?'all':'pending');
@@ -187,7 +189,7 @@ export function operationsWorkspace(user,query={}) {
     if(can(user,'operaciones','arbitraje','casters','realizacion','comunicaciones')&&matchIds.length){const existing=new Set(data.matches.map(item=>item.id));const related=db.prepare(`SELECT ${projection('match')} FROM operation_records r WHERE r.kind='match' AND ${visible('r')} AND r.id IN(${marks(matchIds)})`).all(...matchIds).map(unpack).filter(item=>!existing.has(item.id));if(primary==='matches')data.context_matches=related;else data.matches.push(...related);}
     if(can(user,'operaciones','casters','realizacion')&&['jornada','turnos','realizacion','partido'].includes(p.view)&&data.matches.length){const ids=data.matches.map(item=>item.id);data.production=db.prepare(`SELECT match_id,rundown_id,state,scene,note,version,updated_by,updated_at FROM operation_production WHERE match_id IN(${marks(ids)})`).all(...ids);}
     if(can(user,'operaciones','arbitraje','casters','realizacion')&&data.matches.length){const ids=data.matches.map(item=>item.id);data.coverage={};for(const row of db.prepare(`SELECT match_id,role,COUNT(1) assigned,SUM(CASE WHEN status='confirmed' THEN 1 ELSE 0 END) confirmed FROM operation_assignments WHERE match_id IN(${marks(ids)}) AND status IN('pending','assigned','confirmed') GROUP BY match_id,role`).all(...ids)){data.coverage[row.match_id]||={};data.coverage[row.match_id][row.role]={assigned:row.assigned,confirmed:row.confirmed};}}
-    if(can(user,'arbitraje')&&p.view==='incidencias')data.incident_counts=db.prepare(`SELECT COUNT(1) all_open,COALESCE(SUM(CASE WHEN ${col('assignee_id')}=? THEN 1 ELSE 0 END),0) mine,COALESCE(SUM(CASE WHEN ${col('assignee_id')} IS NULL THEN 1 ELSE 0 END),0) unassigned,COALESCE(SUM(CASE WHEN ${col('priority')}='urgent' THEN 1 ELSE 0 END),0) urgent FROM operation_records r WHERE r.kind='incident' AND ${visible('r')} AND ${col('status')} NOT IN(${marks(CLOSED)})`).get(user.id,...CLOSED);
+    if(can(user,'arbitraje')&&p.view==='incidencias')data.incident_counts=db.prepare(`SELECT COUNT(1) all_open,COALESCE(SUM(CASE WHEN ${incidentAssignee()}=? THEN 1 ELSE 0 END),0) mine,COALESCE(SUM(CASE WHEN ${incidentUnassigned()} THEN 1 ELSE 0 END),0) unassigned,COALESCE(SUM(CASE WHEN ${col('priority')}='urgent' THEN 1 ELSE 0 END),0) urgent FROM operation_records r WHERE r.kind='incident' AND ${visible('r')} AND ${col('status')} NOT IN(${marks(CLOSED)})`).get(user.id,...CLOSED);
     if(p.view==='jornada'){
       data.summary={};
       if(can(user,'operaciones'))data.summary.uncovered_matches=db.prepare(`SELECT COUNT(1) total FROM operation_records r WHERE r.kind='match' AND ${visible('r')} AND COALESCE(${col('confirmed')},0)=0 AND COALESCE(${col('status')},'') NOT IN(${marks(DONE)}) AND NOT EXISTS(SELECT 1 FROM operation_assignments a WHERE a.match_id=r.id AND a.role='referee' AND a.status='confirmed')`).get(...DONE).total;

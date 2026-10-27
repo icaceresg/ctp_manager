@@ -1,0 +1,16 @@
+{
+  "id": "ctp-reviewed-vulnerable-drivers",
+  "revision": "96a491d410f849fd392762c83cea8ccbe81a5bff",
+  "license": "Apache-2.0",
+  "source": "https://github.com/magicsword-io/LOLDrivers",
+  "reviewedOn": "2026-10-26",
+  "assessment": "component-risk-not-cheating-verdict",
+  "entries": [
+    { "entryId": "7bb5ff05-25f8-410d-ae99-c8e8f082d24f", "family": "WinRing0", "sha256": "3ec5ad51e6879464dfbccb9f4ed76c6325056a42548d5994ba869da9c4c039a8", "category": "vulnerable-driver" },
+    { "entryId": "275c80c5-a67c-4536-b29e-4e481242cb01", "family": "RTCore64", "sha256": "03e0581432f5c8cc727a8aa387f5b69ff84d38d0df6f1226c19c6e960a81e1e9", "category": "vulnerable-driver" },
+    { "entryId": "a4eabc75-edf6-4b74-9a24-6a26187adabf", "family": "Dell dbutil_2_3", "sha256": "0296e2ce999e67c76352613a718e11516fe1b0efc3ffdb8918fc999dd76a73a5", "category": "vulnerable-driver" },
+    { "entryId": "1d2cdef1-de44-4849-80e5-e2fa288df681", "family": "Intel iqvw64e", "sha256": "4429f32db1cc70567919d7d47b844a91cf1329a6cd116f582305f3b7b60cd60b", "category": "vulnerable-driver" },
+    { "entryId": "2bea1bca-753c-4f09-bc9f-566ab0193f4a", "family": "Gigabyte gdrv", "sha256": "31f4cfb4c71da44120752721103a16512444c13c2ac2d857a7e6f13cb679b427", "category": "vulnerable-driver" },
+    { "entryId": "32ccd436-eb13-4ab3-83d4-3e5471f4e364", "family": "ASRock AsrDrv103", "sha256": "2003b478b9fd1b3d76ec5bf4172c2e8915babbbee7ad1783794acbf8d4c2519d", "category": "vulnerable-driver" }
+  ]
+}

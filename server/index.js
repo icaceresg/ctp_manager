@@ -17,6 +17,7 @@ import { startOperationsSync } from './integration.js';
 import { startRuletaSync } from './ruleta.js';
 import { obsRouter } from './routes/obs.js';
 import { administrationRouter } from './routes/administration.js';
+import {pcCheckRouter,pcCheckUploadRouter} from './routes/pc-check.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -49,9 +50,11 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api',pcCheckUploadRouter);
 app.use('/api/administration/images', express.json({limit:'3mb'}));
 app.use('/api/administration/crm', express.json({limit:'2mb'}));
 app.use(express.json({ limit: '1mb' }));
+app.use('/api',pcCheckRouter);
 app.use('/api', authRouter, ruletaRouter, administrationRouter, obsRouter, integrationRouter, operationsRouter, adminRouter, boardRouter, apiRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
 

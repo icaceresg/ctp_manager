@@ -12,6 +12,7 @@
     "serve": "node --disable-warning=ExperimentalWarning server/index.js",
     "build": "vite build",
     "dev": "concurrently -k -n api,web -c blue,magenta \"node --watch --disable-warning=ExperimentalWarning server/index.js\" \"vite\"",
+    "dev:local": "node --disable-warning=ExperimentalWarning scripts/dev-local-stack.mjs",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\"",
     "importar": "node --disable-warning=ExperimentalWarning scripts/import-excel.js",
     "nueva-contrasena": "node --disable-warning=ExperimentalWarning scripts/reset-password.js"

@@ -83,7 +83,7 @@ test('disputes name the reporter, their team and what they wrote, without player
  const raw=lobbyFixture();raw.lobby.status='disputed';raw.open_disputes=1;
  raw.disputes=[{username:'Player 6',side:'b',reason:'El equipo A ha usado un arma prohibida.\nTengo clip.',created_at:'2026-10-23T11:40:00Z',resolved:false,user_id:'secret'},{username:null,side:null,reason:'x'.repeat(2000),created_at:'2026-10-23T11:45:00Z',resolved:true}];
  const clean=rankedLobbyDetail(raw,lobbyId);
- assert.deepEqual(clean.disputes,[{username:'Player 6',side:'b',reason:'El equipo A ha usado un arma prohibida.\nTengo clip.',created_at:'2026-10-23T11:40:00Z',resolved:false},{username:null,side:null,reason:'x'.repeat(2000),created_at:'2026-10-23T11:45:00Z',resolved:true}]);
+ assert.deepEqual(clean.disputes,[{username:'Player 6',side:'b',reason:'El equipo A ha usado un arma prohibida.\nTengo clip.',created_at:'2026-10-23T11:40:00Z',resolved:false,clip_url:null},{username:null,side:null,reason:'x'.repeat(2000),created_at:'2026-10-23T11:45:00Z',resolved:true,clip_url:null}]);
  assert.equal(JSON.stringify(clean).includes('secret'),false);
  // CTP before migration 238 only sends the count.
  assert.equal(rankedLobbyDetail(lobbyFixture(),lobbyId).disputes,null);
@@ -92,6 +92,19 @@ test('disputes name the reporter, their team and what they wrote, without player
  for(const mutate of[r=>r.disputes={},r=>r.disputes=[null],r=>r.disputes=Array(17).fill(ok),r=>r.disputes=[{...ok,side:'c'}],r=>r.disputes=[{...ok,reason:'x'.repeat(2001)}],r=>r.disputes=[{...ok,reason:null}],r=>r.disputes=[{...ok,username:'x'.repeat(101)}],r=>r.disputes=[{...ok,created_at:'ayer'}],r=>r.disputes=[{...ok,resolved:'no'}],r=>{r.open_disputes=0;r.disputes=[ok];}]){
   const data=lobbyFixture();data.open_disputes=1;mutate(data);assert.throws(()=>rankedLobbyDetail(data,lobbyId),{status:502});
  }
+});
+
+test('dispute clips survive the private projection while legacy rows remain readable and unsafe links never cross it',()=>{
+ const dispute={username:'Player 6',side:'b',reason:'El resultado debe revisarse.',created_at:'2026-10-23T11:40:00Z',resolved:false};
+ const read=clip=>rankedLobbyDetail({...lobbyFixture(),open_disputes:1,disputes:[{...dispute,...clip}]},lobbyId).disputes[0];
+ assert.equal(read({clip_url:'https://video.example.invalid/clips/123?t=7#partida'}).clip_url,'https://video.example.invalid/clips/123?t=7#partida');
+ assert.equal(read({clip_url:null}).clip_url,null);assert.equal(read({}).clip_url,null);
+ for(const link of ['javascript:alert(1)','data:text/html,hello','https://user:password@example.invalid/clip','https://example.invalid/clip\nnext','https:\\example.invalid/clip','not a url']){
+  const result=read({clip_url:link});assert.equal(result.clip_url,null);
+  assert.equal(JSON.stringify(result).includes('password'),false);
+ }
+ assert.throws(()=>read({clip_url:{url:'https://example.invalid/clip'}}),{status:502});
+ assert.throws(()=>read({clip_url:'https://example.invalid/'+'x'.repeat(500)}),{status:502});
 });
 
 test('player reports (CTP 239) name reporter and reported with the block slot, without player identities',()=>{

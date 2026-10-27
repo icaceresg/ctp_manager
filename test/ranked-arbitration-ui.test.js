@@ -7,7 +7,7 @@ import { createServer } from 'vite';
 let vite, views;
 before(async()=>{
   // Real JSX, fixture props, no API calls and no mutation of a real match.
-  vite=await createServer({server:{middlewareMode:true,watch:null},optimizeDeps:{noDiscovery:true,include:[]},appType:'custom',logLevel:'error'});
+  vite=await createServer({server:{middlewareMode:true,watch:null,hmr:false,ws:false},optimizeDeps:{noDiscovery:true,include:[]},appType:'custom',logLevel:'error'});
   views=await vite.ssrLoadModule('/src/pages/RankedLobbyPage.jsx');
 });
 after(async()=>{await vite?.close();});

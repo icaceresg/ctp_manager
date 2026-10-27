@@ -34,3 +34,6 @@
 .rl-disputes.has-open{border-left:2px solid #773244}.rl-disputes h2 .muted{font-weight:400}.rl-dispute-list{list-style:none;margin:0;padding:0}.rl-dispute-list li{padding:14px 0;border-bottom:1px solid var(--border)}.rl-dispute-list li:last-child{border-bottom:0;padding-bottom:0}.rl-dispute-list header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px}.rl-dispute-list time{margin-left:auto;color:var(--muted);font-size:11px}.rl-dispute-list p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6;margin:8px 0 0}.rl-dispute-list .is-resolved p{color:var(--muted)}
 @media(max-width:650px){.rl-dispute-list time{margin-left:0;width:100%}}
 .rl-report-reason{font-weight:600;color:var(--warning)}.rl-report-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:12px}
+.rm-long-wait{color:var(--danger,#ff8f85);white-space:nowrap}
+.rm-page .op-table th:first-child,.rm-page .op-table td:first-child{min-width:160px}
+.rm-page .op-table td:has(.rm-long-wait){white-space:nowrap}

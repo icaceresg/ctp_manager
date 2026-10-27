@@ -28,12 +28,18 @@ La espera visible se calcula entre `joined_at` y `observed_at`; se etiqueta **Es
 - 8 pruebas focales Manager: límites, identidad, privacidad, permiso, historiales no disponibles, DTO inválido y transporte exacto. Build Manager correcto.
 - 8 pruebas CTP: parser, restricciones del lector, handler firmado, DTO, semántica de errores y bloqueo de firmas, navegador y replay con base de datos falsa.
 - 11 pruebas del launcher DEV, incluida clave PC-check opcional de 43 caracteres, independiente y de tipo string; se conserva la configuración legacy sin esa clave.
-- Regresión SQL positiva con fixtures dedicados y rollback: búsquedas paginadas, UUID, cuentas eliminadas, presencia vigente/caducada sin renovarla, resultados antiguos y páginas independientes de resultados/tickets/sanciones. Ningún fixture persiste.
-- 243 aplicada sólo al DEV aislado mediante el bootstrap con verificación de identidad. 244 permanece pendiente.
+- Regresión SQL completa con fixtures dedicados y rollback: búsquedas paginadas, UUID, cuentas eliminadas, presencia vigente/caducada sin renovarla, resultados antiguos y páginas independientes de resultados/tickets/sanciones. También pasaron13 negativas reales:9 denegaciones42501 y4 validaciones22023. Ningún fixture persiste.
+- 243 aplicada sólo al DEV aislado mediante el bootstrap con verificación de identidad. Las integraciones posteriores tienen sus propias comprobaciones.
 - Búsqueda y ficha ejecutadas como `service_role` dentro de `BEGIN READ ONLY` para admin y árbitro DEV. Diez cuentas existentes conservadas, sin correos en los DTO y ACL declarativas correctas.
 
 El recibo filtrado está en `D:/CTP/dev/ctp/verification/player-workspace-243.json`.
 
 Los errores del lector tienen mapeo privado propio en el Edge: cuenta ausente404, consulta inválida400, falta de autorización403 y error desconocido503. Sólo los dos identificadores exactos de243 con SQLSTATE22023 reciben404/400. Los mensajes, detalles y pistas de SQL nunca se copian a la respuesta. El resto de acciones mantiene su semántica anterior.
 
-Límite de la prueba: durante la preparación, ejecutar una llamada anónima denegada contra la función todavía sin confirmar produjo cierre del backend local y registros de señal11/recuperación. La causa no está establecida. No se repitió esa ejecución tras aplicar243; la denegación anon/auth se comprobó mediante ACL. No se debe concatenar la definición sin confirmar con las pruebas negativas en este DEV. La suite SQL completa conserva esos casos para un entorno de prueba adecuado; sólo su parte positiva se ejecutó en esta sesión.
+Incidencia local resuelta: el cierre también se reprodujo tras confirmar243; la hipótesis de que dependía de una función sin confirmar quedó descartada. La imagen DEV `public.ecr.aws/supabase/postgres:17.6.1.106` coincidía con el fallo documentado de [supautils214](https://github.com/supabase/supautils/issues/214): el tratamiento de una denegación de EXECUTE a roles de `hint_roles` podía cerrar el backend antes de ejecutar el cuerpo de la función. El upstream lo corrigió en supautils3.2.3 y en imágenes Postgres17.6.1.155 o posteriores.
+
+El coordinador aplicó únicamente en DEV `supautils.hint_roles=''` con recarga de configuración, sin reinicio ni cambios de owners, ACL, proconfig o funciones. Después, las llamadas SQL postcommit como anon y authenticated devolvieron42501 sin cerrar la conexión. La autorización pública HTTP permaneció restringida. Recibos filtrados: `verification/supautils-local-mitigation.json` y `verification/player-workspace-negative-postcommit.json` bajo `D:/CTP/dev/ctp`. Esto valida esta incidencia local; no representa una ejecución de jugador ni una modificación de PRE/PROD.
+
+La suite SQL completa pasó después de conceder EXECUTE únicamente a su helper de sesión `pg_temp.workspace_reject`, manteniéndolo SECURITY INVOKER. El default ACL restringido impedía ejecutar ese helper de pruebas; el permiso de USAGE del esquema temporal ya existía. No se modificó ninguna ACL de aplicación. Recibo final: `verification/player-workspace-243-full-sql.json` bajo `D:/CTP/dev/ctp`.
+
+`infra/dev/database_safety.py` conserva esa mitigación al preparar/arrancar este DEV: verifica proyecto, contenedor, imagen y estado esperado, y sólo puede cambiar este parámetro. Las ACL privadas de243 se conservan.

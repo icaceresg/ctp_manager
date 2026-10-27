@@ -16,7 +16,7 @@ import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffA
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import {
-  DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS,
+  DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS, USER_DELETE_UNCERTAIN_MESSAGE,
   disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
   disciplineSanctionPayload, disciplineRevokePayload, disciplineReviewPayload, disciplineLiftPayload,
   disciplineOverviewResponse, disciplineUsersResponse, disciplineHistoryResponse, disciplineWriteResponse,
@@ -162,6 +162,7 @@ async function ownerServiceFailure(body, response) {
 export function createOperationsTransport(config, fetchImpl = fetch) {
   return async function request(body) {
     if (!config.configured) throw integrationError(503, 'Conexión con CTP sin configurar.');
+    const deletingAccount = body?.action === 'admin_service' && body.service === 'users' && body.payload?.action === 'delete';
     let response;
     try {
       const serialized = JSON.stringify(body);
@@ -251,7 +252,13 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
       }
       return parsed.data;
     } catch (error) {
-      if (error instanceof HttpError) throw error;
+      if (error instanceof HttpError) {
+        // A lost or malformed acknowledgement does not prove that the database
+        // rolled back. Keep definitive permission/validation denials unchanged.
+        if (deletingAccount && error.status === 502 && !error.remoteRejected) throw integrationError(502, USER_DELETE_UNCERTAIN_MESSAGE);
+        throw error;
+      }
+      if (deletingAccount) throw integrationError(502, USER_DELETE_UNCERTAIN_MESSAGE);
       throw integrationError(502, 'No se ha podido contactar con CTP. Reintenta cuando vuelva la conexión.');
     }
   };

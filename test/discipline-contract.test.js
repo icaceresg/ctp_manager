@@ -95,6 +95,26 @@ test('el borrado conserva el diagnóstico acotado de CTP y nunca se reintenta au
   await assert.rejects(mismatch(remove),error=>error.status===422&&!error.message.includes('esquema publicado'));
 });
 
+test('un fallo de transporte o confirmación de borrado exige comprobar el estado, sin recomendar repetir a ciegas', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: 'ctp-test-secret-is-only-on-server-0123456789', CTP_SIGNING_SECRET: 'ctp-independent-signing-test-secret-0123456789' });
+  const remove = { action: 'admin_service', service: 'users', payload: { action: 'delete' } };
+  for(const fail of [
+    ()=>{throw new Error('private connection URL');},
+    ()=>{throw new DOMException('private host timeout','TimeoutError');},
+    ()=>Response.json({ok:false,code:'bridge_unavailable',error:'private SQL detail'},{status:503}),
+    ()=>new Response('<html>private edge response</html>',{headers:{'Content-Type':'text/html'}}),
+    ()=>Response.json({ok:true,data:null}),
+  ]) {
+    let calls=0;
+    const request=createOperationsTransport(config,async()=>{calls++;return fail();});
+    await assert.rejects(request(remove),error=>error.status===502&&error.message===contract.USER_DELETE_UNCERTAIN_MESSAGE);
+    assert.equal(calls,1);
+  }
+  assert.throws(()=>contract.userDeleteResponse({user_id:randomUUID(),mode:'deleted'},user),error=>error.message===contract.USER_DELETE_UNCERTAIN_MESSAGE);
+  const read=createOperationsTransport(config,async()=>{throw new Error('private connection URL');});
+  await assert.rejects(read({...remove,payload:{action:'get'}}),error=>error.message.includes('contactar con CTP')&&!error.message.includes('borrado'));
+});
+
 test('sanciones y borrado comprueban permisos antes de llamar a CTP', async () => {
   const editorial = { id: 9, is_admin: false, sections: ['calendario'] };
   await assert.rejects(getDisciplineOverview(editorial), { status: 403 });

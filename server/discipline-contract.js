@@ -41,6 +41,7 @@ export const USER_DELETE_FAILURE_STATUS = Object.freeze({
   user_delete_identity_conflict: 409,
   user_delete_unavailable: 503,
 });
+export const USER_DELETE_UNCERTAIN_MESSAGE = 'No se ha recibido una confirmación válida del borrado de CTP. Puede haberse completado: vuelve a cargar la cuenta y comprueba su estado antes de repetirlo.';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
@@ -172,7 +173,7 @@ export function userDeletePayload(id, body) {
 export function userDeleteResponse(value, id) {
   if (!object(value) || value.user_id !== id || !['deleted', 'anonymized'].includes(value.mode) || !nullableText(value.alias, 40)
     || value.kept !== undefined && !(Array.isArray(value.kept) && value.kept.every(entry => text(entry, 120)))) {
-    throw new HttpError(502, 'CTP no ha confirmado el borrado de la cuenta.');
+    throw new HttpError(502, USER_DELETE_UNCERTAIN_MESSAGE);
   }
   return { user_id: id, mode: value.mode, alias: value.alias ?? null, kept: value.kept ?? [], storage_cleaned: value.storage_cleaned !== false };
 }

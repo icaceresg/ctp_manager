@@ -61,6 +61,7 @@ La pestaña **Sanciones** lee y escribe directamente en CTP mediante `admin_serv
 
 - `POST /administration/users/:id/delete`: `{expected_version,confirm_username}`. Solo administración CTP y con escrituras activadas. CTP rechaza staff, la propia cuenta y al líder de un club con más miembros. Si la cuenta no tiene historial compartido se borra por completo (`mode:"deleted"`); si lo tiene (partidas, resultados, estadísticas, torneos, pagos), se cierra, se borran sus datos personales y queda anónima como «Cuenta eliminada» (`mode:"anonymized"`).
   Los errores del puente se clasifican con códigos fijos: permisos (403), operación ocupada o dependencia (409), tiempo agotado (504), esquema pendiente o servicio no disponible (503). Manager muestra texto propio y conserva el estado HTTP; nunca muestra SQL, identificadores o mensajes internos de CTP. No hay reintento automático de borrado. Un resultado incierto exige recargar la cuenta antes de decidir si se envía otra solicitud deliberada.
+  Una pérdida de conexión, un error genérico del puente o una confirmación malformada no prueban que CTP haya revertido la operación. En esos casos Manager indica que el borrado puede haberse completado y pide comprobar el estado de la cuenta; no recomienda repetirlo a ciegas.
 
 ## Adaptador interno
 

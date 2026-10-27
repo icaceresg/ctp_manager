@@ -55,6 +55,51 @@ export function ugcResponse(value, payload) {
   return { schema_version:1,report };
 }
 
+export function avatarModerationPayload(action,id,body={}) {
+  if (action==='get') {if(!fields(body,[]))invalid();return{action,report_id:safetyId(id)};}
+  if (action==='retry') {
+    if(!fields(body,['expected_version'])||!positive(body.expected_version))invalid();
+    return{action,job_id:safetyId(id),expected_version:body.expected_version};
+  }
+  if(action!=='remove'||!fields(body,['expected_report_version','expected_user_version','reason','request_id'])
+    ||!positive(body.expected_report_version)||!positive(body.expected_user_version)||!uuid(body.request_id)||!text(body.reason,500)
+    ||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(body.reason)||Array.from(body.reason.trim()).length<12)invalid();
+  return{action,report_id:safetyId(id),...body,reason:body.reason.trim()};
+}
+function avatarPreview(value,userId,origin) {
+  if(value===null)return null;
+  if(!text(value,2048))upstream();
+  let url;try{url=new URL(value);}catch{upstream();}
+  const prefix=`/storage/v1/object/public/avatars/${userId.toLowerCase()}/`;
+  if(url.origin!==origin||url.username||url.password||url.search||url.hash||!url.pathname.startsWith(prefix))upstream();
+  const suffix=url.pathname.slice(prefix.length);
+  // Canonical same-origin owned object only, never a server-side URL fetch.
+  if(!/^[A-Za-z0-9_-]{1,100}\.(png|jpe?g|webp)$/.test(suffix))upstream();
+  return url.href;
+}
+export function avatarModerationResponse(value,expected,origin='https://playctp.com') {
+  if(!object(value)||value.schema_version!==1||!object(value.user)||!object(value.preview))upstream();
+  const report=reportDto(value.report),user=value.user;
+  if(report.context!=='user'||!uuid(user.id)||user.id!==report.target_id||!text(user.username,100)||!nullableText(user.avatar,2048)||!nullableText(user.bio,500)||!positive(user.manager_version)
+    ||expected.report_id&&report.id!==expected.report_id)upstream();
+  let job=null;
+  if(value.job!==null){
+    const j=value.job;
+    if(!object(j)||!uuid(j.job_id)||j.report_id!==report.id||j.user_id!==user.id||!['pending','retryable','completed'].includes(j.state)
+      ||!['classify','storage','complete'].includes(j.phase)||!['unclassified','owned','display_only'].includes(j.kind)||!positive(j.version)
+      ||j.display_detached!==true||typeof j.storage_verified!=='boolean'||typeof j.object_removed!=='boolean'
+      ||!(j.error_code===null||text(j.error_code,100)&&/^[a-z_]+$/.test(j.error_code))||!timestamp(j.created_at)
+      ||!(j.completed_at===null||timestamp(j.completed_at))||expected.job_id&&j.job_id!==expected.job_id)upstream();
+    if(j.state==='completed'&&(j.phase!=='complete'||!j.completed_at||j.kind==='unclassified'
+      ||j.kind==='owned'&&(!j.storage_verified||!j.object_removed)||j.kind==='display_only'&&(j.object_removed||j.storage_verified)))upstream();
+    if(j.state!=='completed'&&(j.phase==='complete'||j.completed_at!==null))upstream();
+    job=Object.fromEntries(['job_id','report_id','user_id','state','phase','kind','version','display_detached','storage_verified','object_removed','error_code','created_at','completed_at'].map(key=>[key,j[key]]));
+  }
+  if(expected.action!=='get'&&!job)upstream();
+  return{schema_version:1,report,user:{id:user.id,username:user.username,avatar:user.avatar,bio:user.bio,manager_version:user.manager_version},job,
+    preview:{reported_avatar_url:avatarPreview(value.preview.reported_avatar_url,user.id,origin),current_avatar_url:avatarPreview(value.preview.current_avatar_url,user.id,origin)}};
+}
+
 export function erasureListQuery(query = {}) {
   if (!object(query) || Object.keys(query).some(key => !['limit','offset'].includes(key))) invalid();
   const limit = page(query.limit,20,50); if (limit < 1) invalid();

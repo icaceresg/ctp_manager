@@ -8,6 +8,7 @@ import { dateTime } from '../operations/model.js';
 import { DataTable } from '../operations/ui.jsx';
 import { ERASURE_STATES,ERASURE_PHASES,UGC_REASONS,UGC_STATES,canProcessErasure,canInspectErasure,createModerationIntent } from './safetyModel.js';
 import '../operations/operations.css';
+import AvatarModerationPanel from './AvatarModerationPanel.jsx';
 
 const nav=[['resumen','Resumen'],['usuarios','Usuarios CTP'],['moderacion','Moderación'],['privacidad','Privacidad'],['auditoria','Auditoría']];
 export default function AdministrationSafetyPage({section}) {
@@ -41,7 +42,7 @@ function ModerationDetail({id,onChanged}) {
     try {const body=intent.current.begin(report,action,reason), result=await api.post(`/administration/ugc/${id}`,body);intent.current.confirm(id,body,result);setReport(result.report);setReason('');onChanged();}
     catch(e){setProblem(e.message);}finally{lock.current=false;setBusy(false);}
   }
-  return <section className="op-card"><h2>Revisión del reporte</h2><ErrorBox error={error||problem} retry={reload}/>{loading&&!report?<Spinner/>:report?<ModerationReportView report={report} reason={reason} busy={busy} locked={Boolean(intent.current.pending)} onReason={setReason} onAction={act}/>:!loading&&<p>El reporte no está disponible.</p>}</section>;
+  return <section className="op-card"><h2>Revisión del reporte</h2><ErrorBox error={error||problem} retry={reload}/>{loading&&!report?<Spinner/>:report?<><ModerationReportView report={report} reason={reason} busy={busy} locked={Boolean(intent.current.pending)} onReason={setReason} onAction={act}/>{report.context==='user'&&<AvatarModerationPanel reportId={report.id} onReportChanged={next=>{setReport(next);onChanged();}}/>}</>:!loading&&<p>El reporte no está disponible.</p>}</section>;
 }
 export function ModerationReportView({report,reason,busy,locked,onReason,onAction}) {
   return <><p><strong>{report.target_username||'Cuenta eliminada'}</strong> · {UGC_STATES[report.status]} · {dateTime(report.created_at)}</p><p>{UGC_REASONS[report.reason]}</p>

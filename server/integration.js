@@ -735,4 +735,4 @@ export function startOperationsSync() {
 
 // Read-only player context shares the authenticated caller and the HMAC bridge.
 export const getPlayerWorkspace=createPlayerWorkspaceReader({request,actorFor:user=>getOperatorIdentity(user.id)});
-export const mobileSafety=createMobileSafetyClient({request,actorFor:user=>getOperatorIdentity(user.id),database:db,writesEnabled:()=>config.writes});
+export const mobileSafety=createMobileSafetyClient({request,actorFor:user=>getOperatorIdentity(user.id),database:db,writesEnabled:()=>config.writes,storagePublicOrigin:webOrigin()});

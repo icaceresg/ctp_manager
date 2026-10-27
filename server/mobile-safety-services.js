@@ -1,10 +1,10 @@
 import { HttpError } from './auth.js';
-import { ugcListQuery,ugcWritePayload,ugcResponse,safetyId,erasureListQuery,erasurePayload,erasureResponse } from './mobile-safety-contract.js';
+import { ugcListQuery,ugcWritePayload,ugcResponse,safetyId,erasureListQuery,erasurePayload,erasureResponse,avatarModerationPayload,avatarModerationResponse } from './mobile-safety-contract.js';
 import { createErasureInspector } from './erasure-local.js';
 
 /** Only authenticated administration calls reach this connector. CTP repeats
  * current admin.console/role authorization behind the existing HMAC boundary. */
-export function createMobileSafetyClient({request,actorFor,database,writesEnabled}) {
+export function createMobileSafetyClient({request,actorFor,database,writesEnabled,storagePublicOrigin='https://playctp.com'}) {
   const inspect = createErasureInspector(database);
   database.exec('CREATE TABLE IF NOT EXISTS account_erasure_job_refs(job_id TEXT PRIMARY KEY,ticket_id TEXT NOT NULL UNIQUE,user_id TEXT NOT NULL)');
   const requireAdmin = (user,write=false) => {
@@ -28,6 +28,9 @@ export function createMobileSafetyClient({request,actorFor,database,writesEnable
     async ugcList(user,query) { requireAdmin(user); const p=ugcListQuery(query); return ugcResponse(await call(user,'ugc',p),p); },
     async ugcGet(user,id) { requireAdmin(user); const p={action:'get',report_id:safetyId(id)}; return ugcResponse(await call(user,'ugc',p),p); },
     async ugcWrite(user,id,body) { requireAdmin(user,true); const p=ugcWritePayload(id,body); return ugcResponse(await call(user,'ugc',p),p); },
+    async avatarGet(user,id) {requireAdmin(user);const p=avatarModerationPayload('get',id);return avatarModerationResponse(await call(user,'ugc_avatar',p),p,storagePublicOrigin);},
+    async avatarRemove(user,id,body) {requireAdmin(user,true);const p=avatarModerationPayload('remove',id,body);return avatarModerationResponse(await call(user,'ugc_avatar',p),p,storagePublicOrigin);},
+    async avatarRetry(user,id,body) {requireAdmin(user,true);const p=avatarModerationPayload('retry',id,body);return avatarModerationResponse(await call(user,'ugc_avatar',p),p,storagePublicOrigin);},
     async erasureList(user,query) { requireAdmin(user); const p=erasureListQuery(query); return remember(erasureResponse(await call(user,'erasure',p),p)); },
     async erasureStatus(user,id) { requireAdmin(user); const p=erasurePayload('status',id); return remember(erasureResponse(await call(user,'erasure',p),p)); },
     async erasurePrepare(user,id,body) { requireAdmin(user,true); const p=erasurePayload('prepare',id,body); return remember(erasureResponse(await call(user,'erasure',p),{ticket_id:p.ticket_id})); },

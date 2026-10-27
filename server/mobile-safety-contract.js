@@ -27,18 +27,20 @@ export function ugcWritePayload(id, body) {
 function reportDto(row) {
   if (!object(row) || !uuid(row.id) || !uuid(row.ticket_id) || !text(row.ticket_code,64)
     || !['message','user'].includes(row.context) || !['abuse','hate','sexual','child_safety','privacy','scam','other'].includes(row.reason)
-    || !text(row.details,1000) || !['pending','hidden','dismissed'].includes(row.status) || !positive(row.version)
+    || !nullableText(row.details,1000) || !['pending','hidden','dismissed'].includes(row.status) || !positive(row.version)
     || !timestamp(row.created_at) || !uuid(row.target_id) || !nullableText(row.target_username,100)
     || !nullableText(row.message_id,100) || !(row.lobby_id === null || uuid(row.lobby_id)) || typeof row.hidden !== 'boolean'
     || !(row.reviewed_at === null || timestamp(row.reviewed_at)) || !nullableText(row.review_note,500) || !object(row.evidence)) upstream();
-  const evidence = {};
-  for (const [key,max] of [['username',100],['message',5000],['avatar',2000],['created_at',64]]) {
+  const evidence = {},meta={avatar_preview_omitted:row.meta?.avatar_preview_omitted===true,content_omitted:row.meta?.content_omitted===true};
+  for (const [key,max] of [['username',100],['message',5000],['avatar',2048],['created_at',64]]) {
     if (row.evidence[key] === undefined) continue;
-    if (!nullableText(row.evidence[key],max)) upstream();
-    evidence[key] = row.evidence[key];
+    if (!nullableText(row.evidence[key],max)) {
+      evidence[key]=null;meta.content_omitted=true;
+      if(key==='avatar')meta.avatar_preview_omitted=true;
+    } else evidence[key] = row.evidence[key];
   }
   if (row.evidence.redacted === true) evidence.redacted = true;
-  return Object.fromEntries(['id','ticket_id','ticket_code','context','reason','details','status','version','created_at','target_id','target_username','message_id','lobby_id','hidden','reviewed_at','review_note'].map(key => [key,row[key]]).concat([['evidence',evidence]]));
+  return Object.fromEntries(['id','ticket_id','ticket_code','context','reason','status','version','created_at','target_id','target_username','message_id','lobby_id','hidden','reviewed_at','review_note'].map(key => [key,row[key]]).concat([['details',row.details??''],['evidence',evidence],['meta',meta]]));
 }
 export function ugcResponse(value, payload) {
   if (!object(value) || value.schema_version !== 1) upstream();
@@ -80,7 +82,7 @@ function avatarPreview(value,userId,origin) {
 export function avatarModerationResponse(value,expected,origin='https://playctp.com') {
   if(!object(value)||value.schema_version!==1||!object(value.user)||!object(value.preview))upstream();
   const report=reportDto(value.report),user=value.user;
-  if(report.context!=='user'||!uuid(user.id)||user.id!==report.target_id||!text(user.username,100)||!nullableText(user.avatar,2048)||!nullableText(user.bio,500)||!positive(user.manager_version)
+  if(report.context!=='user'||!uuid(user.id)||user.id!==report.target_id||!text(user.username,100)||!positive(user.manager_version)
     ||expected.report_id&&report.id!==expected.report_id)upstream();
   let job=null;
   if(value.job!==null){
@@ -96,8 +98,10 @@ export function avatarModerationResponse(value,expected,origin='https://playctp.
     job=Object.fromEntries(['job_id','report_id','user_id','state','phase','kind','version','display_detached','storage_verified','object_removed','error_code','created_at','completed_at'].map(key=>[key,j[key]]));
   }
   if(expected.action!=='get'&&!job)upstream();
-  return{schema_version:1,report,user:{id:user.id,username:user.username,avatar:user.avatar,bio:user.bio,manager_version:user.manager_version},job,
-    preview:{reported_avatar_url:avatarPreview(value.preview.reported_avatar_url,user.id,origin),current_avatar_url:avatarPreview(value.preview.current_avatar_url,user.id,origin)}};
+  const avatarOmitted=!nullableText(user.avatar,2048),bioOmitted=!nullableText(user.bio,2000);
+  const meta={avatar_preview_omitted:user.meta?.avatar_preview_omitted===true||avatarOmitted,content_omitted:user.meta?.content_omitted===true||avatarOmitted||bioOmitted};
+  return{schema_version:1,report,user:{id:user.id,username:user.username,avatar:avatarOmitted?null:user.avatar,bio:bioOmitted?null:user.bio,manager_version:user.manager_version,meta},job,
+    preview:{reported_avatar_url:report.meta.avatar_preview_omitted?null:avatarPreview(value.preview.reported_avatar_url,user.id,origin),current_avatar_url:meta.avatar_preview_omitted?null:avatarPreview(value.preview.current_avatar_url,user.id,origin)}};
 }
 
 export function erasureListQuery(query = {}) {

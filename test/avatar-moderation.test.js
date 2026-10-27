@@ -46,6 +46,17 @@ test('detaching a profile is not Storage acknowledgement and no owned completion
   assert.equal(avatarModerationResponse(complete,{action:'retry',job_id:jobId}).job.state,'completed');
   assert.throws(()=>avatarModerationResponse(complete,{action:'retry',job_id:randomUUID()}),{status:502});
 });
+test('null report notes, hostile avatar data and legacy biography stay bounded and moderable',()=>{
+  const current=dto(),huge='data:image/png;base64,'+'A'.repeat(100000);
+  current.report.details=null;current.report.evidence.avatar=huge;current.user.avatar=huge;current.user.bio='Legacy biography '.repeat(80);
+  const safe=avatarModerationResponse(current,{action:'get',report_id:report});
+  assert.equal(safe.report.details,'');assert.equal(safe.report.evidence.avatar,null);assert.equal(safe.user.avatar,null);
+  assert.equal(safe.user.bio,current.user.bio);assert.equal(safe.user.manager_version,3);assert.equal(safe.report.version,1);
+  assert.equal(safe.report.meta.avatar_preview_omitted,true);assert.equal(safe.user.meta.content_omitted,true);
+  assert.deepEqual(safe.preview,{reported_avatar_url:null,current_avatar_url:null});assert.ok(JSON.stringify(safe).length<5000);
+  const intent=createAvatarRemovalIntent(()=>nonce);assert.equal(intent.begin(safe,body().reason).expected_user_version,3);
+  current.user.bio='B'.repeat(10000);assert.equal(avatarModerationResponse(current,{action:'get',report_id:report}).user.bio,null);
+});
 test('lost remove response retains one nonce and both original CAS versions until an acknowledged job',()=>{
   const current=dto(),intent=createAvatarRemovalIntent(()=>nonce),first=intent.begin(current,body().reason);
   assert.equal(intent.begin(current,body().reason),first);

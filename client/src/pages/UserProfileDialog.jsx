@@ -21,6 +21,7 @@ export default function UserProfileDialog({id,onClose,onSaved}){
     onSaved();
   }}>
     <p><strong>{profile.username}</strong> · {ROLE[profile.role]||profile.role} · alta {dateTime(profile.created_at)}</p>
+    {profile.meta?.content_omitted&&<p className="muted">Hay contenido original omitido por tamaño. Puedes corregir los campos visibles; sólo se sustituye un campo omitido si escribes un valor nuevo.</p>}
     <div className="op-form-grid">
       <Field label="Nombre de usuario" hint="Entre 3 y 20 caracteres. También sirve para iniciar sesión."><input name="username" required minLength={3} maxLength={20} defaultValue={profile.username}/></Field>
       <Field label="Correo de acceso" hint={profile.email_confirmed?'Correo verificado.':'Correo sin verificar.'}><input name="email" type="email" required maxLength={254} defaultValue={profile.email||''}/></Field>

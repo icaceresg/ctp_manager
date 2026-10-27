@@ -47,6 +47,7 @@ function ModerationDetail({id,onChanged}) {
 export function ModerationReportView({report,reason,busy,locked,onReason,onAction}) {
   return <><p><strong>{report.target_username||'Cuenta eliminada'}</strong> · {UGC_STATES[report.status]} · {dateTime(report.created_at)}</p><p>{UGC_REASONS[report.reason]}</p>
     <p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{report.details}</p>
+    {report.meta?.content_omitted&&<p className="muted">Parte de la evidencia original se ha omitido por tamaño o formato. Puedes revisar y moderar la denuncia.</p>}
     {report.evidence.message&&<blockquote style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{report.evidence.message}</blockquote>}
     {report.evidence.redacted&&<p className="muted">Los datos personales de esta evidencia se han retirado.</p>}
     <div className="op-actions"><Link className="btn" to={`/operaciones/incidencias?case=${encodeURIComponent(report.ticket_id)}`}>Ticket {report.ticket_code}</Link>{report.lobby_id&&<Link className="btn" to={`/ranked/partidas/${encodeURIComponent(report.lobby_id)}`}>Contexto de la partida</Link>}</div>

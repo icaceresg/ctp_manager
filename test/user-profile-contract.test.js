@@ -39,3 +39,10 @@ test('profile responses are bounded and every SQL code has Spanish copy', () => 
   assert.equal(userProfileResponse({ ...row, encrypted_password: 'x' }, id).encrypted_password, undefined);
   for (const message of Object.values(USER_PROFILE_ERRORS)) assert.ok(message.length > 10);
 });
+test('oversize legacy profile content is omitted on reads without loosening writes or changing its CAS',()=>{
+  const value={id,username:'Player',email:'fixture@example.invalid',email_confirmed:true,gamertag:'Player',activision_id:null,platform:'PC',discord:null,twitter:null,bio:'B'.repeat(1500),birthdate:null,role:'player',avatar:'data:image/png;base64,'+'A'.repeat(100000),created_at:'2026-10-27T00:00:00Z',manager_version:3};
+  const safe=userProfileResponse(value,id);assert.equal(safe.avatar,null);assert.equal(safe.meta.avatar_preview_omitted,true);assert.equal(safe.bio,value.bio);assert.equal(safe.manager_version,3);
+  assert.throws(()=>userProfilePayload(id,{expected_version:3,changes:{bio:'B'.repeat(501)}}),{status:400});
+  assert.equal(userProfilePayload(id,{expected_version:3,changes:{bio:'Corrected'}}).expected_version,3);
+  assert.equal(userProfileResponse({...value,bio:'B'.repeat(2001)},id).bio,null);
+});

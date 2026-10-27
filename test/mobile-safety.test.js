@@ -43,6 +43,15 @@ test('moderation rejects authority injection, missing CAS/nonce, unbounded reaso
   assert.equal(safe.report.evidence.message,row.evidence.message);
   assert.throws(()=>contract.ugcResponse({schema_version:1,report:row},{action:'hide',report_id:row.id}),{status:502});
 });
+test('a valid report without notes and a hostile legacy avatar cannot take down the entire page',()=>{
+  const legacy={...report(),details:null,evidence:{avatar:'data:image/png;base64,'+'A'.repeat(100000)}},ordinary=report();
+  const page=contract.ugcResponse({schema_version:1,total:2,items:[legacy,ordinary]},{action:'list',status:'pending',limit:20});
+  assert.equal(page.items.length,2);assert.equal(page.items[0].details,'');assert.equal(page.items[0].evidence.avatar,null);
+  assert.equal(page.items[0].meta.avatar_preview_omitted,true);assert.ok(JSON.stringify(page).length<5000);
+  assert.equal(contract.ugcResponse({schema_version:1,report:legacy},{action:'get',report_id:legacy.id}).report.id,legacy.id);
+  const clamped={...legacy,evidence:{avatar:null},meta:{avatar_preview_omitted:true,content_omitted:true}};
+  assert.equal(contract.ugcResponse({schema_version:1,report:clamped},{action:'get',report_id:legacy.id}).report.meta.avatar_preview_omitted,true);
+});
 test('erasure actions admit only current versions and completed requires every real backend gate',()=>{
   const current=job();assert.equal(contract.erasureResponse(current,{job_id:jobId}).state,'running');
   for(const bad of [{expected_version:3,status:'clear'},{expected_version:3,receipt_sha256:'a'.repeat(64)},{expected_version:3,actor_id:'admin'},{expected_version:3,recipient_email:'fixture@example.invalid'},{}])assert.throws(()=>contract.erasurePayload('inspect',jobId,bad),{status:400});

@@ -17,6 +17,8 @@ Un reporte con contexto `user` añade el snapshot del avatar denunciado, el perf
 
 Desvincular el avatar del perfil no completa la limpieza del objeto. Los trabajos pendientes/reintentables mantienen su estado visible. Una retirada de archivo propio requiere `completed`, fase `complete`, `storage_verified=true` y `object_removed=true`. `display_only` exige ambos indicadores falsos y explica que sólo se ha retirado el avatar del perfil, sin borrar archivos externos. 251 impide archivar un reporte mientras su limpieza siga activa; el cliente no ofrece un bypass del estado o de Storage.
 
+Las notas de una denuncia pueden ser `null` y se presentan vacías. Los DTO de lectura omiten contenido heredado demasiado grande, con `report.meta`/`user.meta:{avatar_preview_omitted,content_omitted}`; nunca lo convierten en una URL de preview ni derriban una página de denuncias por ese contenido. La biografía existente se admite hasta 2000 caracteres para poder corregirla; la escritura sigue limitada a 500. El perfil de edición también omite un avatar excesivo. Sólo se modifica la proyección de lectura: el original privado y las versiones que usa SQL para CAS permanecen intactos. El candidato 251 limita esos campos antes de que salgan del RPC/Edge; Manager vuelve a acotarlos antes de responder al navegador.
+
 ## Cobertura de la inspección externa
 
 `server/erasure-local.js` trabaja sobre la conexión SQLite de esta instancia, en una transacción local. Comprueba el esquema real, tablas PC Check, un límite de filas y tamaño de proyecciones. Retira perfiles/cachés operativos identificados, invalida sesiones y asignaciones de carga PC Check y sustituye los campos personales conocidos de proyecciones deportivas, preservando claves, estadísticas y resultados.

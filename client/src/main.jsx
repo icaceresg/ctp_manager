@@ -26,6 +26,7 @@ import { OperationsPage } from './operations/OperationsPage.jsx';
 import AdministrationPage from './pages/AdministrationPage.jsx';
 import RankedMonitorPage from './pages/RankedMonitorPage.jsx';
 import RankedLobbyPage from './pages/RankedLobbyPage.jsx';
+import PlayerWorkspacePage from './pages/PlayerWorkspacePage.jsx';
 import MetricsPage from './pages/MetricsPage.jsx';
 import { metricsAllowedHost } from './pages/metricsModel.js';
 import CrmPage from './pages/CrmPage.jsx';
@@ -124,6 +125,8 @@ function App() {
           <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />
           <Route path="administration/metrics" element={me.is_admin === true && metricsAllowedHost(window.location.hostname) ? <MetricsPage /> : <Navigate to={home} replace />} />
+          <Route path="jugadores" element={canManageRanked(me)?<PlayerWorkspacePage/>:<Navigate to={home} replace/>}/>
+          <Route path="jugadores/:userId" element={canManageRanked(me)?<PlayerWorkspacePage/>:<Navigate to={home} replace/>}/>
           <Route path="ranked/monitor" element={canManageRanked(me) ? <RankedMonitorPage /> : <Navigate to={home} replace />} />
           <Route path="ranked/partidas/:lobbyId" element={canManageRanked(me) ? <RankedLobbyPage /> : <Navigate to={home} replace />} />
           <Route path="crm" element={me.is_admin ? <Navigate to="/crm/resumen" replace /> : <Navigate to={home} replace />} />

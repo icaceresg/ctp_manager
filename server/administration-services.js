@@ -32,9 +32,10 @@ export function safeOwnerUrl(value) {
   } catch {return null;}
 }
 export async function integrationServicesStatus(user) {
-  const services=await Promise.allSettled([getAdministrationService(user,'twitch',{action:'status'}),getAdministrationService(user,'push',{action:'status'})]);
-  return {callback,twitch:services[0].status==='fulfilled'?services[0].value:{available:false,error:'No se puede consultar Twitch.'},push:services[1].status==='fulfilled'?services[1].value:{available:false,error:'No se puede consultar push.'}};
+  const services=await Promise.allSettled([getAdministrationService(user,'twitch',{action:'status'}),getAdministrationService(user,'push',{action:'status'}),getAdministrationService(user,'staff_alerts',{action:'status'})]);
+  return {callback,twitch:services[0].status==='fulfilled'?services[0].value:{available:false,error:'No se puede consultar Twitch.'},push:services[1].status==='fulfilled'?services[1].value:{available:false,error:'No se puede consultar push.'},staff_alerts:services[2].status==='fulfilled'?services[2].value:{available:false,error:'No se puede verificar el estado de los avisos de staff.'}};
 }
+export const staffAlertsAction=(user,input)=>getAdministrationService(user,'staff_alerts',input);
 export async function ownerAction(req) {
   const input=req.body||{},action=input.action;
   if(Object.keys(input).some(key=>!['action','state','code'].includes(key))||!['status','start','complete','cancel','unlink'].includes(action))throw new HttpError(400,'Acción de Twitch no admitida.');

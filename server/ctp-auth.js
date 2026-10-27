@@ -9,9 +9,22 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export function ctpAuthConfig(env = process.env) {
   const mode = env.CTP_AUTH_MODE || 'local';
   if (!['local', 'ctp'].includes(mode)) throw new Error('CTP_AUTH_MODE debe ser local o ctp.');
+  const devSetting = env.CTP_DEV_LOCAL_AUTH ?? 'false';
+  if (!['true', 'false'].includes(devSetting)) throw new Error('CTP_DEV_LOCAL_AUTH debe ser true o false.');
+  const devLocal = devSetting === 'true';
+  if (devLocal && (env.PUBLIC_ORIGIN || mode !== 'ctp')) throw new Error('La autenticación DEV local requiere CTP_AUTH_MODE=ctp y ningún PUBLIC_ORIGIN.');
   if (mode === 'local') return { mode };
   const origin = env.CTP_AUTH_URL;
-  if (!['https://pre.playctp.com', 'https://playctp.com'].includes(origin)) throw new Error('CTP_AUTH_URL requiere el origen HTTPS exacto de CTP.');
+  if (devLocal) {
+    // Literal loopback only: reject DNS aliases, alternative IP encodings and
+    // URL normalization. Auth, web and bridge still share one exact origin.
+    let local;
+    try { local = new URL(origin); } catch { /* validated below */ }
+    if (!/^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):[1-9][0-9]{0,4}$/.test(origin || '')
+      || !local?.port || local.origin !== origin) throw new Error('CTP_AUTH_URL en DEV requiere HTTP de loopback literal con puerto explícito.');
+  } else if (!['https://pre.playctp.com', 'https://playctp.com'].includes(origin)) {
+    throw new Error('CTP_AUTH_URL requiere el origen HTTPS exacto de CTP.');
+  }
   let operations;
   try { operations = new URL(env.CTP_OPERATIONS_URL); } catch { /* validated below */ }
   if (env.CTP_WEB_ORIGIN !== origin || operations?.origin !== origin || operations.username || operations.password

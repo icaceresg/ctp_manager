@@ -16,12 +16,12 @@ export function rankedEventPayload(value){
 export function rankedEventResponse(value,payload){
  const fail=()=>{throw new HttpError(502,'No se ha podido verificar el estado completo del evento. Actualiza la consulta.');};
  if(!object(value)||value.schema_version!==1||value.event_id!=='hw-2026'||value.theme!=='halloween'||typeof value.enabled!=='boolean'
-  ||value.xp_multiplier!==2||value.streak_bonus!==0.5||value.starts_at!==null||value.ends_at!==null
+  ||value.xp_multiplier!==1||value.streak_bonus!==0.5||value.starts_at!==null||value.ends_at!==null
   ||!Number.isSafeInteger(value.revision)||value.revision<1||value.revision>999999999999999
   ||typeof value.server_time!=='string'||value.server_time.length>40||!Number.isFinite(Date.parse(value.server_time)))fail();
  if(payload?.action==='configure'&&(!uuid(value.request_id)||value.request_id.toLowerCase()!==payload.request_id
   ||value.enabled!==payload.enabled||value.revision<payload.expected_version+1))fail();
- return{schema_version:1,event_id:'hw-2026',enabled:value.enabled,theme:'halloween',xp_multiplier:2,streak_bonus:0.5,
+ return{schema_version:1,event_id:'hw-2026',enabled:value.enabled,theme:'halloween',xp_multiplier:1,streak_bonus:0.5,
   starts_at:null,ends_at:null,revision:value.revision,server_time:value.server_time,
   ...(payload?.action==='configure'?{request_id:payload.request_id}:{})};
 }

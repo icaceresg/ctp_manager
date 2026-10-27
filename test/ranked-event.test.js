@@ -7,7 +7,7 @@ const{createRankedEventClient,rankedEventPayload,rankedEventResponse}=await impo
 const{db}=await import('../server/db.js');
 after(()=>{db.close();assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));assert(path.basename(directory).startsWith('ctp-event-test-'));fs.rmSync(directory,{recursive:true,force:true,maxRetries:5});});
 const admin={id:1,is_admin:true,auth_mode:'ctp',ctp_role:'admin'};
-const snapshot=()=>({schema_version:1,event_id:'hw-2026',enabled:false,theme:'halloween',xp_multiplier:2,streak_bonus:0.5,starts_at:null,ends_at:null,revision:1,server_time:'2026-10-27T12:00:00Z'});
+const snapshot=()=>({schema_version:1,event_id:'hw-2026',enabled:false,theme:'halloween',xp_multiplier:1,streak_bonus:0.5,starts_at:null,ends_at:null,revision:1,server_time:'2026-10-27T12:00:00Z'});
 const request=()=>({action:'configure',expected_version:1,request_id:'26000000-0000-4000-8000-000000000001',reason:'Activate the reviewed Halloween event',enabled:true});
 test('event payload accepts only fixed switches and safe reasons',()=>{
  assert.deepEqual(rankedEventPayload(request()),request());assert.deepEqual(rankedEventPayload({action:'status'}),{action:'status'});
@@ -15,8 +15,17 @@ test('event payload accepts only fixed switches and safe reasons',()=>{
 });
 test('event response validates policy and strips every unagreed field',()=>{
  assert.deepEqual(rankedEventResponse({...snapshot(),secret:'do not expose'}),snapshot());
- for(const mutation of[{enabled:null},{revision:0},{xp_multiplier:99},{streak_bonus:0.6},{theme:'other'},{server_time:'invalid'},{ends_at:'future'}])assert.throws(()=>rankedEventResponse({...snapshot(),...mutation}),error=>error.status===502);
+ for(const mutation of[{enabled:null},{revision:0},{xp_multiplier:2},{xp_multiplier:99},{streak_bonus:0.6},{theme:'other'},{server_time:'invalid'},{ends_at:'future'}])assert.throws(()=>rankedEventResponse({...snapshot(),...mutation}),error=>error.status===502);
  assert.throws(()=>rankedEventResponse({...snapshot(),enabled:true,revision:2,request_id:'26000000-0000-4000-8000-000000000002'},request()),error=>error.status===502);
+});
+
+test('event contract keeps the base win at one and rejects double XP in every flag state',()=>{
+ for(const enabled of[false,true]){
+  const policy={...snapshot(),enabled};
+  assert.equal(rankedEventResponse(policy).xp_multiplier,1);
+  assert.equal(rankedEventResponse(policy).streak_bonus,0.5);
+  assert.throws(()=>rankedEventResponse({...policy,xp_multiplier:2}),error=>error.status===502);
+ }
 });
 test('event client enforces the current CTP admin identity and writes switch',async()=>{
  const calls=[],actorCalls=[];

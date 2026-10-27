@@ -4,8 +4,13 @@ Paired candidate branches: `hw-event` in Manager and ConnectToPlay.
 
 Administration → Integraciones contains the Halloween control. It reads CTP's
 current authoritative flag, displays the revision and explains the winning XP
-tiers: total×2 below five wins, ×4 from five, ×5 from ten. Losses and MMR are
-unchanged. A match freezes its policy when formed.
+tiers: total×1 below five consecutive wins, ×2 from five, ×2.5 from ten,
+including the current win. The event adds 0.5 only to the existing streak tiers:
+1.5→2 and 2→2.5. The base win remains ×1, and the tiers stay fixed rather than
+increasing after each win. A base of 50 XP therefore gives 50, 100 or 125 XP.
+Losses and MMR are unchanged. A match freezes its policy when formed. The
+public DTO must report `xp_multiplier: 1` and `streak_bonus: 0.5`; the Manager
+rejects the previous double-XP policy even while the flag is OFF.
 
 The existing session/admin middleware protects both `/administration/ranked-event`
 routes. The BFF additionally requires a CTP administrator and the existing writes

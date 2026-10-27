@@ -54,8 +54,8 @@ export default function RankedEventPanel({user}){
   {snapshot?<>
    <div className="ranked-event-state"><strong className={snapshot.enabled?'event-on':''}>{snapshot.enabled?'Evento ACTIVO':'Evento DESACTIVADO'}</strong><span>Revisión {snapshot.revision} · {dateTime(snapshot.server_time)}</span></div>
    {stale&&<p className="op-notice">Esta lectura puede estar desactualizada. Actualiza antes de preparar otro cambio.</p>}
-   <dl className="ranked-event-rewards"><div><dt>XP ganada</dt><dd>×2</dd></div><div><dt>Desde 5 victorias</dt><dd>racha ×2 · total ×4</dd></div><div><dt>Desde 10 victorias</dt><dd>racha ×2,5 · total ×5</dd></div></dl>
-   <p className="muted">Solo victorias. La XP perdida y el MMR mantienen sus reglas. Por ejemplo, una victoria de base 50 XP da 100 XP; con cinco victorias consecutivas da 200 XP y con diez da 250 XP.</p>
+   <dl className="ranked-event-rewards"><div><dt>Victoria sin racha bonificada</dt><dd>total ×1</dd></div><div><dt>Desde 5 victorias consecutivas</dt><dd>total ×2</dd></div><div><dt>Desde 10 victorias consecutivas</dt><dd>total ×2,5</dd></div></dl>
+   <p className="muted">La base de victoria se mantiene. El evento añade 0,5 a los tramos de racha: ×1,5 pasa a ×2 desde cinco victorias consecutivas y ×2 pasa a ×2,5 desde diez. Son tramos fijos e incluyen la victoria actual. Una base de 50 XP da 50, 100 o 125 XP, respectivamente. La XP perdida y el MMR mantienen sus reglas.</p>
    <p className="muted">Cada partida guarda la política al formarse. Activar o desactivar afecta a partidas nuevas; no recalcula resultados. La apariencia se actualiza en hasta 30 segundos. El audio necesita consentimiento del jugador.</p>
    <form onSubmit={save} className="stack">
     <label className="op-check"><input type="checkbox" checked={enabled} disabled={busy||stale||uncertain} onChange={event=>setEnabled(event.target.checked)}/> Activar Halloween para las partidas nuevas</label>

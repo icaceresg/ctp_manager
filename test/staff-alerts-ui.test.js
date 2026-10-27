@@ -37,6 +37,18 @@ test('status renders explicit unknown/loading states and never invents zero coun
  assert.doesNotMatch(html,/>Reintentar|>Enviar|PRIVATE|token|destination/);
 });
 
+test('the PRE canary is labelled as a test and links to integrations instead of a fictitious case',()=>{
+ const row={id,event_kind:'staff.canary',resource_kind:'canary',resource_id:other,link_id:other,created_at:date,provider:'telegram',status:'sent',attempts:1,error_code:null};
+ assert.equal(staffAlertPath(row),'/administracion/integraciones');
+ assert.equal(staffAlertPath({...row,event_kind:'ticket.opened'}),null);
+ assert.equal(staffAlertPath({...row,resource_kind:'ticket'}),null);
+ assert.equal(staffAlertPath({...row,resource_id:id}),null);
+ const html=render({...snapshot(),recent:[row]});
+ assert.match(html,/PRE · prueba automática de avisos/);assert.match(html,/Ver integraciones/);
+ assert.match(html,/href="\/administracion\/integraciones"/);
+ assert.doesNotMatch(html,/Abrir partida|Abrir ticket|case=|ranked\/partidas/);
+});
+
 test('panel is administrator-only and offers configuration without provider secrets, test sends or retrying deliveries',()=>{
  const renderPanel=user=>renderToStaticMarkup(createElement(MemoryRouter,null,createElement(views.default,{user,snapshot:snapshot(),onSnapshot(){}})));
  assert.equal(renderPanel({id:2,is_admin:false}),'');

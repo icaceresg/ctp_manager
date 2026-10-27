@@ -54,6 +54,15 @@ test('staff DTO projection removes private extras and preserves complete aggrega
  for(const alter of changes){const invalid=snapshot();alter(invalid);assert.throws(()=>staffAlertsResponse(invalid),error=>error.status===502&&!/PRIVATE|private\.example/.test(error.message));}
 });
 
+test('an audited canary has its own type and reference, without creating a new send action',()=>{
+ const value=snapshot();value.recent[0]={...value.recent[0],event_kind:'staff.canary',resource_kind:'canary',resource_id:other,link_id:other};
+ const projected=staffAlertsResponse(value);assert.equal(projected.recent[0].event_kind,'staff.canary');
+ for(const change of [{resource_kind:'ticket'},{event_kind:'ticket.opened'},{resource_id:uuid}]){
+  const malformed=structuredClone(value);Object.assign(malformed.recent[0],change);assert.throws(()=>staffAlertsResponse(malformed),{status:502});
+ }
+ assert.throws(()=>staffAlertsPayload({action:'canary',request_id:uuid}),{status:400});
+});
+
 test('configuration success requires the exact receipt and requested provider states',()=>{
  const payload=configure(),result={...snapshot(),version:2,request_id:uuid,providers:payload.providers};
  assert.equal(staffAlertsResponse(result,payload).request_id,uuid);

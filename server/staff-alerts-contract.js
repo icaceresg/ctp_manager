@@ -2,7 +2,7 @@ import {HttpError} from './auth.js';
 
 export const STAFF_ALERT_PROVIDERS=Object.freeze(['discord','telegram']);
 export const STAFF_ALERT_STATUSES=Object.freeze(['pending','claimed','dispatching','sent','uncertain','failed','cancelled']);
-export const STAFF_ALERT_EVENTS=Object.freeze(['ticket.opened','ticket.awaiting_staff','ranked.dispute_opened','ranked.player_reported']);
+export const STAFF_ALERT_EVENTS=Object.freeze(['ticket.opened','ticket.awaiting_staff','ranked.dispute_opened','ranked.player_reported','staff.canary']);
 export const STAFF_ALERT_ERRORS=Object.freeze(['rate_limited','provider_unavailable','provider_rejected','configuration_invalid','delivery_uncertain','lease_expired','disabled','max_attempts','event_expired']);
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
@@ -38,8 +38,9 @@ export function staffAlertsResponse(value,payload={action:'status'}){
  const selected=providers(value.providers,incomplete),counts=Object.fromEntries(STAFF_ALERT_STATUSES.map(status=>[status,integer(value.counts[status])]));
  const recent=value.recent.map(row=>{
   if(!object(row))incomplete();
-  const event_kind=choice(row.event_kind,STAFF_ALERT_EVENTS),resource_kind=choice(row.resource_kind,['ticket','ranked_dispute','ranked_report']);
-  if((event_kind.startsWith('ticket.')&&resource_kind!=='ticket')||(event_kind==='ranked.dispute_opened'&&resource_kind!=='ranked_dispute')||(event_kind==='ranked.player_reported'&&resource_kind!=='ranked_report'))incomplete();
+  const event_kind=choice(row.event_kind,STAFF_ALERT_EVENTS),resource_kind=choice(row.resource_kind,['ticket','ranked_dispute','ranked_report','canary']);
+  if((event_kind.startsWith('ticket.')&&resource_kind!=='ticket')||(event_kind==='ranked.dispute_opened'&&resource_kind!=='ranked_dispute')||(event_kind==='ranked.player_reported'&&resource_kind!=='ranked_report')
+    ||(event_kind==='staff.canary'&&(resource_kind!=='canary'||row.resource_id!==row.link_id))||(resource_kind==='canary'&&event_kind!=='staff.canary'))incomplete();
   return{id:id(row.id),event_kind,resource_kind,resource_id:id(row.resource_id),link_id:id(row.link_id),created_at:date(row.created_at),
    provider:choice(row.provider,STAFF_ALERT_PROVIDERS),status:choice(row.status,STAFF_ALERT_STATUSES),attempts:integer(row.attempts,0,5),error_code:row.error_code===null?null:choice(row.error_code,STAFF_ALERT_ERRORS)};
  });

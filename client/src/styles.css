@@ -2513,6 +2513,3 @@ p {
 /* Operational work remains visible; specialist tools keep their role checks. */
 .manager-primary-nav{display:grid;gap:5px;padding-bottom:14px;margin-bottom:8px;border-bottom:1px solid var(--border,#302b20)}
 .manager-primary-nav>a{font-weight:650}
-.manager-more-tools>summary{padding:11px 12px;cursor:pointer;color:var(--muted,#b7afa0);font-size:13px;list-style-position:inside}
-.manager-more-tools[open]>summary{color:var(--text,#f1eee8)}
-.manager-more-tools .manager-nav-group{margin-left:4px}

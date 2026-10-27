@@ -66,18 +66,24 @@ test('Ranked supervision adds Ranked and player workspaces without granting admi
   assert.equal(items.some(item => ['administracion','usuarios','crm','integracion','metrics'].includes(item.id)),false);
 });
 
-test('primary daily navigation preserves every allowed specialist tool once without promoting permissions',()=>{
+test('Inicio and Jugadores stay on top and every other allowed tool sits once in its area group',()=>{
   const all=managerNavigation(()=>true,true,true,true,'localhost');
   const split=splitManagerNavigation(all);
-  assert.deepEqual(split.primary.map(item=>item.id),['jornada','ranked-monitor','incidencias','jugadores']);
+  assert.deepEqual(split.primary.map(item=>item.id),['jornada','jugadores']);
   assert.equal(split.primary[0].title,'Inicio');
-  assert.equal(split.primary[1].title,'Ranked');
-  assert.deepEqual(new Set([...split.primary,...split.secondary].map(item=>item.id)),new Set(all.map(item=>item.id)));
-  assert.equal(split.primary.length+split.secondary.length,all.length);
+  const competition=split.groups.find(group=>group.title==='Competición');
+  assert.deepEqual(competition.items.map(item=>item.id),['ranked-monitor','incidencias','torneos','arbitraje','sanciones','historico']);
+  assert.deepEqual(competition.items.slice(0,2).map(item=>item.title),['Ranked','Tickets']);
+  assert.equal(competition.daily,true,'Competición starts open because it holds Ranked and Tickets');
+  assert.deepEqual(split.groups.filter(group=>group.daily).map(group=>group.title),['Competición']);
+  const grouped=split.groups.flatMap(group=>group.items);
+  assert.deepEqual(grouped,split.secondary);
+  assert.deepEqual(new Set([...split.primary,...grouped].map(item=>item.id)),new Set(all.map(item=>item.id)));
+  assert.equal(split.primary.length+grouped.length,all.length);
   const caster=managerNavigation(section=>section==='casters',false,false,false);
   assert.deepEqual(splitManagerNavigation(caster).primary.map(item=>item.id),['jornada']);
   assert.equal(splitManagerNavigation(caster).secondary.some(item=>['incidencias','jugadores','ranked-monitor'].includes(item.id)),false);
-  assert.deepEqual(splitManagerNavigation(managerNavigation(()=>false,false)),{primary:[],secondary:[]});
+  assert.deepEqual(splitManagerNavigation(managerNavigation(()=>false,false)),{primary:[],secondary:[],groups:[]});
 });
 
 test('coordination receives only delegated user management in addition to its own tools', () => {

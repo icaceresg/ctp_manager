@@ -1,7 +1,7 @@
 import { MatchConversation } from './CaseControls.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
-import { Activity, ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, Clock3, Info, Radio, RefreshCw, Settings2, ShieldCheck, Users } from 'lucide-react';
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Activity, ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, Clock3, Info, Plus, Radio, RefreshCw, Settings2, ShieldCheck, Users } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Modal, Spinner } from '../components/ui.jsx';
@@ -156,6 +156,8 @@ function MatchDossier({ id, data, mutate, can, reload }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState('');
   const [editor, setEditor] = useState(false);
+  const [caseDialog, setCaseDialog] = useState(false);
+  const navigate = useNavigate();
   const missingId = useRef(null);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -194,8 +196,9 @@ function MatchDossier({ id, data, mutate, can, reload }) {
     <section className="op-card"><div className="op-section-title"><h2>Notas de narración</h2>{can('casters') && <button className="btn" onClick={() => setEditor(true)}>Añadir nota</button>}</div>{detail.notes?.length ? <ol className="op-notes">{detail.notes.map((n) => <li key={n.id}><p>{n.text}</p><small>{n.author_name || n.actor_name || 'Staff'} · {dateTime(n.created_at)}</small></li>)}</ol> : <p className="muted">Guarda aquí pronunciaciones, contexto y apuntes para la emisión.</p>}</section>
     </>}
     {section === 'incidents' && <>
-    {can('arbitraje') && <section className="op-card"><h2>Incidencias vinculadas</h2><DataTable rows={detail.incidents || []} columns={[{ key: 'title', title: 'Expediente', render: (i) => <Link to={`/operaciones/incidencias?case=${encodeURIComponent(i.id)}`}>{i.title}</Link> }, { key: 'status', title: 'Estado', render: (i) => <Badge value={i.status} /> }]} empty="Sin incidencias vinculadas" /></section>}
+    {can('arbitraje') && <section className="op-card"><div className="op-section-title"><h2>Incidencias vinculadas</h2><button className="btn" onClick={() => setCaseDialog(true)}><Plus size={15} /> Abrir expediente interno</button></div><DataTable rows={detail.incidents || []} columns={[{ key: 'title', title: 'Expediente', render: (i) => <Link to={`/operaciones/incidencias?case=${encodeURIComponent(i.id)}`}>{i.title}</Link> }, { key: 'status', title: 'Estado', render: (i) => <Badge value={i.status} /> }]} empty="Sin incidencias vinculadas" /></section>}
     </>}
+    {caseDialog && <FormDialog title="Abrir expediente interno" onClose={() => setCaseDialog(false)} submit={async (body) => { const next = await mutate('post', '/incidents', { ...body, match_id: id }); navigate(`/operaciones/incidencias?case=${encodeURIComponent(next.id)}`); }} help="Queda vinculado a este partido. Las notas internas no se envían a jugadores."><Field label="Asunto"><input name="title" required maxLength={160} /></Field><Field label="Qué ha ocurrido"><textarea name="reason" required maxLength={4000} rows={4} /></Field><Field label="Prioridad"><select name="priority"><option value="normal">Normal</option><option value="urgent">Urgente · impide continuar</option></select></Field></FormDialog>}
     {editor && <FormDialog title="Nota para casters" onClose={() => setEditor(false)} submit={(body) => mutate('post', `/matches/${encodeURIComponent(id)}/notes`, body)}><Field label="Nota editorial"><textarea name="text" maxLength={4000} rows={5} required /></Field></FormDialog>}
   </>;
 }

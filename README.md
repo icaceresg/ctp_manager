@@ -24,7 +24,7 @@ Debe mantenerse un único Panel por emisión. Manager no abre otra instancia del
 
 - **Mi jornada:** tareas según rol, turnos propios por confirmar, expedientes y cobertura del equipo.
 - **Planificador:** semana, búsqueda y filtros, candidatos disponibles y turnos. Coordinación puede sustituir o reprogramar con motivo; el servidor comprueba permisos, disponibilidad y solapamientos y pide nueva confirmación al asignado.
-- **Incidencias:** bandeja por responsable, prioridad y estado, búsqueda, notas privadas, conversación CTP y resoluciones.
+- **Tickets** (dentro de Competición, junto a Ranked): solo los tickets que abren los jugadores en CTP, por responsable, prioridad y estado, con búsqueda, notas privadas, conversación CTP y resoluciones. Las disputas de partidos (Ranked, torneo o reto) no aparecen aquí: se revisan desde la partida o la ficha del partido, donde también se abre un expediente interno.
 - **Torneos:** crear y editar, gestionar estados, revisar inscripción y roster, consultar puntos y seed oficiales, generar cruces con el motor CTP, publicar fases y reprogramar partidos. Los cambios quedan como propuestas hasta la confirmación remota.
 - **Estadísticas:** aprobar/rechazar y preparar correcciones justificadas de ocho jugadores, con historial por partido. La corrección crea otra revisión pendiente y exige un revisor distinto; conserva las cifras originales.
 - **Sanciones:** quién está sancionado ahora, cuánto le queda y por qué; buscador de todas las cuentas de CTP con su historial disciplinario; suspensiones temporales (Ranked, retos, inscripción en torneos), amonestaciones con mensaje para el jugador, revocaciones, recursos y levantamiento de bloqueos de Ranked. Se aplican al momento en CTP y el jugador recibe el aviso.

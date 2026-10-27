@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-ticket-contract-'));
 process.env.DATA_DIR = temp; process.env.DB_PATH = path.join(temp, 'ticket.db');
-const { ticketActionPayload, ticketId, ticketThreadResponse } = await import('../server/ticket-contract.js');
+const { ticketActionPayload, ticketId, ticketThreadResponse, ticketProofUrl } = await import('../server/ticket-contract.js');
 const { db } = await import('../server/db.js');
 after(() => { db.close(); fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5 }); });
 
@@ -47,4 +47,29 @@ test('account navigation uses only the typed ticket author, never a name or mess
     const invalid = thread(); invalid.ticket.author.id = bad;
     assert.throws(() => ticketThreadResponse(invalid, id), { status: 502 });
   }
+});
+
+test('proof links allow explicit HTTP navigation without credentials, controls or executable schemes', () => {
+  for (const value of ['https://video.example/clip?id=1#t=20', 'http://video.example/review']) {
+    assert.equal(ticketProofUrl(value), value);
+    const input = thread(); input.ticket.proof_url = value;
+    assert.equal(ticketThreadResponse(input, id).ticket.proof_url, value);
+  }
+  for (const value of ['javascript:alert(1)', 'data:text/html,x', '//evil.example', 'https://user:pass@example.test/x',
+    'https://example.test/\nx', 'https://example.test\\@evil.test', 'https://example.test/ has-space', 'https://example.test/' + 'a'.repeat(2050), null]) {
+    assert.equal(ticketProofUrl(value), null);
+  }
+});
+
+test('write responses require the exact action acknowledgement while reads remain compatible', () => {
+  const payload = ticketActionPayload(id, { action: 'message', value: 'Hola', request_id: req });
+  const input = thread(); input.receipt = { request_id: req, action: 'message', applied_at: '2026-10-26T10:00:00Z', token: 'never-forward' };
+  assert.deepEqual(ticketThreadResponse(input, id, payload).receipt,
+    { request_id: req, action: 'message', applied_at: '2026-10-26T10:00:00Z' });
+  assert.equal(ticketThreadResponse(input, id).receipt, undefined);
+  for (const receipt of [undefined, {}, { ...input.receipt, request_id: id },
+    { ...input.receipt, action: 'assign' }, { ...input.receipt, applied_at: 'invalid' }]) {
+    assert.throws(() => ticketThreadResponse({ ...input, receipt }, id, payload), { status: 502 });
+  }
+  assert.throws(() => ticketThreadResponse({ ...input, ticket: { ...input.ticket, assigned: { id: 'not-an-identity', username: 'staff' } } }, id), { status: 502 });
 });

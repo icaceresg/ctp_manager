@@ -6,7 +6,7 @@ const groups = {
   torneos: 'Competición', incidencias: 'Competición', arbitraje: 'Competición', sanciones: 'Competición', historico: 'Competición',
   casters: 'Emisión y comunidad', realizacion: 'Emisión y comunidad', discord: 'Emisión y comunidad', contenido: 'Emisión y comunidad',
 };
-const titles = { torneos: 'Torneos', incidencias: 'Incidencias', turnos: 'Turnos de staff', casters: 'Dossiers de partidos', realizacion: 'Preparar directo', decisiones: 'Decisiones pendientes' };
+const titles = { jornada: 'Inicio', torneos: 'Torneos', incidencias: 'Incidencias', turnos: 'Turnos de staff', casters: 'Dossiers de partidos', realizacion: 'Preparar directo', decisiones: 'Decisiones pendientes' };
 const aliases = { jornada: 'inicio tareas agenda', incidencias: 'arbitraje árbitro disputa reto expediente soporte ticket', arbitraje: 'partidos actas resultado veto pick ban', sanciones: 'disciplina amonestación amonestar suspensión ban bloqueo castigo jugadores cuentas historial recurso', historico: 'búsqueda partidos pasados', casters: 'narración roster mapas', realizacion: 'emisión streaming obs', decisiones: 'enviar propuestas pendientes' };
 const editorial = [
   { section: 'calendario', to: '/calendario', title: 'Calendario editorial', keywords: 'publicaciones redes' },
@@ -21,7 +21,8 @@ export function managerNavigation(can, isAdmin, staffManager = false, rankedStaf
   }));
   if (can('disponibilidad')) items.splice(items.findIndex(item => item.id === 'jornada') + 1, 0, { id: 'disponibilidad', to: '/disponibilidad', title: 'Mi disponibilidad', group: 'Trabajo diario', keywords: 'agenda días horarios' });
   items.push(...editorial.filter(item => can(item.section)).map(item => ({ ...item, id: item.section, group: 'Contenido editorial' })));
-  if (isAdmin || rankedStaff) items.push({ id: 'ranked-monitor', to: '/ranked/monitor', title: 'Monitor de Ranked · 8s', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización' });
+  if (isAdmin || rankedStaff) items.push({ id: 'ranked-monitor', to: '/ranked/monitor', title: 'Ranked', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización' },
+    { id: 'jugadores', to: '/jugadores', title: 'Jugadores', group: 'Trabajo diario', keywords: 'buscar nickname activision cuenta historial perfil tickets sanciones división xp' });
   if (isAdmin) items.push(
     { id: 'administracion', to: '/administracion/resumen', title: 'Administración CTP', group: 'Administración', keywords: 'jugadores clubes accesos pases mapas campañas ranked integraciones auditoría' },
     { id: 'crm', to: '/crm/resumen', title: 'CRM y correos', group: 'Administración', keywords: 'campañas email newsletter contactos segmentos marketing promocionales transaccionales plantillas fluentcrm' },
@@ -57,7 +58,8 @@ export function managerUserId(value) {
 export function operationReturnPath(value, fallback = '/operaciones/incidencias') {
   if (typeof value !== 'string' || value.length > 1600 || /[\\\u0000-\u001f\u007f]/.test(value)) return fallback;
   const path = value.split(/[?#]/)[0];
-  return path === '/operaciones/incidencias' || path === '/ranked/monitor'
+  return path === '/operaciones/incidencias' || path === '/operaciones/jornada' || path === '/ranked/monitor' || path === '/jugadores'
+    || new RegExp(`^/jugadores/${UUID.source.slice(1,-1)}$`, 'i').test(path)
     || new RegExp(`^/ranked/partidas/${UUID.source.slice(1, -1)}$`, 'i').test(path) ? value : fallback;
 }
 export function userProfileEditPath(userId, returnTo) {
@@ -71,4 +73,16 @@ export function rankedIncidentPath(incident, returnTo) {
   if (incident?.source !== 'ctp' || incident.kind !== 'ranked' || !managerUserId(incident.match_id)) return null;
   const params = new URLSearchParams({ focus: 'decision', returnTo: operationReturnPath(returnTo) });
   return `/ranked/partidas/${incident.match_id}?${params}`;
+}
+
+/** Keep daily work visible while retaining every authorized specialist tool. */
+export function splitManagerNavigation(items) {
+  const order=['jornada','ranked-monitor','incidencias','jugadores'];
+  return {primary:order.flatMap(id=>items.filter(item=>item.id===id)),secondary:items.filter(item=>!order.includes(item.id))};
+}
+
+export function playerWorkspacePath(userId,returnTo){
+ const id=managerUserId(userId);if(!id)return null;
+ const params=new URLSearchParams();if(returnTo)params.set('returnTo',operationReturnPath(returnTo,'/jugadores'));
+ return `/jugadores/${id}${params.size?'?'+params:''}`;
 }

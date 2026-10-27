@@ -1,5 +1,7 @@
 import { HttpError } from './auth.js';
 import { OFFICIAL_CASE_STATUSES } from './case-contract.js';
+import { ticketProofUrl } from '../shared/ticket-proof.js';
+export { ticketProofUrl } from '../shared/ticket-proof.js';
 
 export const TICKET_ACTIONS = Object.freeze(['message','assign','status']);
 // Fixed machine codes from manager_ticket_action; never relay SQL text.
@@ -40,14 +42,21 @@ export function ticketActionPayload(id, body = {}) {
 }
 
 /** The thread is bounded and typed before the browser sees it. */
-export function ticketThreadResponse(value, id) {
+export function ticketThreadResponse(value, id, expectedAction = null) {
   const invalid = () => { throw new HttpError(502, 'CTP ha devuelto una incidencia no válida.'); };
   if (!object(value) || !object(value.ticket) || value.ticket.id !== id || !Array.isArray(value.messages) || !Array.isArray(value.events)
     || value.messages.length > 300 || value.events.length > 300) invalid();
   const t = value.ticket, author = t.author;
   if (!text(t.code, 64) || !OFFICIAL_CASE_STATUSES.includes(t.status) || !text(t.description, 20000) || !object(author) || typeof author.id !== 'string' || !UUID.test(author.id) || !text(author.username, 100)
     || !nullable(author.email, 320) || !nullable(author.gamertag, 100) || !nullable(author.activision_id, 40)
-    || t.assigned !== null && (!object(t.assigned) || !text(t.assigned.username, 100))) invalid();
+    || t.assigned !== null && (!object(t.assigned) || typeof t.assigned.id !== 'string' || !UUID.test(t.assigned.id) || !text(t.assigned.username, 100))) invalid();
+  let receipt;
+  if (expectedAction) {
+    const r = value.receipt;
+    if (!object(r) || r.request_id !== expectedAction.request_id || r.action !== expectedAction.action
+      || typeof r.applied_at !== 'string' || r.applied_at.length > 64 || !Number.isFinite(Date.parse(r.applied_at))) invalid();
+    receipt = { request_id: r.request_id, action: r.action, applied_at: r.applied_at };
+  }
   const messages = value.messages.map(m => {
     if (!object(m) || !text(m.id, 64) || typeof m.is_staff !== 'boolean' || !text(m.body, 5000) || !text(m.created_at, 64) || !nullable(m.author_name, 100)) invalid();
     return { id: m.id, author_id: m.author_id, author_name: m.author_name ?? null, is_staff: m.is_staff, body: m.body, created_at: m.created_at };
@@ -58,11 +67,12 @@ export function ticketThreadResponse(value, id) {
   });
   return {
     ticket: { id: t.id, code: t.code, type: t.type, status: t.status, priority: t.priority, description: t.description,
-      proof_url: typeof t.proof_url === 'string' && /^https:\/\//.test(t.proof_url) ? t.proof_url : null, resolution: t.resolution ?? null,
+      proof_url: ticketProofUrl(t.proof_url), resolution: t.resolution ?? null,
       created_at: t.created_at, updated_at: t.updated_at, tournament_match_id: t.tournament_match_id ?? null, challenge_id: t.challenge_id ?? null,
       author: { id: author.id, username: author.username, gamertag: author.gamertag ?? null, activision_id: author.activision_id ?? null, email: author.email ?? null },
       assigned: t.assigned ? { id: t.assigned.id, username: t.assigned.username } : null },
     messages, events, can_change_status: value.can_change_status === true,
     viewer_id: typeof value.viewer_id === 'string' && UUID.test(value.viewer_id) ? value.viewer_id : null,
+    ...(receipt ? { receipt } : {}),
   };
 }

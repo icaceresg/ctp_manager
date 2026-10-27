@@ -23,6 +23,9 @@ import {
   userDeletePayload, userDeleteResponse,
 } from './discipline-contract.js';
 import { collectRegisteredPlayers } from './ruleta-contract.js';
+import {createPlayerWorkspaceReader} from './player-workspace-client.js';
+import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
+import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -164,6 +167,33 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
         body: serialized,
       });
       if (!response.ok) {
+        if (body.action === 'player_workspace' && [400, 404].includes(response.status)
+          && /^application\/json\b/i.test(response.headers.get('content-type') || '')) {
+          // Only exact reader codes with their matching status retain query
+          // semantics. Unknown bodies keep the existing generic fallback.
+          const reader = response.body?.getReader();
+          let code = null;
+          if (reader) {
+            try {
+              const chunks = []; let bytes = 0;
+              for (;;) {
+                const part = await reader.read(); if (part.done) break;
+                bytes += part.value.byteLength;
+                if (bytes > 8192) throw new Error('bounded_query_error');
+                chunks.push(Buffer.from(part.value));
+              }
+              const failure = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+              const expected = response.status === 404 ? 'player_workspace_not_found' : 'player_workspace_invalid';
+              if (failure?.ok === false && failure.code === expected) code = expected;
+            } catch { /* SQL messages and malformed bodies are never relayed. */ }
+            finally { await reader.cancel().catch(() => {}); }
+          }
+          if (code) {
+            const error = integrationError(response.status, PLAYER_WORKSPACE_ERRORS[code]);
+            error.remoteRejected = true;
+            throw error;
+          }
+        }
         const ownerFailure = await ownerServiceFailure(body, response);
         if (ownerFailure) throw ownerFailure;
         await response.body?.cancel().catch(() => {});
@@ -269,6 +299,7 @@ let activeSync = null;
 const sending = new Set();
 const config = integrationConfig();
 const request = createOperationsTransport(config);
+const staffAlertsService=createStaffAlertsClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 setIntegrationStatus({ configured: config.configured, write_enabled: config.configured && config.writes, local_test_mode: config.localTestMode === true, web_origin: webOrigin() });
 
 export function integrationStatus() {
@@ -559,6 +590,7 @@ export async function getAdministrationData(user, query = {}) {
 }
 
 export async function getAdministrationService(user, service, payload) {
+  if(service==='staff_alerts')return staffAlertsService(user,payload);
   if (!user?.is_admin) throw integrationError(403, 'Esta sección requiere administración CTP.');
   if (!['twitch','push','image','crm'].includes(service)) throw integrationError(400, 'Servicio no admitido.');
   const read = service === 'crm' ? crmIsRead(payload?.action) : service === 'push' || payload?.action === 'status';
@@ -624,8 +656,8 @@ export async function ticketAction(user, id, body) {
   if (!canReferee(user)) throw integrationError(403, 'Necesitas acceso de arbitraje.');
   if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   const payload = ticketActionPayload(id, body);
-  const thread = ticketThreadResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tickets', payload }), payload.ticket_id);
-  rememberTicketThread(thread, payload.action === 'status' ? null : user);
+  const thread = ticketThreadResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tickets', payload }), payload.ticket_id, payload);
+  rememberTicketThread(thread);
   return thread;
 }
 
@@ -703,3 +735,6 @@ export function startOperationsSync() {
   timer.unref();
   return timer;
 }
+
+// Read-only player context shares the authenticated caller and the HMAC bridge.
+export const getPlayerWorkspace=createPlayerWorkspaceReader({request,actorFor:user=>getOperatorIdentity(user.id)});

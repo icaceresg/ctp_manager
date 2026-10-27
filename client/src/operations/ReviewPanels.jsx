@@ -1,11 +1,11 @@
 import { OfficialIncidentStatus } from './CaseControls.jsx';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, FileCheck2, Info, LockKeyhole, Plus } from 'lucide-react';
+import { ArrowLeft, FileCheck2, Info, LockKeyhole } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Modal } from '../components/ui.jsx';
-import { AuditList, Badge, Field, FormDialog, MatchLink, SelectMatch } from './ui.jsx';
+import { AuditList, Badge, Field, FormDialog, MatchLink } from './ui.jsx';
 import { dateTime, label } from './model.js';
 import { IncidentInbox } from './IncidentInbox.jsx';
 import { elapsedLabel, incidentNextAction } from './staffModel.js';
@@ -40,11 +40,11 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
   const officialTicket = incident?.source === 'ctp' && incident.kind !== 'ranked';
   const rankedIncident = incident?.source === 'ctp' && incident.kind === 'ranked';
   return <>
-    <div className="op-section-title"><div><h2>Incidencias y arbitraje</h2><p>Un expediente por problema, con responsable, contexto y seguimiento.</p></div><button className="btn primary" onClick={() => setDialog('new')} disabled={!data.matches.length}><Plus size={16} /> Abrir expediente</button></div>
+    <div className="op-section-title"><div><h2>Bandeja de tickets</h2><p>Consultas que abren los jugadores en CTP. Las disputas de partidos se revisan desde cada partida.</p></div></div>
     {selected ? <>
-      <button className="btn op-back" onClick={() => choose(null)}><ArrowLeft size={15} /> Todas las incidencias</button>
+      <button className="btn op-back" onClick={() => choose(null)}><ArrowLeft size={15} /> Todos los tickets</button>
       {error && <p className="op-error" role="alert">{error}</p>}
-      {incident && <section className="op-card op-case-focus"><div className="op-section-title"><div><div className="op-eyebrow">EXPEDIENTE · {incident.id.slice(0, 8)}</div><h2>{incident.title}</h2></div><div className="op-actions"><Badge value={incident.status} /><button className="btn ghost icon sm" aria-label="Información del expediente" title="Información del expediente" onClick={() => setInfoOpen(true)}><Info size={17} /></button></div></div>
+      {incident && <section className="op-card op-case-focus"><div className="op-section-title"><div><div className="op-eyebrow">{officialTicket && !incident.match_id ? 'TICKET' : 'EXPEDIENTE'} · {incident.id.slice(0, 8)}</div><h2>{incident.title}</h2></div><div className="op-actions"><Badge value={incident.status} /><button className="btn ghost icon sm" aria-label="Información del expediente" title="Información del expediente" onClick={() => setInfoOpen(true)}><Info size={17} /></button></div></div>
         <p className="op-text op-case-reason">{incident.reason}</p>
         {rankedPath && <div className="op-case-actions"><Link className="btn primary" to={rankedPath}><FileCheck2 size={15} /> Abrir partida y resolver</Link><span className="muted">Revisa equipos, resultado y chat antes de elegir una decisión.</span></div>}
         <div className="op-case-essentials"><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} />{incident.reporter_name && <span>Creada por <strong>{incident.reporter_name}</strong></span>}<span>{incident.assigned_name || data.staff.find((s) => s.id === incident.assignee_id)?.name || 'Sin asignar'}</span>{incident.awaiting_staff && <strong className="op-urgent">Nuevo mensaje</strong>}{incident.priority === 'urgent' && <strong className="op-urgent">Urgente</strong>}</div>
@@ -65,7 +65,6 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
     </> : <>
       <IncidentInbox data={data} me={me} params={params} setParams={setParams} choose={choose} />
     </>}
-    {dialog === 'new' && <FormDialog title="Abrir expediente interno" onClose={() => setDialog(null)} submit={async (body) => { const next = await mutate('post', '/incidents', body); choose(next.id); }} help="Queda vinculado al partido. Las notas internas no se envían a jugadores."><Field label="Partido"><SelectMatch matches={data.matches} /></Field><Field label="Asunto"><input name="title" required maxLength={160} /></Field><Field label="Qué ha ocurrido"><textarea name="reason" required maxLength={4000} rows={4} /></Field><Field label="Prioridad"><select name="priority"><option value="normal">Normal</option><option value="urgent">Urgente · impide continuar</option></select></Field></FormDialog>}
     {dialog === 'manage' && editing && <FormDialog title={editing.source === 'ctp' && editing.kind !== 'ranked' ? 'Prioridad interna del expediente' : 'Seguimiento del expediente'} onClose={() => setDialog(null)} submit={(body) => update(editing.source === 'ctp' && editing.kind !== 'ranked' ? { priority: body.priority } : { ...body, assignee_id: body.assignee_id ? Number(body.assignee_id) : null }, editing)}>{!(editing.source === 'ctp' && editing.kind !== 'ranked') && <><Field label="Estado"><select name="status" defaultValue={editing.status}><option value="open">Abierta</option><option value="investigating">En investigación</option><option value="waiting">Esperando respuesta</option></select></Field><Field label="Responsable"><select name="assignee_id" defaultValue={editing.assignee_id || ''}><option value="">Sin asignar</option>{data.staff.filter((s) => s.is_admin || s.sections?.includes('arbitraje')).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field></>}<Field label="Prioridad"><select name="priority" defaultValue={editing.priority}><option value="normal">Normal</option><option value="urgent">Urgente</option></select></Field></FormDialog>}
     {dialog === 'note' && editing && <FormDialog title="Nota de seguimiento" onClose={() => setDialog(null)} submit={(body) => mutate('post', `/incidents/${encodeURIComponent(editing.id)}/notes`, { ...body, expected_version: editing.version })} help={editing.source === 'ctp' && editing.kind !== 'ranked' ? 'Estas notas son internas y solo las ve arbitraje. Para responder al jugador, usa el chat del ticket.' : 'Las notas internas solo las ve arbitraje. Una respuesta enviada a CTP respeta los destinatarios del hilo original: autor y staff en tickets, participantes en ranked.'}><Field label="Visibilidad"><select name="visibility"><option value="internal">Solo arbitraje · interna</option>{editing.source !== 'manager' && !(editing.source === 'ctp' && editing.kind !== 'ranked') && <option value="participants">Preparar respuesta en CTP</option>}</select></Field><Field label="Nota"><textarea name="text" required maxLength={editing.kind === 'ranked' ? 800 : 2000} rows={5} /></Field></FormDialog>}
     {dialog === 'resolve' && editing && <ResolutionDialog incident={editing} match={data.matches.find((m) => m.id === editing.match_id)} mutate={mutate} onClose={() => setDialog(null)} />}

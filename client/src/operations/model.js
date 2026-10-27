@@ -7,8 +7,9 @@ export const OP_TABS = [
   { id: 'jornada', title: 'Mi jornada', sections: OP_SECTIONS },
   { id: 'turnos', title: 'Planificador', sections: ['operaciones', 'casters', 'arbitraje', 'realizacion'] },
   { id: 'decisiones', title: 'Decisiones', sections: OP_SECTIONS },
+  // Tickets keeps its /operaciones/incidencias route so existing links still work.
+  { id: 'incidencias', title: 'Tickets', sections: ['arbitraje'] },
   { id: 'torneos', title: 'Torneos', sections: ['operaciones'] },
-  { id: 'incidencias', title: 'Incidencias', sections: ['arbitraje'] },
   { id: 'arbitraje', title: 'Actas y resultados', sections: ['arbitraje'] },
   { id: 'estadisticas', title: 'Estadísticas', sections: ['arbitraje'], menu: false },
   { id: 'sanciones', title: 'Sanciones', sections: ['arbitraje'] },

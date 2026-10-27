@@ -8,7 +8,7 @@ import { performance } from 'node:perf_hooks';
 const folder=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-workspace-'));
 process.env.DATA_DIR=folder;process.env.DB_PATH=path.join(folder,'workspace.db');
 const {db}=await import('../server/db.js');
-const {ingestSnapshot,bootstrap,matchDossier,statisticsDetail}=await import('../server/operations.js');
+const {ingestSnapshot,bootstrap,matchDossier,statisticsDetail,createIncident}=await import('../server/operations.js');
 const {operationsWorkspace}=await import('../server/operations-workspace.js');
 const {describeUser}=await import('../server/auth.js');
 const adminId=Number(db.prepare("INSERT INTO users(username,name,password_hash,is_admin,created_at) VALUES('workspace-admin','Admin','not-a-login',1,?)").run(Date.now()).lastInsertRowid);
@@ -17,8 +17,10 @@ const caster={id:adminId,is_admin:false,sections:['casters']};
 const referee={id:adminId,is_admin:false,sections:['arbitraje']};
 const players=Array.from({length:8},(_,index)=>({id:`player-${index}`,username:`Player ${index}`,side:index<4?'a':'b',kills:21,deaths:10,assists:3,score:3000}));
 const matches=Array.from({length:1007},(_,index)=>({id:`match-${String(index).padStart(4,'0')}`,kind:'tournament',title:index===1006?'Águilas Únicas':'Circuito CTP',status:'scheduled',scheduled_at:'2026-10-19T18:00:00Z',version:1,team_a:{id:'a',name:'Alpha'},team_b:{id:'b',name:'Beta'},roster:players,maps:[{name:'Map one',mode:'Hardpoint'}],statistics:[{id:`approved-${index}`,status:'approved',players}]}));
-const incidents=Array.from({length:1007},(_,index)=>({id:`case-${String(index).padStart(4,'0')}`,match_id:matches[index].id,title:index===1006?'Búsqueda única':'Revisión del resultado',reason:'Long private investigation context '.repeat(100),status:index%2?'resolved':'open',priority:index%5===0?'urgent':'normal',created_at:Date.now()-index*1000,version:1}));
+// Tickets from CTP have no match; one tournament dispute stays linked to its match.
+const incidents=Array.from({length:1007},(_,index)=>({id:`case-${String(index).padStart(4,'0')}`,match_id:null,kind:'support',title:index===1006?'Búsqueda única':'Revisión del resultado',reason:'Long private investigation context '.repeat(100),status:index%2?'resolved':'open',priority:index%5===0?'urgent':'normal',created_at:Date.now()-index*1000,version:1}));
 const stats=matches.map((match,index)=>({id:`stats-${String(index).padStart(4,'0')}`,match_id:match.id,status:index%2?'approved':'pending',players,version:1,map_name:'Hardpoint'}));
+incidents.push({id:'dispute-1006',match_id:matches[1006].id,kind:'tournament',title:'Disputa del resultado',reason:'Resultado en disputa',status:'open',priority:'urgent',created_at:Date.now(),version:1});
 ingestSnapshot({matches,incidents,stats,clubs:[],deliveries:[]});
 after(()=>{db.close();assert.ok(path.resolve(folder).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(folder,{recursive:true,force:true,maxRetries:5});});
 const measured=fn=>{const prepare=db.prepare;let calls=0;db.prepare=function(...args){calls++;return prepare.apply(this,args);};const start=performance.now();try{const value=fn();return{value,calls,ms:performance.now()-start,bytes:Buffer.byteLength(JSON.stringify(value))};}finally{db.prepare=prepare;}};
@@ -106,4 +108,17 @@ test('weekly matches and assignments have independent pages and coverage counts 
   const missing=operationsWorkspace(admin,{view:'turnos',week:'2026-10-19',coverage:'missing'});
   assert.equal(missing.pages.matches.total,504);assert.ok(missing.match_page_ids.every(id=>missing.coverage[id].referee.confirmed===0));
   const closed=operationsWorkspace(admin,{view:'turnos',week:'2026-10-26'});assert.equal(closed.pages.assignments.total,0);assert.equal(closed.pages.matches.total,0);
+});
+
+test('Tickets lists only CTP tickets; match disputes and internal match cases stay with their match',()=>{
+  ingestSnapshot({incidents:[{id:'ranked-dispute',match_id:'lobby-0001',kind:'ranked',title:'Disputa ranked',reason:'El otro equipo no se presentó',status:'abierto',created_at:Date.now(),version:1}]});
+  const internal=createIncident(referee,{match_id:matches[0].id,title:'Expediente interno',reason:'Revisar conexión',priority:'normal'});
+  const tickets=operationsWorkspace(referee,{view:'incidencias',state:'all',limit:'100'});
+  assert.equal(tickets.pages.incidents.total,1007);
+  assert.ok(tickets.incidents.every(row=>row.source==='ctp'&&!row.match_id));
+  assert.equal(tickets.incident_counts.all_open,504,'open disputes and internal cases are not counted as tickets');
+  for(const id of ['ranked-dispute','dispute-1006',internal.id])assert.equal(operationsWorkspace(referee,{view:'incidencias',state:'all',q:id}).pages.incidents.total,0,id);
+  // Inicio still surfaces them, so an open dispute is never lost.
+  assert.deepEqual(operationsWorkspace(referee,{view:'jornada',q:'ranked-dispute'}).incidents.map(row=>row.id),['ranked-dispute']);
+  assert.equal(matchDossier(referee,matches[0].id).incidents.some(row=>row.id===internal.id),true);
 });

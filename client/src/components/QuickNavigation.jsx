@@ -43,7 +43,7 @@ export function QuickNavigation({ items }) {
   const close = () => {search.current.cancel();setOpen(false);setRemote(null);};
   const firstRemote=['players','tickets','lobby'].find(kind=>current[kind].status==='ready'&&current[kind].items.length);
   return <>
-    <button type="button" className="manager-search-button" onClick={() => { setQuery(''); setRemote(null);setOpen(true); }} aria-label="Buscar jugadores, incidencias, partidas o herramientas"><Search size={16} /><span>Buscar…</span><kbd>Ctrl K</kbd></button>
+    <button type="button" className="manager-search-button" onClick={() => { setQuery(''); setRemote(null);setOpen(true); }} aria-label="Buscar jugadores, tickets, partidas o herramientas"><Search size={16} /><span>Buscar…</span><kbd>Ctrl K</kbd></button>
     {open && createPortal(<Modal title="¿Qué necesitas hacer?" onClose={close}>
       <form className="manager-tool-search" onSubmit={event => { event.preventDefault(); document.getElementById('manager-first-result')?.click(); }}>
         <label htmlFor="manager-tool-query">Buscar jugador, incidencia, ID de partida o herramienta</label>
@@ -60,11 +60,11 @@ export function QuickNavigation({ items }) {
         {!results.length && <p role="status">No hay herramientas que coincidan. Prueba otro nombre.</p>}
       </div>
       {current.error&&<p role="alert">{current.error}</p>}
-      {normalized!==null&&normalized.length<2&&<p role="status">Escribe al menos dos caracteres para buscar personas e incidencias. Aquí se muestran hasta cinco herramientas de tu cuenta.</p>}
+      {normalized!==null&&normalized.length<2&&<p role="status">Escribe al menos dos caracteres para buscar personas y tickets. Aquí se muestran hasta cinco herramientas de tu cuenta.</p>}
       {normalized!==null&&normalized.length>=2&&<>
         <QuickSearchGroup title="Jugadores CTP" state={current.players} onClose={close} firstId={!results.length&&firstRemote==='players'?'manager-first-result':undefined}/>
-        <QuickSearchGroup title="Incidencias" state={current.tickets} onClose={close} firstId={!results.length&&firstRemote==='tickets'?'manager-first-result':undefined}/>
-        <p className="muted">Incidencias: búsqueda en copias sincronizadas y registros locales del Manager; no consulta todos los tickets en directo.</p>
+        <QuickSearchGroup title="Tickets" state={current.tickets} onClose={close} firstId={!results.length&&firstRemote==='tickets'?'manager-first-result':undefined}/>
+        <p className="muted">Tickets: búsqueda en la copia sincronizada de CTP; no consulta todos los tickets en directo.</p>
         <QuickSearchGroup title="Partida por ID" state={current.lobby} onClose={close} firstId={!results.length&&firstRemote==='lobby'?'manager-first-result':undefined}/>
         {['players','tickets','lobby'].some(kind=>['error','session'].includes(current[kind].status))&&<button type="button" className="btn" onClick={()=>setRetry(value=>value+1)}>Reintentar búsqueda</button>}
       </>}

@@ -48,9 +48,7 @@ export function Layout() {
     return () => window.removeEventListener('keydown', close);
   }, [menuOpen]);
   const items = [...managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname), ruletaNavigation(window.location.hostname)];
-  const {primary,secondary}=splitManagerNavigation(items);
-  const groups = [...new Set(secondary.map(item => item.group))];
-  const secondaryActive=secondary.some(item=>item.to&&location.pathname===item.to);
+  const {primary,groups}=splitManagerNavigation(items);
   const navItem=item=>{const Icon=ICONS[item.id]||ListChecks;return item.href?<a key={item.id} href={item.href} target="_blank" rel="noopener"><Icon size={17}/><span>{item.title}</span></a>:<NavLink key={item.id} to={item.to}><Icon size={17}/><span>{item.title}</span>{item.id==='recursos'&&<PendingBadge/>}</NavLink>;};
   const roleNames = me.is_admin ? 'Administrador' : me.roles.map((r) => r.name).join(' · ') || 'Sin rol';
 
@@ -68,12 +66,9 @@ export function Layout() {
         <button type="button" className="mobile-nav-toggle" aria-label={menuOpen ? 'Cerrar menú del Manager' : 'Abrir menú del Manager'} aria-controls="manager-main-nav" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><Menu size={20} /></button>
         <nav id="manager-main-nav" className={`nav ${menuOpen ? 'is-open' : ''}`} aria-label="Navegación principal">
           <div className="manager-primary-nav" aria-label="Trabajo principal">{primary.map(navItem)}</div>
-          {secondary.length>0&&<details className="manager-more-tools" open={secondaryActive}>
-            <summary>Más herramientas</summary>
-            {groups.map(group=><details key={group} className="manager-nav-group" open={secondary.some(item=>item.group===group&&location.pathname===item.to)}>
-              <summary>{group}</summary>{secondary.filter(item=>item.group===group).map(navItem)}
-            </details>)}
-          </details>}
+          {groups.map(group=><details key={group.title} className="manager-nav-group" open={group.daily||group.items.some(item=>item.to&&location.pathname===item.to)}>
+            <summary>{group.title}</summary>{group.items.map(navItem)}
+          </details>)}
         </nav>
         {can('calendario') && ['/calendario','/recursos','/operaciones/contenido'].some(path=>location.pathname.startsWith(path)) && <button className="btn block sidebar-new" onClick={() => openContent()}><Plus size={16} /> Nueva publicación</button>}
         <div className="sidebar-footer">

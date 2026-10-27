@@ -6,6 +6,7 @@ import {useApp} from '../context.jsx';
 import {Spinner} from '../components/ui.jsx';
 import {Badge,Empty} from '../operations/ui.jsx';
 import {dateTime} from '../operations/model.js';
+import {readWholeChat} from '../operations/chatHistory.js';
 import {canManageRanked} from '../../../shared/access.js';
 import {ModeTag,RankTag} from './RankedTags.jsx';
 import {BAN_DURATIONS,reportReasonLabel} from './rankedLabels.js';
@@ -110,26 +111,31 @@ function RankedBan({lobby,players,onApplied,preset}){
   </form>
  </section>;
 }
+const byChatId=(a,b)=>{const x=BigInt(a.id),y=BigInt(b.id);return x<y?-1:x>y?1:0;};
 export default function RankedLobbyPage(){
  const {me}=useApp(),{lobbyId}=useParams();
  const [params]=useSearchParams(),returnTo=operationReturnPath(params.get('returnTo'),'/ranked/monitor'),focusDecision=params.get('focus')==='decision';
  const allowed=canManageRanked(me),actorKey=`${me?.id}:${me?.ctp_user_id||''}:${me?.ctp_role||''}`,scope=`${actorKey}:${lobbyId}`;
- const [loaded,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[before,setBefore]=useState(null);
+ const [loaded,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const data=loaded?.request_scope===scope&&loaded.lobby?.id===lobbyId?loaded:null;
  const [draft,setDraft]=useState(''),[sending,setSending]=useState(false),[sendError,setSendError]=useState(''),[sent,setSent]=useState(false),[banPreset,setBanPreset]=useState(null);
  const pendingMessage=useRef(null),sendInFlight=useRef(false),currentScope=useRef(scope);currentScope.current=scope;
- const serial=useRef(0),inFlight=useRef(false),chatBox=useRef(null),scrollToLatest=useRef(true);
+ const serial=useRef(0),inFlight=useRef(false),chatBox=useRef(null),scrollToLatest=useRef(true),chatHistory=useRef(null);
  const validId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lobbyId||'');
  const load=useCallback(async()=>{
   if(!allowed||!validId||inFlight.current)return;
   inFlight.current=true;const request=++serial.current;setBusy(true);
-  const box=chatBox.current;scrollToLatest.current=!before&&(!box||box.scrollHeight-box.scrollTop-box.clientHeight<80);
-  try{const next=await api.get(`/operations/ranked/lobbies/${encodeURIComponent(lobbyId)}${before?'?before='+encodeURIComponent(before):''}`);if(serial.current===request&&currentScope.current===scope){setData({...next,request_scope:scope});setError('');}}
+  const box=chatBox.current;scrollToLatest.current=!box||box.scrollHeight-box.scrollTop-box.clientHeight<80;
+  try{
+   // The whole chat is shown: older pages are read automatically.
+   const known=chatHistory.current?.scope===scope?chatHistory.current:null;
+   const read=await readWholeChat(async cursor=>{const value=await api.get(`/operations/ranked/lobbies/${encodeURIComponent(lobbyId)}${cursor?'?before='+encodeURIComponent(cursor):''}`);return{value,messages:value.chat.messages,next:value.chat.has_more?value.chat.next_before:null};},byChatId,known);
+   if(serial.current===request&&currentScope.current===scope){chatHistory.current={scope,messages:read.messages,complete:read.complete};setData({...read.value,chat:{...read.value.chat,messages:read.messages,complete:read.complete},request_scope:scope});setError('');}
+  }
   catch(cause){if(serial.current===request&&currentScope.current===scope){setError(cause.message);if([401,403,404].includes(cause.status))setData(null);}}
   finally{if(serial.current===request){inFlight.current=false;setBusy(false);}}
- },[allowed,actorKey,lobbyId,before,validId]);
+ },[allowed,scope,lobbyId,validId]);
  useEffect(()=>{setData(null);setError('');void load();return()=>{++serial.current;inFlight.current=false;};},[load]);
- useEffect(()=>{setBefore(null);},[lobbyId]);
  useEffect(()=>{currentScope.current=scope;setDraft('');setSendError('');setSent(false);setSending(false);pendingMessage.current=null;sendInFlight.current=false;return()=>{currentScope.current=null;};},[scope]);
  useEffect(()=>{const visible=()=>{if(!document.hidden)void load();};const timer=setInterval(visible,15000);document.addEventListener('visibilitychange',visible);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',visible);};},[load]);
  useEffect(()=>{if(scrollToLatest.current&&chatBox.current)chatBox.current.scrollTop=chatBox.current.scrollHeight;},[data]);
@@ -145,15 +151,15 @@ export default function RankedLobbyPage(){
    const receipt=await api.post(`/operations/ranked/lobbies/${encodeURIComponent(lobbyId)}/chat`,{message:input.message,request_id:input.request_id});
    if(currentScope.current!==originScope)return;
    if(receipt?.lobby_id!==lobbyId||receipt.request_id!==input.request_id||receipt.message?.message!==message||receipt.message.is_system!==false)throw new Error('No se ha podido verificar la confirmación del mensaje.');
-   pendingMessage.current=null;setDraft('');setSent(true);setBefore(null);scrollToLatest.current=true;
+   pendingMessage.current=null;setDraft('');setSent(true);scrollToLatest.current=true;
    // A verified receipt is real data. Retire reads started before this write.
    ++serial.current;inFlight.current=false;setBusy(false);
    setData(previous=>{
-    if(!previous||previous.lobby.id!==lobbyId||before)return previous;
-    const all=[...previous.chat.messages.filter(item=>item.id!==receipt.message.id),receipt.message].sort((a,b)=>BigInt(a.id)<BigInt(b.id)?-1:1),messages=all.slice(-50),has_more=previous.chat.has_more||all.length>50;
-    return{...previous,chat:{...previous.chat,messages,has_more,next_before:has_more?messages[0].id:null}};
+    if(!previous||previous.lobby.id!==lobbyId)return previous;
+    const messages=[...previous.chat.messages.filter(item=>item.id!==receipt.message.id),receipt.message].sort(byChatId);
+    return{...previous,chat:{...previous.chat,messages}};
    });
-   if(!before)void load();
+   void load();
   }catch(cause){if(currentScope.current===originScope){setSendError(cause.message||'No se ha confirmado el envío. Reintenta para comprobarlo sin duplicarlo.');if([401,403,404].includes(cause.status)){setData(null);setDraft('');pendingMessage.current=null;}}}
   finally{if(currentScope.current===originScope){sendInFlight.current=false;setSending(false);}}
  }
@@ -177,11 +183,12 @@ export default function RankedLobbyPage(){
     {result.resolution_truncated&&<p className="muted rl-caption">La resolución es extensa. Se muestran sus primeros 2.000 caracteres.</p>}
     <dl className="rl-times"><div><dt>Votos disponibles desde</dt><dd>{result.opens_at?dateTime(result.opens_at):'—'}</dd></div><div><dt>Decisión de la votación</dt><dd>{result.decides_at?dateTime(result.decides_at):'Sin primer voto'}</dd></div><div><dt>Suspensión sin votos</dt><dd>{result.suspends_at?dateTime(result.suspends_at):'—'}</dd></div></dl>
    </section>
-   {data.can_decide&&!['closed','cancelled'].includes(lobby.status)&&<RankedDecision key={scope} lobby={lobby} players={data.players} onApplied={()=>{if(currentScope.current!==scope)return;setBefore(null);void load();}}/>}
+   {data.can_decide&&!['closed','cancelled'].includes(lobby.status)&&<RankedDecision key={scope} lobby={lobby} players={data.players} onApplied={()=>{if(currentScope.current!==scope)return;void load();}}/>}
    <section className="rl-teams" aria-label="Equipos de la partida">{['a','b',null].map(side=>{const players=data.players.filter(p=>p.side===side);if(side===null&&!players.length)return null;return <article key={side||'pending'} className={`op-card rl-team team-${side||'pending'}`}><h2><Users size={18}/> {team(side)} <span className="muted">{players.length}</span></h2>{players.length?<ol>{players.map(player=><li key={player.slot}><span className="rl-player"><strong>{player.username||'Jugador no disponible'}</strong><RankTag player={player}/></span><span>{player.is_captain?'Capitán · ':''}{player.result_vote?`Votó ${team(player.result_vote)}`:'Sin voto de resultado'}{player.ranked_ban_until&&<em className="rl-banned">Sin Ranked hasta el {dateTime(player.ranked_ban_until)}</em>}</span></li>)}</ol>:<Empty title="Sin jugadores asignados">El equipo se mostrará al formarse.</Empty>}</article>;})}</section>
-   {data.can_ban&&<RankedBan key={`ban-${scope}`} lobby={lobby} players={data.players} preset={banPreset} onApplied={()=>{if(currentScope.current!==scope)return;setBefore(null);void load();}}/>}
-   <section className="op-card"><div className="op-section-title"><div><h2><MessageSquare size={18}/> Chat de la partida</h2><p>Conversación compartida de esta partida. Los mensajes se muestran como texto.</p></div><div className="op-actions">{before&&<button className="btn" disabled={busy} onClick={()=>setBefore(null)}>Últimos mensajes</button>}<button className="btn" disabled={busy||!data.chat.has_more} onClick={()=>setBefore(data.chat.next_before)}>Mensajes anteriores</button></div></div>
-    <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><strong>{message.is_system?'CTP':message.username||'Jugador no disponible'}{message.author_role&&<small className="rl-staff-role">{message.author_role==='admin'?'Administración':'Árbitro'}</small>}</strong><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes en esta página">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>
+   {data.can_ban&&<RankedBan key={`ban-${scope}`} lobby={lobby} players={data.players} preset={banPreset} onApplied={()=>{if(currentScope.current!==scope)return;void load();}}/>}
+   <section className="op-card"><div className="op-section-title"><div><h2><MessageSquare size={18}/> Chat de la partida</h2><p>Conversación completa de esta partida. Los mensajes se muestran como texto.</p></div><span className="op-count">{data.chat.messages.length} {data.chat.messages.length===1?'mensaje':'mensajes'}</span></div>
+    {!data.chat.complete&&<p className="muted rl-caption">La conversación es muy larga: se muestran sus últimos {data.chat.messages.length} mensajes.</p>}
+    <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><strong>{message.is_system?'CTP':message.username||'Jugador no disponible'}{message.author_role&&<small className="rl-staff-role">{message.author_role==='admin'?'Administración':'Árbitro'}</small>}</strong><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes todavía">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>
     {data.chat.can_send?<form className="rl-chat-compose" onSubmit={sendMessage}>
      <label htmlFor="ranked-staff-message">Mensaje de {me.ctp_role==='referee'?'arbitraje':'administración'}</label>
      <textarea id="ranked-staff-message" rows={3} maxLength={1600} value={draft} disabled={sending} onChange={event=>{setDraft(event.target.value);setSent(false);}} aria-describedby="ranked-chat-help" placeholder="Escribe a los jugadores de esta partida…"/>

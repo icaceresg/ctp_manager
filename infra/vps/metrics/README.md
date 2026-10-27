@@ -1,8 +1,9 @@
-# Tráfico y servidor (solo Manager PRE)
+# Tráfico y servidor (Manager PRE y PROD)
 
 El panel `/administration/metrics` requiere una sesión de administrador. El servidor
-solo habilita el endpoint en `https://pre.manager.playctp.com`; un opt-in local
-explícito sirve para desarrollo. El mismo código en Manager PROD devolvería 404.
+solo habilita el endpoint en `https://pre.manager.playctp.com` y
+`https://manager.playctp.com`; un opt-in local explícito sirve para desarrollo.
+La navegación también requiere administrador y un host exacto de Manager.
 
 El observador independiente de PRE produce un snapshot cada 60 segundos. Manager
 solo puede leer ese JSON: no tiene acceso a Docker, SSH ni a los logs originales.
@@ -54,14 +55,21 @@ y sin capacidades Linux adicionales. Solo escribe en
 snapshot 0640 y estado privado 0600). Todas las consultas de PostgreSQL son SQL
 fijo dentro de `BEGIN READ ONLY`, con timeouts; no hay DML, DDL ni RPC de negocio.
 
+Manager PROD debe tener únicamente permiso de atravesar este directorio y leer
+`snapshot.json`. No debe añadirse al grupo `ctp-manager-pre`: ese grupo puede
+acceder a otros datos privados de PRE. El acceso al snapshot debe persistir tras
+su reemplazo atómico, mediante una ACL de lectura heredada limitada por los modos
+0640/0600. El estado privado y los temporales en escritura permanecen sin lectura
+para PROD; el proceso de Manager no recibe acceso a Docker, SQL ni logs.
+
 `install-pre.py` muestra un plan por defecto. Aplicarlo requiere un manifiesto de
 hashes de los cuatro archivos revisados, root y rutas PRE nuevas. Solo instala y
 arranca la nueva unidad/temporizador de PRE; comprueba que los servicios Manager,
 sus releases/env y Caddy permanecen intactos. No instala paquetes, no abre puertos,
 no modifica Caddy, no cambia la configuración de PROD ni habilita envíos externos.
 
-La publicación del código Manager usa el empaquetador habitual y una release PRE
-verificada, con copia consistente de SQLite y conservación de sesiones y claves.
+La publicación del código Manager usa el empaquetador habitual y una release del
+entorno verificada, con copia consistente de SQLite y conservación de sesiones y claves.
 Los scripts del observador se publican aparte, vinculados a los hashes de la misma
 fuente. No se restaura automáticamente una base de datos viva.
 

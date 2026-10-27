@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Activity, CalendarCheck, CalendarDays, Clapperboard, ListChecks, LogOut, Menu, Plus, ShieldCheck, SquareKanban, Trophy, Gift, UserRound, Users, ChartNoAxesCombined, History, Radio, Settings2, MessageSquare, Gavel, BadgeCheck, FileText, ClipboardCheck } from 'lucide-react';
+import { Activity, CalendarCheck, CalendarDays, Clapperboard, ListChecks, LogOut, Menu, Plus, ShieldCheck, SquareKanban, Trophy, Gift, UserRound, Users, ChartNoAxesCombined, History, Radio, Settings2, MessageSquare, Gavel, FileText, ClipboardCheck } from 'lucide-react';
 import { managerNavigation, ruletaNavigation } from '../navigation.js';
 import { QuickNavigation } from './QuickNavigation.jsx';
 import { api } from '../api.js';
@@ -13,7 +13,7 @@ export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
 }
 
-const ICONS = { jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, estadisticas: ChartNoAxesCombined, metrics: ChartNoAxesCombined, clubes: BadgeCheck, discord: MessageSquare, sanciones: Gavel, arbitraje: ClipboardCheck, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
+const ICONS = { jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, metrics: ChartNoAxesCombined, discord: MessageSquare, sanciones: Gavel, arbitraje: ClipboardCheck, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
 
 function PendingBadge() {
   const { data: withResources } = useData(() => api.get('/contents?with_resources=1'));

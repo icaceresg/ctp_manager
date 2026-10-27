@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OP_TABS } from '../client/src/operations/model.js';
 import { managerNavigation, matchReturnPath, navigationSearch, managerUserId, operationReturnPath, userProfileEditPath, rankedIncidentPath } from '../client/src/navigation.js';
+import { metricsAllowedHost } from '../client/src/pages/metricsModel.js';
 
 test('all permitted operational areas are discoverable without granting another role', () => {
   for (const section of ['arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones', 'operaciones']) {
     const items = managerNavigation(value => value === section, false);
-    assert.deepEqual(items.map(item => item.id), OP_TABS.filter(tab => tab.sections.includes(section)).map(tab => tab.id));
+    assert.deepEqual(items.map(item => item.id), OP_TABS.filter(tab => tab.menu !== false && tab.sections.includes(section)).map(tab => tab.id));
     assert.equal(items.some(item => ['usuarios', 'integracion'].includes(item.id)), false);
     assert(items.every(item => item.group && item.to.startsWith('/')));
   }
@@ -19,6 +20,20 @@ test('admin tools occur once and navigation targets remain unique', () => {
   const items = managerNavigation(() => true, true);
   assert.equal(new Set(items.map(item => item.to)).size, items.length);
   assert.equal(items.filter(item => item.id === 'integracion').length, 1);
+});
+
+test('private metrics are discoverable once for administrators on PRE and PROD only', () => {
+  for (const hostname of ['pre.manager.playctp.com', 'manager.playctp.com', 'localhost', '127.0.0.1', '[::1]', '::1']) {
+    assert.equal(metricsAllowedHost(hostname), true);
+    assert.equal(managerNavigation(() => true, true, false, false, hostname).filter(item => item.id === 'metrics').length, 1);
+    for (const managesUsers of [false, true]) {
+      assert.equal(managerNavigation(() => true, false, managesUsers, true, hostname).some(item => item.id === 'metrics'), false);
+    }
+  }
+  for (const hostname of ['evil.manager.playctp.com', 'manager.playctp.com.evil.invalid', 'ruleta.playctp.com', 'pre.playctp.com']) {
+    assert.equal(metricsAllowedHost(hostname), false);
+    assert.equal(managerNavigation(() => true, true, false, false, hostname).some(item => item.id === 'metrics'), false);
+  }
 });
 
 test('Ranked supervision adds only the monitor without granting admin tools', () => {
@@ -37,7 +52,8 @@ test('coordination receives only delegated user management in addition to its ow
 });
 test('tool search matches accents and multiple words only within allowed tools', () => {
   const items = managerNavigation(value => value === 'arbitraje', false);
-  assert.deepEqual(navigationSearch(items, 'ESTADISTICAS').map(item => item.id), ['estadisticas']);
+  assert.deepEqual(navigationSearch(items, 'HISTORICO').map(item => item.id), ['historico']);
+  assert.deepEqual(navigationSearch(items, 'estadisticas'), [], 'Estadísticas ya no está en el menú');
   assert.deepEqual(navigationSearch(items, 'competicion arbitraje').map(item => item.id), ['incidencias','arbitraje']);
   assert.deepEqual(navigationSearch(items, 'usuarios'), []);
 });

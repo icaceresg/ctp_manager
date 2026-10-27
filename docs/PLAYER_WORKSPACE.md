@@ -21,7 +21,9 @@ La espera visible se calcula entre `joined_at` y `observed_at`; se etiqueta **Es
 
 `GET /api/players?query=&offset=0&limit=20` busca; `GET /api/players/:userId?results_offset=0&tickets_offset=0&sanctions_offset=0&limit=20` lee la ficha. Tamaño máximo25, offsets0–999999 y consulta máxima120 caracteres. El servidor rechaza claves desconocidas y parámetros no enteros.
 
-`createPlayerWorkspaceReader({request,actorFor})` devuelve `readPlayerWorkspace(currentUser,query)`. Reutiliza el transporte y la identidad del operador existentes. `playerWorkspaceQuery`, `playerWorkspaceId` y `playerWorkspaceResponse` son las validaciones compartidas en el servidor; `parsePlayerWorkspace` valida la acción en el Edge. La vista no guarda una segunda copia de CTP en SQLite.
+`createPlayerWorkspaceReader({request,actorFor,database})` devuelve `readPlayerWorkspace(currentUser,query)`. La conexión SQLite de privacidad es obligatoria. Reutiliza el transporte y la identidad del operador existentes. `playerWorkspaceQuery`, `playerWorkspaceId` y `playerWorkspaceResponse` son las validaciones compartidas en el servidor; `parsePlayerWorkspace` valida la acción en el Edge. La vista no guarda una segunda copia de CTP en SQLite.
+
+Después de recibir y validar la respuesta de CTP, consulta las marcas locales de borrado por los UUID oficiales. Si una ficha o cualquier fila de búsqueda pertenece a una cuenta marcada, rechaza la respuesta completa con404 genérico. No recorta páginas, modifica resultados ni vuelve a publicar un perfil recibido antes de la marca. La ficha también rechaza una cuenta ya marcada antes de consultar el puente. La evidencia de esta protección está en [la validación de respuestas tardías](manager-profile-erasure-qa-20261027.md).
 
 ## Comprobación local
 

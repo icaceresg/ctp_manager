@@ -26,6 +26,7 @@ import {createPlayerWorkspaceReader} from './player-workspace-client.js';
 import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
 import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {createMobileSafetyClient} from './mobile-safety-services.js';
+import {requireUnmarkedProfiles} from './profile-erasure-fence.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -665,14 +666,20 @@ export async function ticketAction(user, id, body) {
 export async function getCtpUserProfile(user, id) {
   if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'Esta sección requiere administración CTP.');
   const payload = { action: 'get', user_id: userProfileId(id) };
-  return userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
+  requireUnmarkedProfiles(db,[payload.user_id]);
+  const result=userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
+  requireUnmarkedProfiles(db,[payload.user_id]);
+  return result;
 }
 
 export async function updateCtpUserProfile(user, id, body) {
   if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'Esta sección requiere administración CTP.');
   if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   const payload = userProfilePayload(id, body);
-  return userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
+  requireUnmarkedProfiles(db,[payload.user_id]);
+  const result=userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
+  requireUnmarkedProfiles(db,[payload.user_id]);
+  return result;
 }
 
 /**
@@ -734,5 +741,5 @@ export function startOperationsSync() {
 }
 
 // Read-only player context shares the authenticated caller and the HMAC bridge.
-export const getPlayerWorkspace=createPlayerWorkspaceReader({request,actorFor:user=>getOperatorIdentity(user.id)});
+export const getPlayerWorkspace=createPlayerWorkspaceReader({request,actorFor:user=>getOperatorIdentity(user.id),database:db});
 export const mobileSafety=createMobileSafetyClient({request,actorFor:user=>getOperatorIdentity(user.id),database:db,writesEnabled:()=>config.writes,storagePublicOrigin:webOrigin()});

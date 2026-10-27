@@ -53,7 +53,7 @@ test('ratings and live participation must be internally consistent',()=>{
 });
 test('reader uses the existing signed action once, with current actor and no write fields',async()=>{
  const calls=[],current={id:'local-ref',auth_mode:'ctp',ctp_user_id:other,ctp_role:'referee',is_admin:false};
- const read=createPlayerWorkspaceReader({actorFor:async me=>{assert.equal(me,current);return 'referee.dev';},request:async payload=>{calls.push(payload);return{...detail(),viewer:{...viewer,can_edit:true}};}});
+ const read=createPlayerWorkspaceReader({database:db,actorFor:async me=>{assert.equal(me,current);return 'referee.dev';},request:async payload=>{calls.push(payload);return{...detail(),viewer:{...viewer,can_edit:true}};}});
  const result=await read(current,detailQuery);
  assert.deepEqual(calls,[{action:'player_workspace',actor_id:'referee.dev',query:playerWorkspaceQuery(detailQuery)}]);assert.equal(result.viewer.can_edit,false);
  await assert.rejects(()=>read({auth_mode:'ctp',ctp_role:'player',ctp_user_id:other},detailQuery),error=>error.status===403);assert.equal(calls.length,1);
@@ -61,9 +61,10 @@ test('reader uses the existing signed action once, with current actor and no wri
 });
 test('failed or malformed reads cannot masquerade as a successful empty search',async()=>{
  const current={is_admin:true};
- const broken=createPlayerWorkspaceReader({actorFor:()=> 'admin.dev',request:async()=>({items:[]})});
+ assert.throws(()=>createPlayerWorkspaceReader({actorFor:()=> 'admin.dev',request:async()=>detail()}),TypeError);
+ const broken=createPlayerWorkspaceReader({database:db,actorFor:()=> 'admin.dev',request:async()=>({items:[]})});
  await assert.rejects(()=>broken(current,{}),error=>error.status===502);
- const noActor=createPlayerWorkspaceReader({actorFor:()=>null,request:async()=>{throw Error('must not send');}});
+ const noActor=createPlayerWorkspaceReader({database:db,actorFor:()=>null,request:async()=>{throw Error('must not send');}});
  await assert.rejects(()=>noActor(current,{}),error=>error.status===403);
 });
 test('presentation preserves waiting, legacy XP, cancelled games and invalid URL bounds',()=>{

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-27T04:02:44.681056+00:00",
+  "environment": "LOCAL_MANAGER_HTTP_TEMP_SQLITE_SYNTHETIC_UPSTREAM",
+  "baseCommit": "77769b260f21bfa0db43bea6ef70d175d81fd7e1",
+  "branch": "codex/ctp-mobile-google-20261027",
+  "hostedServicesUsed": false,
+  "sharedDatabaseUsed": false,
+  "ctpSqlChanged": false,
+  "deploymentPerformed": false,
+  "sources": {
+    "server/integration.js": "5754be7c7e8f01a1926677aee7c536d5e5df7b2bd00e18c2b6aa4bed5d63e908",
+    "server/player-workspace-client.js": "dc3c1aa82a88979b2d89ac70b5853b4f315f0696350934c2ad87a310d99eb99d",
+    "server/profile-erasure-fence.js": "b5d1214c9759af90c9214b6d77ca50e138c54cb65415478d12ac0abe4bbc3a27",
+    "server/erasure-local.js": "ef232b9cc43af6aa1d2a153b265b8b46e80a88a9e49ef4fe2324c578f4f7deb5",
+    "test/player-workspace.test.js": "722f3d1e4a9a3404184510b570af2d655cbfa77a2ea4333b224aa4243cb40ca5",
+    "test/profile-erasure-http.test.js": "c93744ce55b330449a568b5c520c4735e0e919150b971c00fa965aa108bf2ade"
+  },
+  "directedTests": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "newHttpTests": 5,
+    "heldRequests": [
+      "profile_read",
+      "profile_update",
+      "workspace_detail",
+      "workspace_search"
+    ],
+    "realManagerHttp": true,
+    "realManagerAuthAndRequestSignature": true,
+    "realTemporarySqliteMarker": true,
+    "remoteAuthAndCtpRepliesSynthetic": true,
+    "lateResponsesReturn404WithoutProfilePii": true,
+    "entireSearchPageRefused": true,
+    "alreadyMarkedTargetAvoidsBridgeCall": true,
+    "unmarkedHistoryAndXpPreserved": true
+  },
+  "fullSuite": {
+    "command": "npm test",
+    "total": 519,
+    "passed": 513,
+    "failed": 0,
+    "skipped": 6,
+    "skips": [
+      "Five POSIX deployment cases on Windows",
+      "One unconfigured .NET interoperability fixture"
+    ],
+    "log": "validation.local/profile-erasure-tests-20261027.log",
+    "logSha256": "380847db5b71d7aa3b946c2a85af05cf89aa5d02549a807e8c26d97247e202eb"
+  },
+  "build": {
+    "command": "npm run build",
+    "passed": true,
+    "log": "validation.local/profile-erasure-build-20261027.log",
+    "logSha256": "c14bcde11815786d6dc9f6cbc0939d3faf8b6e6b723f53db4551d0da4829c8de",
+    "artifacts": {
+      "dist/index.html": "59c0164368d21e420f0b77bbfca0677723a4dc1bb894389d472cae6f76aef663",
+      "dist/assets/main-CfX9aLmv.js": "9482d099a9953eb63e8c60e0a65521f49b79d6a1358332edab05c804d15b6434",
+      "dist/assets/main-Qnh9NZdU.css": "0154b9aa21172e141c41e954313d26c866bcc48dca0be290b36ea40cbb3e88bb"
+    }
+  },
+  "scopeLimit": "Profile get/update and player-workspace detail/search only; no global HTTP erasure claim or changes to custody/discipline policy."
+}

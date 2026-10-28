@@ -5,13 +5,75 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-event-test-'));
 Object.assign(process.env,{DATA_DIR:directory,DB_PATH:path.join(directory,'fixture.sqlite'),CTP_AUTH_MODE:'local',CTP_AUTH_URL:'',PUBLIC_ORIGIN:'',CTP_SYNC_SECONDS:'0'});
 const{createRankedEventClient,rankedEventPayload,rankedEventResponse}=await import('../server/ranked-event-client.js');
 const{db}=await import('../server/db.js');
+const{eventObservationReceivedAt,rankedEventReadDue,rankedEventReading,rotationCountdown}=await import('../client/src/operations/ranked-event-model.js');
 after(()=>{db.close();assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));assert(path.basename(directory).startsWith('ctp-event-test-'));fs.rmSync(directory,{recursive:true,force:true,maxRetries:5});});
 const admin={id:1,is_admin:true,auth_mode:'ctp',ctp_role:'admin'};
 const snapshot=()=>({schema_version:1,event_id:'hw-2026',enabled:false,theme:'halloween',xp_multiplier:1,streak_bonus:0.5,starts_at:null,ends_at:null,revision:1,server_time:'2026-10-27T12:00:00Z'});
 const request=()=>({action:'configure',expected_version:1,request_id:'26000000-0000-4000-8000-000000000001',reason:'Activate the reviewed Halloween event',enabled:true});
+const fixed=['Mumbai','Munition','Reactor U92','Rooftops','Silkworm'];
+const rotation=(enabled=true,active='Sentry')=>({schema_version:1,event_id:'hw-2026',enabled,interval_seconds:1200,frozen:false,
+ active_map:enabled?active:null,next_map:enabled?(active==='Sentry'?'Lithium':'Sentry'):null,
+ slot_starts_at:enabled?'2026-10-28T12:00:00Z':null,next_rotation_at:enabled?'2026-10-28T12:20:00Z':null,
+ observed_at:'2026-10-28T12:19:59Z',fixed_maps:[...fixed],active_pool:enabled?[...fixed,active]:['Coal','Lotus',...fixed]});
+const rotated=(enabled=true)=>({...snapshot(),enabled,server_time:'2026-10-28T12:19:59Z',map_rotation:rotation(enabled)});
 test('event payload accepts only fixed switches and safe reasons',()=>{
  assert.deepEqual(rankedEventPayload(request()),request());assert.deepEqual(rankedEventPayload({action:'status'}),{action:'status'});
- for(const mutation of[{xp_multiplier:99},{streak_bonus:99},{user_id:'1'},{enabled:'true'},{reason:'short'},{reason:'bad\n'.repeat(5)},{expected_version:0},{request_id:'wrong'}])assert.throws(()=>rankedEventPayload({...request(),...mutation}),error=>error.status===400);
+ for(const mutation of[{xp_multiplier:99},{streak_bonus:99},{map_rotation:{}},{active_map:'Sentry'},{interval_seconds:1},{user_id:'1'},{enabled:'true'},{reason:'short'},{reason:'bad\n'.repeat(5)},{expected_version:0},{request_id:'wrong'}])assert.throws(()=>rankedEventPayload({...request(),...mutation}),error=>error.status===400);
+});
+
+test('event rotation whitelists the exact six-map server pool and preserves the ordinary OFF pool',()=>{
+ for(const enabled of[false,true]){
+  const source=rotated(enabled),parsed=rankedEventResponse({...source,map_rotation:{...source.map_rotation,token:'PRIVATE_VALUE'}});
+  assert.deepEqual(parsed,source);assert.notEqual(parsed.map_rotation.fixed_maps,source.map_rotation.fixed_maps);
+  assert.notEqual(parsed.map_rotation.active_pool,source.map_rotation.active_pool);
+  assert.equal(parsed.map_rotation.active_pool.length,enabled?6:7);
+ }
+ const next=rotated(true);next.map_rotation=rotation(true,'Lithium');assert.equal(rankedEventResponse(next).map_rotation.active_map,'Lithium');
+ assert.equal(rankedEventResponse(snapshot()).map_rotation,undefined,'legacy responses remain readable without inventing a pool');
+});
+
+test('event rotation rejects foreign maps, bad windows, mismatched flags and historical lobby snapshots',()=>{
+ const bad=[{schema_version:2},{event_id:'other'},{enabled:false},{interval_seconds:1199},{frozen:true},{active_map:'Coal'},{next_map:'Sentry'},
+  {active_pool:[...fixed,'Sentry','Lithium']},{active_pool:['Coal',...fixed]},{fixed_maps:[...fixed.slice(0,4),'Mumbai']},
+  {slot_starts_at:'2026-10-28T12:00:01Z'},{next_rotation_at:'2026-10-28T12:19:59Z'},
+  {observed_at:'2026-10-28T12:19:59'},{observed_at:'2026-10-28T12:20:00Z'},{observed_at:'2026-10-28T11:59:59Z'}];
+ for(const mutation of bad)assert.throws(()=>rankedEventResponse({...rotated(true),map_rotation:{...rotation(),...mutation}}),error=>error.status===502);
+ for(const mutation of[{active_map:'Sentry'},{next_map:'Lithium'},{slot_starts_at:'2026-10-28T12:00:00Z'},{active_pool:[...fixed,'Lithium']}]){
+  assert.throws(()=>rankedEventResponse({...rotated(false),map_rotation:{...rotation(false),...mutation}}),error=>error.status===502);
+ }
+});
+
+test('displayed rotation expires at the server boundary without predicting the next map',()=>{
+ const event=rotated(true);
+ assert.equal(rankedEventReading(event,1000,1500).status,'active');assert.equal(rankedEventReading(event,1000,1500).seconds,1);
+ const boundary=rankedEventReading(event,1000,2000);assert.equal(boundary.status,'boundary');assert.equal(boundary.rotation,null);
+ for(const reading of[rankedEventReading(event,1000,1000+75000),rankedEventReading(event,1000,999),rankedEventReading(event,1000,1500,true)]){
+  assert.equal(reading.status,'stale');assert.equal(reading.rotation,null);
+ }
+ assert.equal(rankedEventReading(rotated(false),1000,1500).status,'off');
+ assert.equal(rankedEventReading(snapshot(),1000,1500).status,'unavailable');
+ assert.equal(rotationCountdown(1200),'20:00');assert.equal(rotationCountdown(59),'00:59');assert.equal(rotationCountdown(-1),'—');
+});
+
+test('cached status cannot extend a map slot and regressing server observations fail closed',()=>{
+ const prior=rotated(true),received=eventObservationReceivedAt(prior,1000,prior,3000);
+ assert.equal(received,1000);assert.equal(rankedEventReading(prior,received,3000).status,'boundary');
+ const next={...prior,server_time:'2026-10-28T12:20:01Z',map_rotation:{...rotation(true,'Lithium'),observed_at:'2026-10-28T12:20:01Z',slot_starts_at:'2026-10-28T12:20:00Z',next_rotation_at:'2026-10-28T12:40:00Z'}};
+ assert.equal(eventObservationReceivedAt(prior,1000,next,3000),3000);
+ assert.equal(rankedEventReading(next,3000,3000).rotation.active_map,'Lithium');
+ assert.throws(()=>eventObservationReceivedAt(next,3000,prior,4000));
+});
+
+test('read-only refresh is visible-only, bounded on failures and immediate at a new server boundary',()=>{
+ const state={snapshot:rotated(true),receivedAt:1000,lastAttemptAt:1000,now:2000,visible:true};
+ assert.equal(rankedEventReadDue(state),true);
+ assert.equal(rankedEventReadDue({...state,visible:false}),false);
+ assert.equal(rankedEventReadDue({...state,lastBoundaryAttemptAt:1900}),false);
+ assert.equal(rankedEventReadDue({...state,lastBoundaryAttemptAt:1900,now:6900}),true);
+ assert.equal(rankedEventReadDue({...state,stale:true}),false);
+ assert.equal(rankedEventReadDue({...state,stale:true,now:31000}),true);
+ assert.equal(rankedEventReadDue({...state,snapshot:rotated(false),now:30999}),false);
+ assert.equal(rankedEventReadDue({...state,snapshot:rotated(false),now:31000}),true);
 });
 test('event response validates policy and strips every unagreed field',()=>{
  assert.deepEqual(rankedEventResponse({...snapshot(),secret:'do not expose'}),snapshot());

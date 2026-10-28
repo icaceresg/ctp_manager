@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {Clock3,Flame,Map as MapIcon,RefreshCw,Save} from 'lucide-react';
 import {api} from '../api.js';
 import {dateTime} from '../operations/model.js';
-import {eventObservationReceivedAt,rankedEventReadDue,rankedEventReading,rotationCountdown} from '../operations/ranked-event-model.js';
+import {eventObservationReceivedAt,rankedEventBoundaryAttempt,rankedEventReadDue,rankedEventReading,rotationCountdown} from '../operations/ranked-event-model.js';
 import './ranked-event.css';
 
 function MapRotationReading({reading}){
@@ -24,7 +24,7 @@ export default function RankedEventPanel({user}){
  const [snapshot,setSnapshot]=useState(null),[enabled,setEnabled]=useState(false),[reason,setReason]=useState('');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[uncertain,setUncertain]=useState(false),[stale,setStale]=useState(false);
  const [receivedAt,setReceivedAt]=useState(0),[now,setNow]=useState(Date.now),[readingStatus,setReadingStatus]=useState(false);
- const owner=useRef(user?.id),mounted=useRef(true),lock=useRef(false),pending=useRef(null),reader=useRef(null),lastAttempt=useRef(null),lastBoundary=useRef(null);
+ const owner=useRef(user?.id),mounted=useRef(true),lifecycle=useRef(0),lock=useRef(false),pending=useRef(null),reader=useRef(null),lastAttempt=useRef(null),lastBoundary=useRef(null);
  const latest=useRef({snapshot,receivedAt,stale});owner.current=user?.id;latest.current={snapshot,receivedAt,stale};
  function accept(result){
   const at=Date.now(),previous=latest.current;
@@ -41,26 +41,26 @@ export default function RankedEventPanel({user}){
   finally{clearTimeout(timeout);if(reader.current===controller)reader.current=null;}
  }
  async function refresh({automatic=false}={}){
-  if(lock.current||!user?.is_admin)return;lock.current=true;setReadingStatus(true);if(!automatic)setBusy(true);const actor=owner.current;
+  if(lock.current||!user?.is_admin)return;lock.current=true;setReadingStatus(true);if(!automatic)setBusy(true);const actor=owner.current,generation=lifecycle.current;
   try{
    const result=await readStatus();
-   if(!mounted.current||owner.current!==actor)return;
+   if(!mounted.current||owner.current!==actor||lifecycle.current!==generation)return;
    accept(result);if(!pending.current){setError('');setEnabled(result.enabled);}
-  }catch(problem){if(mounted.current&&owner.current===actor){setError(problem.message);setStale(true);}}
-  finally{lock.current=false;if(mounted.current&&owner.current===actor){setReadingStatus(false);if(!automatic)setBusy(false);}}
+  }catch(problem){if(mounted.current&&owner.current===actor&&lifecycle.current===generation){setError(problem.message);setStale(true);}}
+  finally{if(lifecycle.current===generation){lock.current=false;if(mounted.current&&owner.current===actor){setReadingStatus(false);if(!automatic)setBusy(false);}}}
  }
  useEffect(()=>{
-  mounted.current=true;
+  mounted.current=true;lifecycle.current+=1;
   if(!user?.is_admin)return()=>{mounted.current=false;};
   const observe=()=>{
    const at=Date.now(),visible=document.visibilityState!=='hidden';
    if(visible)setNow(at);
-   const boundaryAt=lastBoundary.current?.window===latest.current.snapshot?.map_rotation?.next_rotation_at?lastBoundary.current.at:null;
+   const boundaryAt=rankedEventBoundaryAttempt(latest.current.snapshot,lastBoundary.current);
    if(rankedEventReadDue({...latest.current,lastAttemptAt:lastAttempt.current,lastBoundaryAttemptAt:boundaryAt,now:at,visible}))void refresh({automatic:true});
   };
   if(document.visibilityState!=='hidden')void refresh();const timer=window.setInterval(observe,1000);
   document.addEventListener('visibilitychange',observe);window.addEventListener('focus',observe);
-  return()=>{mounted.current=false;reader.current?.abort();clearInterval(timer);document.removeEventListener('visibilitychange',observe);window.removeEventListener('focus',observe);};
+  return()=>{mounted.current=false;lifecycle.current+=1;reader.current?.abort();lock.current=false;clearInterval(timer);document.removeEventListener('visibilitychange',observe);window.removeEventListener('focus',observe);};
  },[user?.id,user?.is_admin]);
  if(!user?.is_admin)return null;
  const reading=rankedEventReading(snapshot,receivedAt,now,stale),expired=stale||reading.status==='stale';

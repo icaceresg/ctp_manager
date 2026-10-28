@@ -1,6 +1,12 @@
 export const EVENT_READ_INTERVAL_MS=30000;
 export const EVENT_STALE_MS=75000;
 
+/** No slot exists before the first read, while OFF, or for a legacy response. */
+export function rankedEventBoundaryAttempt(snapshot,lastBoundary){
+ const window=snapshot?.map_rotation?.next_rotation_at;
+ return window&&lastBoundary?.window===window?lastBoundary.at:null;
+}
+
 /** Keep a successful but cached status read from extending an expired slot. */
 export function eventObservationReceivedAt(previous,receivedAt,next,now){
  if(!Number.isFinite(now))return 0;

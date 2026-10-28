@@ -5,7 +5,7 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-event-test-'));
 Object.assign(process.env,{DATA_DIR:directory,DB_PATH:path.join(directory,'fixture.sqlite'),CTP_AUTH_MODE:'local',CTP_AUTH_URL:'',PUBLIC_ORIGIN:'',CTP_SYNC_SECONDS:'0'});
 const{createRankedEventClient,rankedEventPayload,rankedEventResponse}=await import('../server/ranked-event-client.js');
 const{db}=await import('../server/db.js');
-const{eventObservationReceivedAt,rankedEventReadDue,rankedEventReading,rotationCountdown}=await import('../client/src/operations/ranked-event-model.js');
+const{eventObservationReceivedAt,rankedEventBoundaryAttempt,rankedEventReadDue,rankedEventReading,rotationCountdown}=await import('../client/src/operations/ranked-event-model.js');
 after(()=>{db.close();assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));assert(path.basename(directory).startsWith('ctp-event-test-'));fs.rmSync(directory,{recursive:true,force:true,maxRetries:5});});
 const admin={id:1,is_admin:true,auth_mode:'ctp',ctp_role:'admin'};
 const snapshot=()=>({schema_version:1,event_id:'hw-2026',enabled:false,theme:'halloween',xp_multiplier:1,streak_bonus:0.5,starts_at:null,ends_at:null,revision:1,server_time:'2026-10-27T12:00:00Z'});
@@ -74,6 +74,16 @@ test('read-only refresh is visible-only, bounded on failures and immediate at a 
  assert.equal(rankedEventReadDue({...state,stale:true,now:31000}),true);
  assert.equal(rankedEventReadDue({...state,snapshot:rotated(false),now:30999}),false);
  assert.equal(rankedEventReadDue({...state,snapshot:rotated(false),now:31000}),true);
+});
+test('boundary lookup is safe before the first response and for OFF or legacy snapshots',()=>{
+ const last={window:'2026-10-28T12:20:00Z',at:1900};
+ for(const event of[null,snapshot(),rotated(false)]){
+  assert.equal(rankedEventBoundaryAttempt(event,null),null);
+  assert.equal(rankedEventBoundaryAttempt(event,last),null);
+ }
+ assert.equal(rankedEventBoundaryAttempt(rotated(true),null),null);
+ assert.equal(rankedEventBoundaryAttempt(rotated(true),last),1900);
+ assert.equal(rankedEventBoundaryAttempt(rotated(true),{...last,window:'2026-10-28T12:40:00Z'}),null);
 });
 test('event response validates policy and strips every unagreed field',()=>{
  assert.deepEqual(rankedEventResponse({...snapshot(),secret:'do not expose'}),snapshot());

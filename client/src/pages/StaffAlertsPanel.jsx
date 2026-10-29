@@ -19,7 +19,7 @@ export function StaffAlertsStatus({snapshot}){
   <div><h3>Actividad reciente</h3><p className="muted">Hasta 30 entregas. Los contadores pueden incluir otras entregas del historial.</p>
    {snapshot.recent.length?<ol className="staff-alert-events">{snapshot.recent.map(row=>{const to=staffAlertPath(row);return <li key={row.id}>
     <div className="staff-alert-event-heading"><strong>{STAFF_ALERT_EVENT_LABELS[row.event_kind]||'Aviso de staff'}</strong><span>{staffAlertProvider(row.provider)}</span><span className={row.status==='uncertain'?'staff-alert-uncertain':''}>{staffAlertStatus(row.status)}</span></div>
-    <div className="staff-alert-event-meta"><time dateTime={row.created_at}>{dateTime(row.created_at)}</time><span>{row.attempts} {row.attempts===1?'intento':'intentos'}</span>{row.error_code!==null&&<span>{staffAlertError(row.error_code)}</span>}{to&&<Link to={to}>{row.resource_kind==='ticket'?'Abrir ticket':'Abrir partida'}</Link>}</div>
+    <div className="staff-alert-event-meta"><time dateTime={row.created_at}>{dateTime(row.created_at)}</time><span>{row.attempts} {row.attempts===1?'intento':'intentos'}</span>{row.error_code!==null&&<span>{staffAlertError(row.error_code)}</span>}{to&&<Link to={to}>{row.resource_kind==='canary'?'Ver integraciones':row.resource_kind==='ticket'?'Abrir ticket':'Abrir partida'}</Link>}</div>
    </li>;})}</ol>:<p className="muted">No hay entregas recientes en esta lectura.</p>}
   </div>
  </>;

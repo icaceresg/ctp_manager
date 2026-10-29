@@ -35,3 +35,13 @@ test('a pending map allows only a deliberate cancellation, and dispute content r
   const disputed=render('RankedDisputes',{lobby,disputes:[{username:'<script>x</script>',side:'b',reason:'<a href="javascript:x">bad</a>',created_at:'2026-10-26T12:00:00Z',resolved:false}],open:1,canDecide:true});
   assert.doesNotMatch(disputed,/<script>|href="javascript:/);assert.match(disputed,/&lt;script&gt;/);
 });
+test('chat authors show their team next to their name, but staff, system and ambiguous names do not',()=>{
+  const teams=views.chatTeams([{username:'Ana',side:'a'},{username:'Beto',side:'b'},{username:'Sin equipo',side:null},{username:'Doble',side:'a'},{username:'Doble',side:'b'},{username:null,side:'a'}]);
+  const author=message=>render('RankedChatAuthor',{message:{is_system:false,author_role:null,...message},teams});
+  assert.match(author({username:'Ana'}),/Ana<small class="rl-chat-team team-a">Equipo A<\/small>/);
+  assert.match(author({username:'Beto'}),/Beto<small class="rl-chat-team team-b">Equipo B<\/small>/);
+  for(const html of [author({username:'Sin equipo'}),author({username:'Doble'}),author({username:null}),author({username:'Ana',author_role:'referee'}),author({username:'Ana',is_system:true})])
+    assert.doesNotMatch(html,/rl-chat-team/);
+  assert.match(author({username:'Ana',author_role:'referee'}),/Árbitro/);
+  assert.equal(author({username:'Ana',is_system:true}),'<strong>CTP</strong>');
+});

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
-import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedLobbyDetail, sendRankedLobbyChat, decideRankedLobby, banRankedPlayer, getClubCandidates, getProViewState } from '../integration.js';
+import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedStatistics, getRankedLobbyDetail, sendRankedLobbyChat, decideRankedLobby, banRankedPlayer, getClubCandidates, getProViewState } from '../integration.js';
 import { canManageRanked } from '../../shared/access.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
@@ -45,6 +45,10 @@ integrationRouter.get('/operations/history', requireAuth, allow('operaciones', '
 integrationRouter.get('/operations/matches/:id/guard',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getGuardState(req.user,req.params.id)));
 integrationRouter.get('/operations/ranked', requireAuth, requireAdmin, async (req, res) => res.json(await getRankedState(req.user)));
 integrationRouter.get('/operations/ranked/monitor', requireAuth, requireRanked, async (req, res) => res.json(await getRankedMonitor(req.user)));
+integrationRouter.get('/operations/ranked/statistics', requireAuth, requireRanked, async (req, res) => {
+  if (Object.keys(req.query).some(key => key !== 'period')) throw new HttpError(400, 'La consulta de estadísticas no es válida.');
+  res.json(await getRankedStatistics(req.user, req.query.period));
+});
 integrationRouter.get('/operations/ranked/lobbies/:id',requireAuth,requireRanked,async(req,res)=>{
   if(Object.keys(req.query).some(key=>key!=='before'))throw new HttpError(400,'La consulta del chat no es válida.');
   res.json(await getRankedLobbyDetail(req.user,req.params.id,req.query.before));

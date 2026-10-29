@@ -24,7 +24,8 @@ export function managerNavigation(can, isAdmin, staffManager = false, rankedStaf
   if (isAdmin || rankedStaff) {
     // Ranked opens Competición, ahead of Tickets and the tournament tools.
     const competition = items.findIndex(item => item.group === 'Competición');
-    items.splice(competition < 0 ? items.length : competition, 0, { id: 'ranked-monitor', to: '/ranked/monitor', title: 'Ranked', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización disputas revisión' });
+    items.splice(competition < 0 ? items.length : competition, 0, { id: 'ranked-monitor', to: '/ranked/monitor', title: 'Ranked', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización disputas revisión' },
+      { id: 'ranked-stats', to: '/ranked/estadisticas', title: 'Estadísticas Ranked', group: 'Competición', keywords: 'estadísticas métricas informe marcas patrocinadores sponsors audiencia alcance horas de juego partidas jugadores únicos interacciones edad plataforma dossier comercial' });
     items.push({ id: 'jugadores', to: '/jugadores', title: 'Jugadores', group: 'Trabajo diario', keywords: 'buscar nickname activision cuenta historial perfil tickets sanciones división xp' });
   }
   if (isAdmin) items.push(

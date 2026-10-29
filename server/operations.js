@@ -145,7 +145,8 @@ function normalize(kind, input) {
   if (kind === 'club') return {...base,name:label(input.name,160),verified:input.verified===true,pass_active:input.pass_active===true,status:label(input.status,80)};
   if (kind === 'delivery') return {...base,status:label(input.status,60),kind:label(input.kind,100),error:label(input.error,1000),match_id:input.match_id?id(input.match_id):null};
   if (kind === 'sanction') return {
-    ...base,incident_id:id(input.incident_id),subject_id:id(input.subject_id),
+    // CTP also issues official sanctions directly, without a case file.
+    ...base,incident_id:input.incident_id===null?null:id(input.incident_id),subject_id:id(input.subject_id),
     subject_type:choice(input.subject_type,['player','club'],'Sujeto'),subject_name:label(input.subject_name,160),
     reason:label(input.reason,2000),starts_at:dateTime(input.starts_at),ends_at:dateTime(input.ends_at),
     restriction:choice(input.restriction||'competition_suspend',['warning','competition_suspend'],'Medida'),

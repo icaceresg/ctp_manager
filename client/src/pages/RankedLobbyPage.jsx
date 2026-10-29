@@ -117,6 +117,18 @@ function RankedBan({lobby,players,onApplied,preset}){
   </form>
  </section>;
 }
+/** Team of each player by name. Chat messages only carry the name; a name shared by two players gets no team. */
+export function chatTeams(players){
+ const sides=new Map();
+ for(const p of players)if(p.username)sides.set(p.username,sides.has(p.username)?null:p.side);
+ return sides;
+}
+/** Chat author: staff messages show their role, player messages their team once teams are formed. */
+export function RankedChatAuthor({message,teams}){
+ if(message.is_system)return <strong>CTP</strong>;
+ const side=message.author_role?null:teams.get(message.username);
+ return <strong>{message.username||'Jugador no disponible'}{message.author_role&&<small className="rl-staff-role">{message.author_role==='admin'?'Administración':'Árbitro'}</small>}{side&&<small className={`rl-chat-team team-${side}`}>{team(side)}</small>}</strong>;
+}
 const byChatId=(a,b)=>{const x=BigInt(a.id),y=BigInt(b.id);return x<y?-1:x>y?1:0;};
 export default function RankedLobbyPage(){
  const {me}=useApp(),{lobbyId}=useParams();
@@ -171,7 +183,7 @@ export default function RankedLobbyPage(){
   finally{if(currentScope.current===originScope){sendInFlight.current=false;setSending(false);}}
  }
  if(!allowed)return <Navigate to="/operaciones/jornada" replace/>;
- const lobby=data?.lobby,result=data?.result;
+ const lobby=data?.lobby,result=data?.result,teams=chatTeams(data?.players||[]);
  return <div className="page wide op-page rm-page rl-page">
   <Link className="rl-back" to={returnTo}><ArrowLeft size={16}/> {returnTo.startsWith('/operaciones/incidencias')?'Volver al expediente':'Volver a Ranked'}</Link>
   <header className="op-heading"><div><div className="op-eyebrow"><ShieldCheck size={15}/> SUPERVISIÓN DE PARTIDA</div><h1>{lobby?.map_name||'Partida Ranked'}</h1><p>{lobby?.queue_title||'Equipos, resultado y conversación de la partida.'}</p></div><button className="btn primary" disabled={busy||!validId} onClick={()=>void load()}><RefreshCw size={16} className={busy?'spin':''}/> Actualizar</button></header>
@@ -195,7 +207,7 @@ export default function RankedLobbyPage(){
    {data.can_ban&&<RankedBan key={`ban-${scope}`} lobby={lobby} players={data.players} preset={banPreset} onApplied={()=>{if(currentScope.current!==scope)return;void load();}}/>}
    <section className="op-card"><div className="op-section-title"><div><h2><MessageSquare size={18}/> Chat de la partida</h2><p>Conversación de esta partida. Los mensajes recientes se actualizan automáticamente y el historial se carga sin cambiar de página.</p></div><span className="op-count">{data.chat.messages.length} {data.chat.messages.length===1?'mensaje':'mensajes'}</span></div>
     {chatHistoryNotice(data.chat)&&<p className="muted rl-caption" role="status">{chatHistoryNotice(data.chat)}{['failed','timeout','invalid'].includes(data.chat.partialReason)&&<button className="btn sm" disabled={busy} onClick={()=>void load()}>Reintentar historial</button>}</p>}
-    <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><strong>{message.is_system?'CTP':message.username||'Jugador no disponible'}{message.author_role&&<small className="rl-staff-role">{message.author_role==='admin'?'Administración':'Árbitro'}</small>}</strong><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes todavía">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>
+    <div className="rl-chat" ref={chatBox} role="log" aria-label="Chat de la partida">{data.chat.messages.length?data.chat.messages.map(message=><article key={message.id} className={message.is_system?'is-system':''}><header><RankedChatAuthor message={message} teams={teams}/><time dateTime={message.created_at}>{dateTime(message.created_at)}</time></header><p>{message.message}</p></article>):<Empty title="Sin mensajes todavía">La conversación aparecerá cuando alguien escriba en la partida.</Empty>}</div>
     {data.chat.can_send?<form className="rl-chat-compose" onSubmit={sendMessage}>
      <label htmlFor="ranked-staff-message">Mensaje de {me.ctp_role==='referee'?'arbitraje':'administración'}</label>
      <textarea id="ranked-staff-message" rows={3} maxLength={1600} value={draft} disabled={sending} onChange={event=>{setDraft(event.target.value);setSent(false);}} aria-describedby="ranked-chat-help" placeholder="Escribe a los jugadores de esta partida…"/>

@@ -668,7 +668,7 @@ export function rememberTicketThread(thread) {
     const patch={
       source_version:t.manager_version,
       status:pending?'resolution_pending':({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[t.status]||t.status,
-      source_status:t.status,reporter_id:t.author.id||item.reporter_id||null,reporter_name:t.author.username,reporter_gamertag:t.author.gamertag||null,reporter_activision_id:t.author.activision_id||null,assigned_name:t.assigned?.username||null,
+      source_status:t.status,reporter_id:t.author.id||item.reporter_id||null,reporter_name:t.author.username,reporter_gamertag:t.author.gamertag||null,reporter_activision_id:t.author.activision_id||null,assigned_name:label(t.assigned?.username,100),
       assignee_id:assigned?.id??null,assignee_ctp_id:t.assigned?.id??null,
       awaiting_staff:last?!last.is_staff:false,last_message_at:last?.created_at||item.last_message_at||null,
     };

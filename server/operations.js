@@ -655,15 +655,26 @@ export function rememberTicketThread(thread) {
   return tx(()=>{
     let item;try{item=record('incident',thread.ticket.id,true);}catch{return thread;/* Not in the local feed yet. */}
     const t=thread.ticket,last=thread.messages.at(-1);
+    if(!Number.isSafeInteger(t.manager_version)||t.manager_version<1)throw new HttpError(502,'CTP no ha devuelto una versión de ticket válida.');
+    // The thread and direct-action receipt contain CTP's canonical revision.
+    // An older in-flight read must not undo a newer confirmed action or ACK.
+    if(Number.isInteger(item.source_version)&&t.manager_version<item.source_version)return thread;
     // The person who replied need not own the ticket. Resolve the official
     // CTP identity, never a display name or the latest message's author.
     const assigned=t.assigned?.id?db.prepare('SELECT id FROM users WHERE ctp_user_id=?').get(t.assigned.id):null;
-    save('incident',{...item,
-      status:({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[t.status]||t.status,
+    const pending=item.status==='resolution_pending'&&item.pending_command_id
+      &&t.manager_version===item.source_version&&t.status===item.source_status
+      &&db.prepare("SELECT id FROM operation_commands WHERE id=? AND resource_type='incident' AND resource_id=? AND action='incident.resolve' AND status IN('pending','sending','failed','rejected')").get(item.pending_command_id,item.id);
+    const patch={
+      source_version:t.manager_version,
+      status:pending?'resolution_pending':({abierto:'open',en_revision:'investigating',esperando_respuesta:'waiting',resuelto:'resolved',cerrado:'closed',rechazado:'rejected'})[t.status]||t.status,
       source_status:t.status,reporter_id:t.author.id||item.reporter_id||null,reporter_name:t.author.username,reporter_gamertag:t.author.gamertag||null,reporter_activision_id:t.author.activision_id||null,assigned_name:t.assigned?.username||null,
       assignee_id:assigned?.id??null,assignee_ctp_id:t.assigned?.id??null,
       awaiting_staff:last?!last.is_staff:false,last_message_at:last?.created_at||item.last_message_at||null,
-      },item.source);
+    };
+    // Polling the same official data is a read, not a competing local edit.
+    // Keep CAS conflicts for actual changes, including player replies/ownership.
+    if(Object.entries(patch).some(([key,value])=>item[key]!==value))save('incident',{...item,...patch},item.source);
     return thread;
   });
 }

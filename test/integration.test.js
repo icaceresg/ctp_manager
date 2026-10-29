@@ -8,6 +8,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { monitorFixture } from './fixtures/ranked-monitor.js';
+import { statisticsFixture } from './fixtures/ranked-statistics.js';
 import { lobbyFixture, lobbyId } from './fixtures/ranked-lobby.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -158,6 +159,10 @@ before(async () => {
     }
     if (mode === 'malformed') { response.end(JSON.stringify({ ok: true, data: { matches: 'bad' } })); return; }
     if (parsed.action === 'ranked_monitor') { response.end(JSON.stringify({ok:true,data:{...monitorFixture(),secret:token}}));return; }
+    if (parsed.action === 'ranked_statistics') {
+      if (mode === 'no_season' && parsed.period === 'season') { response.statusCode = 422; response.end(JSON.stringify({ ok: false, code: 'invalid_command', error: token })); return; }
+      response.end(JSON.stringify({ ok: true, data: { ...statisticsFixture(parsed.period), secret: token } })); return;
+    }
     if (parsed.action === 'ranked_lobby_detail') {const data=parsed.target_id===lobbyId?lobbyFixture():{schema_version:1,found:false,lobby_id:parsed.target_id};if(data.chat)data.chat.can_send=true;data.secret=token;response.end(JSON.stringify({ok:true,data}));return;}
     if (parsed.action === 'club_candidates') { response.end(JSON.stringify({ ok: true, data: clubCandidates })); return; }
     if (parsed.action === 'case_context') { response.end(JSON.stringify({ ok: true, data: { incident_id: parsed.target_id, messages: [{ id: 'message-1', author_name: 'Jugador', text: 'Necesitamos ayuda', created_at: '2026-09-29T10:00:00Z', source: 'ticket', is_staff: false, private_token: token }], next_cursor: null, web_path: '/app/retos/test' } })); return; }
@@ -422,6 +427,37 @@ test('local QA monitor requires an admin and only sends the signed read action w
   assert.equal(observed.length,before);
   mode='outage';const failure=await api('GET','/operations/ranked/monitor');
   assert.equal(failure.status,502);assert.equal(JSON.stringify(failure.data).includes(token),false);
+  mode='ok';
+});
+
+test('Ranked statistics send only a fixed period with the operator actor and project the aggregate report', async () => {
+  mode='ok';
+  let before=observed.length;
+  assert.equal((await api('GET','/operations/ranked/statistics',undefined,'')).status,401);
+  for(const query of ['?period=365d','?period=30d&period=7d','?actor_id=forged','?period=7d&from=2026-01-01'])
+    assert.equal((await api('GET',`/operations/ranked/statistics${query}`)).status,400,query);
+  assert.equal(observed.length,before);
+  const standard=await api('GET','/operations/ranked/statistics');
+  assert.equal(standard.status,200);assert.deepEqual(standard.data,statisticsFixture('30d'));
+  assert.deepEqual(observed.at(-1),{action:'ranked_statistics',actor_id:operatorId,period:'30d'});
+  for(const period of ['7d','90d','season','all']){
+    const result=await api('GET',`/operations/ranked/statistics?period=${period}`);
+    assert.equal(result.status,200);assert.deepEqual(result.data,statisticsFixture(period));
+    assert.deepEqual(observed.at(-1),{action:'ranked_statistics',actor_id:operatorId,period});
+    assert.equal(JSON.stringify(result.data).includes(token),false);
+  }
+  const session=(await api('POST','/auth/login',{username:'monitor-referee',password:'monitor-test-password'},'')).cookie;
+  before=observed.length;
+  assert.equal((await api('GET','/operations/ranked/statistics',undefined,session)).status,403);
+  assert.equal(observed.length,before);
+  mode='no_season';
+  const season=await api('GET','/operations/ranked/statistics?period=season');
+  assert.equal(season.status,409);assert.match(season.data.error,/temporada/);assert.equal(JSON.stringify(season.data).includes(token),false);
+  mode='rejected';
+  const older=await api('GET','/operations/ranked/statistics?period=7d');
+  assert.equal(older.status,503);assert.match(older.data.error,/todavía no ofrece/);
+  mode='malformed';
+  assert.equal((await api('GET','/operations/ranked/statistics')).status,502);
   mode='ok';
 });
 

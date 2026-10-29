@@ -60,9 +60,12 @@ test('private metrics are discoverable once for administrators on PRE and PROD o
 
 test('Ranked supervision adds Ranked and player workspaces without granting admin tools', () => {
   const items = managerNavigation(() => false, false, false, true);
-  assert.deepEqual(items.map(item => item.id), ['ranked-monitor','jugadores']);
+  assert.deepEqual(items.map(item => item.id), ['ranked-monitor','ranked-stats','jugadores']);
   assert.equal(items[0].to, '/ranked/monitor');
-  assert.equal(items[1].to, '/jugadores');
+  assert.equal(items[1].to, '/ranked/estadisticas');
+  assert.equal(items[1].title, 'Estadísticas Ranked');
+  assert.equal(items[2].to, '/jugadores');
+  assert.deepEqual(navigationSearch(items, 'marcas audiencia').map(item => item.id), ['ranked-stats']);
   assert.equal(items.some(item => ['administracion','usuarios','crm','integracion','metrics'].includes(item.id)),false);
 });
 
@@ -72,8 +75,8 @@ test('Inicio and Jugadores stay on top and every other allowed tool sits once in
   assert.deepEqual(split.primary.map(item=>item.id),['jornada','jugadores']);
   assert.equal(split.primary[0].title,'Inicio');
   const competition=split.groups.find(group=>group.title==='Competición');
-  assert.deepEqual(competition.items.map(item=>item.id),['ranked-monitor','incidencias','torneos','arbitraje','sanciones','historico']);
-  assert.deepEqual(competition.items.slice(0,2).map(item=>item.title),['Ranked','Tickets']);
+  assert.deepEqual(competition.items.map(item=>item.id),['ranked-monitor','ranked-stats','incidencias','torneos','arbitraje','sanciones','historico']);
+  assert.deepEqual(competition.items.slice(0,3).map(item=>item.title),['Ranked','Estadísticas Ranked','Tickets']);
   assert.equal(competition.daily,true,'Competición starts open because it holds Ranked and Tickets');
   assert.deepEqual(split.groups.filter(group=>group.daily).map(group=>group.title),['Competición']);
   const grouped=split.groups.flatMap(group=>group.items);

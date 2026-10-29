@@ -6,6 +6,7 @@ import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './co
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
 import { rankedMonitorState } from './ranked-monitor-contract.js';
+import { rankedStatisticsPeriod, rankedStatisticsState } from './ranked-statistics-contract.js';
 import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor, rankedChatRequest, rankedLobbyChatReceipt, rankedDecisionRequest, rankedDecisionReceipt, rankedBanRequest, rankedBanReceipt } from './ranked-lobby-contract.js';
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
@@ -410,6 +411,22 @@ export async function getRankedState(user) {
 export async function getRankedMonitor(user) {
   requireRankedOperator(user);
   return rankedMonitorState(await request({action: 'ranked_monitor', actor_id: getOperatorIdentity(user.id)}));
+}
+export async function getRankedStatistics(user, value) {
+  requireRankedOperator(user);
+  const period = rankedStatisticsPeriod(value);
+  try {
+    return rankedStatisticsState(await request({action: 'ranked_statistics', actor_id: getOperatorIdentity(user.id), period}), period);
+  } catch (error) {
+    // Manager only sends known periods, so a CTP rejection means an older CTP
+    // build without this reader or, for the season view, no active season.
+    if (error.status === 422 && error.remoteRejected) {
+      throw integrationError(period === 'season' ? 409 : 503, period === 'season'
+        ? 'No hay ninguna temporada de Ranked activa en CTP.'
+        : 'Esta versión de CTP todavía no ofrece las estadísticas de Ranked.');
+    }
+    throw error;
+  }
 }
 function requireRankedOperator(user){
  if(!user?.id)throw integrationError(401,'Necesitas iniciar sesión.');

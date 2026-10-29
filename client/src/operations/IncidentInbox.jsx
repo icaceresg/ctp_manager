@@ -35,7 +35,7 @@ export function IncidentInbox({ data, me, params, setParams, choose }) {
         className={bucket === filter.id && state === 'active' ? 'is-selected' : ''} aria-pressed={bucket === filter.id && state === 'active'} onClick={() => selectBucket(filter.id)}>
         <span>{filter.title}</span><strong>{filter.count}</strong>
       </button>)}</nav>
-      <span className="case-inbox-count-scope">{counts.scope === 'query' ? query ? 'Totales para esta búsqueda' : 'Totales de tickets abiertos' : 'Contadores de esta página'}</span>
+      <span className="case-inbox-count-scope">{counts.scope === 'query' ? 'Totales de tickets abiertos' : 'Contadores de esta página'}</span>
     </div>
 
     <div className="case-inbox-toolbar">

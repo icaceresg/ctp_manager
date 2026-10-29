@@ -9,18 +9,18 @@ import '../src/styles.css';
 import '../src/operations/operations.css';
 
 if(!import.meta.env.DEV||!['localhost','127.0.0.1','[::1]'].includes(window.location.hostname))throw new Error('Local development fixture only');
-const fixed=['Mumbai','Munition','Reactor U92','Rooftops','Silkworm'],interval=1200000;
+const fixed=['Lotus','Mumbai','Munition','Reactor U92','Rooftops','Silkworm'],interval=1200000;
 let enabled=true,revision=1,unavailable=false,offset=Date.parse('2026-10-28T12:10:00Z')-Date.now();
 const counts={get:0,post:0,changes:0},receipts=new Map(),serverNow=()=>Date.now()+offset;
 const originalFetch=window.fetch;
 function snapshot(){
  const now=serverNow(),slot=Math.floor(now/interval),active=slot%2===0?'Sentry':'Lithium';
  const stamp=new Date(now).toISOString();
- return{schema_version:1,event_id:'hw-2026',enabled,theme:'halloween',xp_multiplier:1,streak_bonus:0.5,starts_at:null,ends_at:null,revision,server_time:stamp,
+ return{schema_version:1,event_id:'hw-2026',enabled,theme:'halloween',xp_multiplier:2,streak_bonus:0.5,starts_at:null,ends_at:null,revision,server_time:stamp,
   map_rotation:{schema_version:1,event_id:'hw-2026',enabled,interval_seconds:1200,frozen:false,
    active_map:enabled?active:null,next_map:enabled?(active==='Sentry'?'Lithium':'Sentry'):null,
    slot_starts_at:enabled?new Date(slot*interval).toISOString():null,next_rotation_at:enabled?new Date((slot+1)*interval).toISOString():null,
-   observed_at:stamp,fixed_maps:[...fixed],active_pool:enabled?[...fixed,active]:['Coal','Lotus',...fixed]}};
+   observed_at:stamp,fixed_maps:[...fixed],active_pool:enabled?[...fixed,active]:['Coal',...fixed]}};
 }
 const reply=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
 window.fetch=async(input,options={})=>{

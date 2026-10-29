@@ -1,6 +1,6 @@
 # Halloween map rotation in Manager DEV
 
-The existing administrative Halloween switch enables the new six-map pool for new lobbies. Sentry and Lithium alternate in server-owned 20-minute slots alongside Mumbai, Munition, Reactor U92, Rooftops and Silkworm. Coal and Lotus leave the event pool; existing lobbies retain their snapshots. Switching off restores the ordinary pool for new lobbies.
+The existing administrative Halloween switch enables the new seven-map pool for new lobbies. Sentry and Lithium alternate in server-owned 20-minute slots alongside the six fixed maps Lotus, Mumbai, Munition, Reactor U92, Rooftops and Silkworm. Only Coal leaves the event pool; existing lobbies retain their snapshots. Switching off restores the ordinary seven-map pool for new lobbies.
 
 The response adapter validates and whitelists `map_rotation`, including its exact map identities, distinct active/next map, 1,200-second window, observed server time and the agreement with the event flag. A historical frozen lobby snapshot cannot masquerade as current administrative status. Older responses remain readable, but the UI blocks activation when the new rotation capability is absent; deactivation remains available.
 

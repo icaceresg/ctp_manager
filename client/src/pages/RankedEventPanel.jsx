@@ -10,13 +10,13 @@ function MapRotationReading({reading}){
  return <section className="ranked-event-rotation" aria-label="Rotación del map pool">
   <h3><MapIcon size={18}/> Map pool de Halloween</h3>
   {reading.status==='active'?<>
-   <div className="ranked-event-rotation__header"><strong>6 mapas en el pool</strong><span role="timer" aria-label="Tiempo hasta el próximo cambio de mapa"><Clock3 size={15}/> {rotationCountdown(reading.seconds)}</span></div>
+   <div className="ranked-event-rotation__header"><strong>7 mapas en el pool</strong><span role="timer" aria-label="Tiempo hasta el próximo cambio de mapa"><Clock3 size={15}/> {rotationCountdown(reading.seconds)}</span></div>
    <dl className="ranked-event-rotation__maps"><div><dt>Dentro del pool</dt><dd>{rotation.active_map}</dd></div><div><dt>Entra en el próximo cambio</dt><dd>{rotation.next_map}</dd></div></dl>
    <p className="muted">Próximo cambio: {dateTime(rotation.next_rotation_at)} (hora local).</p>
-   <p className="muted">Cinco mapas fijos: {rotation.fixed_maps.join(' · ')}.</p>
+   <p className="muted">Seis mapas fijos: {rotation.fixed_maps.join(' · ')}.</p>
   </>:reading.status==='off'?<><strong>Rotación desactivada</strong><p className="muted">Se utiliza el pool habitual: {rotation.active_pool.join(' · ')}.</p></>
    :<p className="op-notice" role="status">{reading.status==='boundary'?'Esperando la lectura del servidor para confirmar el siguiente mapa.':reading.status==='stale'?'Lectura desactualizada. No se muestra un mapa actual hasta comprobar el servidor.':'La rotación no está disponible en esta lectura. Actualiza para comprobarla.'}</p>}
-  <p className="muted">Al activar Halloween, Sentry y Lithium se alternan cada 20 minutos junto a los cinco mapas fijos. Coal y Lotus quedan fuera del pool del evento. Cada partida conserva el pool que recibió al formarse.</p>
+  <p className="muted">Al activar Halloween, Sentry y Lithium se alternan cada 20 minutos junto a los seis mapas fijos. Lotus se conserva; Coal queda fuera del pool del evento. Cada partida conserva el pool que recibió al formarse.</p>
  </section>;
 }
 
@@ -95,15 +95,16 @@ export default function RankedEventPanel({user}){
  }
  return <section className="op-card stack ranked-event-panel" aria-label="Evento Halloween Ranked">
   <div className="op-section-title"><h2><Flame size={22}/> Halloween · Ranked</h2><button type="button" className="btn" disabled={busy||readingStatus} onClick={()=>void refresh()}><RefreshCw size={16}/> Actualizar evento</button></div>
-  <p>Temática, mapas, rachas, sonidos, música de búsqueda y overlay. Se cambia desde aquí sin desplegar la web.</p>
+  <p>Temática, mapas, XP de victoria, rachas, efectos de sonido y overlay. Se cambia desde aquí sin desplegar la web.</p>
   {error&&<p className="op-error" role="alert">{error}</p>}{notice&&<p className="op-notice" role="status">{notice}</p>}
   {snapshot?<>
    <div className="ranked-event-state"><strong className={!expired&&snapshot.enabled?'event-on':''}>{expired?'Estado pendiente de comprobar':snapshot.enabled?'Evento ACTIVO':'Evento DESACTIVADO'}</strong><span>Revisión observada {snapshot.revision} · {dateTime(snapshot.server_time)}</span></div>
    {expired&&<p className="op-notice">Esta lectura puede estar desactualizada. Actualiza antes de preparar otro cambio.</p>}
    <MapRotationReading reading={reading}/>
-   <dl className="ranked-event-rewards"><div><dt>De 1 a 4 victorias consecutivas</dt><dd>total ×1</dd></div><div><dt>Desde 5 victorias consecutivas</dt><dd>total ×2</dd></div><div><dt>Desde 10 victorias consecutivas</dt><dd>total ×2,5</dd></div></dl>
-   <p className="muted">Con Halloween activo, el sistema habitual usa el multiplicador ×1 hasta cuatro victorias consecutivas, ×2 desde la quinta y ×2,5 desde la décima, incluyendo la victoria actual. Una base de 50 XP da 50, 100 o 125 XP, respectivamente. La XP perdida y el MMR mantienen sus reglas.</p>
+   <dl className="ranked-event-rewards"><div><dt>De 1 a 4 victorias consecutivas</dt><dd>total ×2</dd></div><div><dt>Desde 5 victorias consecutivas</dt><dd>total ×4</dd></div><div><dt>Desde 10 victorias consecutivas</dt><dd>total ×5</dd></div></dl>
+   <p className="muted">Con Halloween activo, la XP base de una victoria se multiplica por ×2. La racha aplica por separado ×1 hasta cuatro victorias consecutivas, ×2 desde la quinta y ×2,5 desde la décima, incluyendo la victoria actual. Los factores se aplican una sola vez: una base de 50 XP da 100, 200 o 250 XP. La XP perdida y el MMR mantienen sus reglas.</p>
    <p className="muted">Cada partida guarda la política al formarse. Activar o desactivar afecta a partidas nuevas; no recalcula resultados. La apariencia se actualiza en hasta 30 segundos. El audio necesita consentimiento del jugador.</p>
+   <p className="muted">La música de búsqueda no está disponible: falta el MP3 completo aprobado. No se activa ni se sustituye por efectos de sonido.</p>
    <form onSubmit={save} className="stack">
     <label className="op-check"><input type="checkbox" checked={enabled} disabled={busy||expired||uncertain||!canActivate&&!snapshot.enabled} onChange={event=>setEnabled(event.target.checked)}/> Activar Halloween y la rotación de mapas para las partidas nuevas</label>
     {!canActivate&&<p className="op-notice">La lectura no incluye la nueva rotación. No se permite activar el evento con información incompleta; sí se puede desactivar si ya estaba activo.</p>}

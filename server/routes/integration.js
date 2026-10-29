@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
 import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedStatistics, getRankedLobbyDetail, sendRankedLobbyChat, decideRankedLobby, banRankedPlayer, getClubCandidates, getProViewState } from '../integration.js';
-import { canManageRanked } from '../../shared/access.js';
+import { canManageRanked, canReadRankedStatistics } from '../../shared/access.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS } from '../guard-contract.js';
@@ -12,6 +12,7 @@ import { prepareCaseCommand } from '../operations.js';
 
 export const integrationRouter = Router();
 const requireRanked=(req,res,next)=>canManageRanked(req.user)?next():res.status(403).json({error:'La supervisión de Ranked requiere ser administrador o árbitro de CTP.'});
+const requireRankedStatistics=(req,res,next)=>canReadRankedStatistics(req.user)?next():res.status(403).json({error:'No tienes permiso para consultar las estadísticas de Ranked.'});
 integrationRouter.get('/operations/pro-view', requireAuth, allow('realizacion'), async (req, res) => res.json(await getProViewState(req.user)));
 integrationRouter.post('/operations/pro-view/commands', requireAuth, allow('realizacion'), async (req, res) => {
   const state = await getProViewState(req.user);
@@ -45,7 +46,7 @@ integrationRouter.get('/operations/history', requireAuth, allow('operaciones', '
 integrationRouter.get('/operations/matches/:id/guard',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getGuardState(req.user,req.params.id)));
 integrationRouter.get('/operations/ranked', requireAuth, requireAdmin, async (req, res) => res.json(await getRankedState(req.user)));
 integrationRouter.get('/operations/ranked/monitor', requireAuth, requireRanked, async (req, res) => res.json(await getRankedMonitor(req.user)));
-integrationRouter.get('/operations/ranked/statistics', requireAuth, requireRanked, async (req, res) => {
+integrationRouter.get('/operations/ranked/statistics', requireAuth, requireRankedStatistics, async (req, res) => {
   if (Object.keys(req.query).some(key => key !== 'period')) throw new HttpError(400, 'La consulta de estadísticas no es válida.');
   res.json(await getRankedStatistics(req.user, req.query.period));
 });

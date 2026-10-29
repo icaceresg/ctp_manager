@@ -77,7 +77,8 @@ export function describeUser(user) {
     is_admin: officialAdmin,
     auth_mode: CTP_AUTH_ENABLED ? 'ctp' : 'local',
     ...(CTP_AUTH_ENABLED ? { ctp_user_id: user.ctp_user_id, ctp_role: user.ctp_role, account_url: `${AUTH_CONFIG.origin}/es/app/settings?seccion=perfil` } : {}),
-    ...(limitedStaff ? { staff_kind: user.ctp_staff_kind } : {}),
+    ...(limitedStaff ? { staff_kind: user.ctp_staff_kind, ctp_scopes: ['staff.access',
+      ...(user.ctp_ranked_statistics_read === 1 ? ['ranked.statistics.read'] : [])] } : {}),
     roles: roles.map((r) => ({ id: r.id, name: r.name, staff_kind: r.staff_kind })),
     sections,
   };
@@ -223,8 +224,10 @@ function mirrorCtpIdentity(identity) {
         .run(`ctp_${identity.ctp_user_id}`, identity.username, '!ctp-auth-only', identity.role === 'admin' ? 1 : 0, Date.now(), identity.ctp_user_id, identity.role);
       user = db.prepare('SELECT * FROM users WHERE id=?').get(Number(inserted.lastInsertRowid));
     }
-    db.prepare('UPDATE users SET name=?,ctp_role=?,ctp_staff_kind=?,is_admin=?,last_login_at=? WHERE id=?')
-      .run(identity.username, identity.role, identity.role === 'staff' ? identity.staff_kind : '', identity.role === 'admin' ? 1 : 0, Date.now(), user.id);
+    db.prepare('UPDATE users SET name=?,ctp_role=?,ctp_staff_kind=?,ctp_ranked_statistics_read=?,is_admin=?,last_login_at=? WHERE id=?')
+      .run(identity.username, identity.role, identity.role === 'staff' ? identity.staff_kind : '',
+        identity.role === 'staff' && identity.scopes.includes('ranked.statistics.read') ? 1 : 0,
+        identity.role === 'admin' ? 1 : 0, Date.now(), user.id);
     const targetKind = identity.role === 'staff' ? identity.staff_kind : identity.role === 'referee' ? 'referee' : null;
     if (targetKind && (previousRole !== identity.role || identity.role === 'staff' && previousStaffKind !== targetKind)) {
       const role = db.prepare('SELECT id FROM roles WHERE staff_kind=? ORDER BY id LIMIT 1').get(targetKind);
@@ -285,7 +288,7 @@ async function validateCtpSession(token, user) {
   } catch (error) {
     if (error instanceof CtpAuthError && [401, 403].includes(error.status)) {
       db.prepare('DELETE FROM sessions WHERE token=?').run(token);
-      if (error.status === 403) db.prepare("UPDATE users SET ctp_role='',ctp_staff_kind='',is_admin=0 WHERE id=?").run(user.id);
+      if (error.status === 403) db.prepare("UPDATE users SET ctp_role='',ctp_staff_kind='',ctp_ranked_statistics_read=0,is_admin=0 WHERE id=?").run(user.id);
       return null;
     }
     if (error instanceof HttpError) throw error;

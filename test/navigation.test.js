@@ -69,6 +69,15 @@ test('Ranked supervision adds Ranked and player workspaces without granting admi
   assert.equal(items.some(item => ['administracion','usuarios','crm','integracion','metrics'].includes(item.id)),false);
 });
 
+test('individual statistics readers discover only aggregate statistics, never Ranked tools or administration', () => {
+  const items = managerNavigation(() => false, false, false, false, 'manager.playctp.com', true);
+  assert.deepEqual(items.map(item => item.id), ['ranked-stats']);
+  assert.equal(items[0].to, '/ranked/estadisticas');
+  assert.deepEqual(navigationSearch(items, 'audiencia').map(item => item.id), ['ranked-stats']);
+  assert.equal(navigationSearch(items, 'disputas').length, 0);
+  assert.equal(managerNavigation(() => false, false, false, false, 'manager.playctp.com', false).length, 0);
+});
+
 test('Inicio and Jugadores stay on top and every other allowed tool sits once in its area group',()=>{
   const all=managerNavigation(()=>true,true,true,true,'localhost');
   const split=splitManagerNavigation(all);

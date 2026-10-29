@@ -14,18 +14,22 @@ const editorial = [
   { section: 'recursos', to: '/recursos', title: 'Recursos', keywords: 'archivos pendientes' },
   { section: 'tablero', to: '/tablero', title: 'Tablero', keywords: 'contenido tareas' },
 ];
-export function managerNavigation(can, isAdmin, staffManager = false, rankedStaff = false, hostname = '') {
+export function managerNavigation(can, isAdmin, staffManager = false, rankedStaff = false, hostname = '', rankedStatistics = rankedStaff) {
   const items = OP_TABS.filter(tab => tab.menu !== false && tab.sections.some(can)).map(tab => ({
     id: tab.id, to: `/operaciones/${tab.id}`, title: titles[tab.id] || tab.title, group: groups[tab.id],
     keywords: `${tab.title} ${tab.id} ${aliases[tab.id] || ''}`,
   }));
   if (can('disponibilidad')) items.splice(items.findIndex(item => item.id === 'jornada') + 1, 0, { id: 'disponibilidad', to: '/disponibilidad', title: 'Mi disponibilidad', group: 'Trabajo diario', keywords: 'agenda días horarios' });
   items.push(...editorial.filter(item => can(item.section)).map(item => ({ ...item, id: item.section, group: 'Contenido editorial' })));
-  if (isAdmin || rankedStaff) {
+  if (isAdmin || rankedStaff || rankedStatistics) {
     // Ranked opens Competición, ahead of Tickets and the tournament tools.
     const competition = items.findIndex(item => item.group === 'Competición');
-    items.splice(competition < 0 ? items.length : competition, 0, { id: 'ranked-monitor', to: '/ranked/monitor', title: 'Ranked', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización disputas revisión' },
-      { id: 'ranked-stats', to: '/ranked/estadisticas', title: 'Estadísticas Ranked', group: 'Competición', keywords: 'estadísticas métricas informe marcas patrocinadores sponsors audiencia alcance horas de juego partidas jugadores únicos interacciones edad plataforma dossier comercial' });
+    const rankedItems = [];
+    if (isAdmin || rankedStaff) rankedItems.push({ id: 'ranked-monitor', to: '/ranked/monitor', title: 'Ranked', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización disputas revisión' });
+    if (isAdmin || rankedStaff || rankedStatistics) rankedItems.push({ id: 'ranked-stats', to: '/ranked/estadisticas', title: 'Estadísticas Ranked', group: 'Competición', keywords: 'estadísticas métricas informe marcas patrocinadores sponsors audiencia alcance horas de juego partidas jugadores únicos interacciones edad plataforma dossier comercial' });
+    items.splice(competition < 0 ? items.length : competition, 0, ...rankedItems);
+  }
+  if (isAdmin || rankedStaff) {
     items.push({ id: 'jugadores', to: '/jugadores', title: 'Jugadores', group: 'Trabajo diario', keywords: 'buscar nickname activision cuenta historial perfil tickets sanciones división xp' });
   }
   if (isAdmin) items.push(

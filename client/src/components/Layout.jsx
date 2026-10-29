@@ -7,7 +7,7 @@ import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { dueWithin } from '../dates.js';
 import { ContentEditor } from './ContentEditor.jsx';
-import { canManageStaff, canManageRanked } from '../../../shared/access.js';
+import { canManageStaff, canManageRanked, canReadRankedStatistics } from '../../../shared/access.js';
 
 export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
@@ -37,7 +37,7 @@ export function Layout() {
   useEffect(() => {
     window.scrollTo(0, 0);
     document.getElementById('manager-content')?.focus({ preventScroll: true });
-    const title = managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname).find(item => item.to === location.pathname)?.title
+    const title = managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname, canReadRankedStatistics(me)).find(item => item.to === location.pathname)?.title
       || (location.pathname.startsWith('/jugadores/') ? 'Ficha de jugador' : location.pathname.startsWith('/ranked/partidas/') ? 'Partida Ranked' : location.pathname.startsWith('/operaciones/partidos/') ? 'Ficha de partido' : location.pathname.startsWith('/crm/') ? 'CRM y correos' : location.pathname === '/cuenta' ? 'Mi cuenta' : 'Área de trabajo');
     document.title = `${title} · CTP Manager`;
   }, [location.pathname]);
@@ -47,7 +47,7 @@ export function Layout() {
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
   }, [menuOpen]);
-  const items = [...managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname), ruletaNavigation(window.location.hostname)];
+  const items = [...managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname, canReadRankedStatistics(me)), ruletaNavigation(window.location.hostname)];
   const {primary,groups}=splitManagerNavigation(items);
   const navItem=item=>{const Icon=ICONS[item.id]||ListChecks;return item.href?<a key={item.id} href={item.href} target="_blank" rel="noopener"><Icon size={17}/><span>{item.title}</span></a>:<NavLink key={item.id} to={item.to}><Icon size={17}/><span>{item.title}</span>{item.id==='recursos'&&<PendingBadge/>}</NavLink>;};
   const roleNames = me.is_admin ? 'Administrador' : me.roles.map((r) => r.name).join(' · ') || 'Sin rol';

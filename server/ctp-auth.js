@@ -90,8 +90,10 @@ export function validateIdentity(value, expectedSubject) {
   // Organisational access is an explicit CTP grant, separate from game roles.
   if (value.role === 'staff'
     ? !['operations', 'referee', 'production', 'caster', 'communications', 'clubs', 'executive'].includes(value.staff_kind)
-      || value.scopes.length !== 1 || value.scopes[0] !== 'staff.access'
-    : value.scopes.includes('staff.access') || value.staff_kind !== undefined) fail(403, 'staff_only');
+      || !value.scopes.includes('staff.access') || value.scopes.length > 2
+      || new Set(value.scopes).size !== value.scopes.length
+      || value.scopes.some(scope => !['staff.access', 'ranked.statistics.read'].includes(scope))
+    : value.scopes.includes('staff.access') || value.scopes.includes('ranked.statistics.read') || value.staff_kind !== undefined) fail(403, 'staff_only');
   return value;
 }
 

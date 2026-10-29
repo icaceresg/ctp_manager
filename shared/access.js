@@ -58,3 +58,12 @@ export function canManageRanked(user) {
   if (user.auth_mode === 'ctp') return Boolean(user.ctp_user_id && (user.ctp_role === 'referee' || user.ctp_role === 'admin' && user.is_admin));
   return Boolean(user.is_admin);
 }
+
+/** Individual CTP grant: aggregate statistics only, never Ranked moderation. */
+export function canReadRankedStatistics(user) {
+  if (canManageRanked(user)) return true;
+  return Boolean(user?.auth_mode === 'ctp' && user.ctp_user_id && user.ctp_role === 'staff'
+    && Array.isArray(user.ctp_scopes) && user.ctp_scopes.length === 2
+    && new Set(user.ctp_scopes).size === 2
+    && user.ctp_scopes.includes('staff.access') && user.ctp_scopes.includes('ranked.statistics.read'));
+}

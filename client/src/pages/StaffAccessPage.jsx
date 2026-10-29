@@ -38,6 +38,30 @@ function StaffAccessModal({ account, close, saved }) {
   </form></Modal>;
 }
 
+export function RankedStatisticsAccess({ account, disabled, saved }) {
+  const { me, toast, onMeChange } = useApp();
+  const [enabled, setEnabled] = useState(account.ranked_statistics_enabled === true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { setEnabled(account.ranked_statistics_enabled === true); setError(''); }, [account.id, account.ranked_statistics_enabled]);
+  if (account.role !== 'player' || !account.staff_enabled || !account.email_confirmed) return <span className="muted small">{account.role === 'admin' || account.role === 'referee' ? 'Incluido en su función' : 'Requiere staff activo y cuenta confirmada'}</span>;
+  const toggle = async event => {
+    const requested = event.target.checked;
+    setBusy(true); setError('');
+    try {
+      const receipt = await api.patch(`/staff-access/${encodeURIComponent(account.id)}/ranked-statistics`, { enabled: requested });
+      if (receipt.id !== account.id || receipt.enabled !== requested) throw new Error('CTP no ha confirmado el permiso de estadísticas.');
+      setEnabled(receipt.enabled);
+      if (account.id === me.ctp_user_id) await onMeChange();
+      await saved();
+      toast(receipt.enabled ? 'Lectura de estadísticas Ranked habilitada.' : 'Lectura de estadísticas Ranked retirada.');
+    } catch (problem) { setError(problem.message); }
+    finally { setBusy(false); }
+  };
+  return <div className="stack" style={{ gap: 5 }}><label className="checkbox"><input type="checkbox" checked={enabled} disabled={disabled || busy} onChange={toggle}/><span>Ver estadísticas Ranked</span>{busy && <Spinner size={14}/>}</label>
+    <span className="muted small">Solo datos agregados; no concede arbitraje.</span>{error && <span role="alert" className="error small">{error}</span>}</div>;
+}
+
 export function StaffAccessPage() {
   const [params, setParams] = useSearchParams();
   const query = params.get('q') || '';
@@ -59,9 +83,10 @@ export function StaffAccessPage() {
     {error && <p role="alert" className="muted">{error.message} <button className="btn" onClick={reload}>Reintentar</button></p>}
     {loading && !data ? <Spinner/> : data ? <>
       <p className="muted">{data.total} cuentas · página {page + 1}</p>
-      <div className="card table-card"><table className="data-table"><thead><tr><th>Cuenta CTP</th><th>Función</th><th>Acceso</th><th aria-label="Acciones"/></tr></thead><tbody>
+      <div className="card table-card"><table className="data-table"><thead><tr><th>Cuenta CTP</th><th>Función</th><th>Acceso</th><th>Estadísticas Ranked</th><th aria-label="Acciones"/></tr></thead><tbody>
         {data.items.map(account => <tr key={account.id}><td><strong>{account.username}</strong>{account.email && <div className="muted small">{account.email}</div>}{!account.email_confirmed && <div className="muted small">Correo pendiente de confirmar</div>}</td>
           <td>{account.role === 'admin' ? 'Administrador CTP' : label(currentKind(account))}</td><td>{account.role === 'admin' || currentKind(account) ? 'Habilitado' : 'Sin acceso'}</td>
+          <td><RankedStatisticsAccess account={account} disabled={loading || Boolean(error)} saved={reload}/></td>
           <td style={{ textAlign: 'right' }}>{account.role === 'admin' ? <span className="muted">Cuenta protegida</span> : <button className="btn ghost sm" disabled={loading || Boolean(error)} onClick={() => setEditing(account)}><Pencil size={14}/>Cambiar función</button>}</td></tr>)}
       </tbody></table>{!data.items.length && <EmptyState icon={Users} title="No hay cuentas que coincidan"/>}</div>
       <div className="row" style={{ marginTop: 18 }}><button className="btn" disabled={loading || page === 0} onClick={() => change('page', String(page - 1))}>Anterior</button><button className="btn" disabled={loading || (page + 1) * 25 >= data.total} onClick={() => change('page', String(page + 1))}>Siguiente</button></div>

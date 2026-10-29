@@ -35,12 +35,27 @@ export function staffDirectoryResponse(value, query) {
   const items = value.items.map(row => {
     if (!object(row) || !uuid(row.id) || seen.has(row.id) || typeof row.username !== 'string' || row.username.length > 100
       || !['player', 'referee', 'admin'].includes(row.role) || row.staff_kind !== null && !kinds.has(row.staff_kind)
-      || typeof row.staff_enabled !== 'boolean' || typeof row.email_confirmed !== 'boolean' || row.email != null && (typeof row.email !== 'string' || row.email.length > 320) || row.staff_updated_at !== null && typeof row.staff_updated_at !== 'string') invalid();
+      || typeof row.staff_enabled !== 'boolean' || typeof row.email_confirmed !== 'boolean' || row.email != null && (typeof row.email !== 'string' || row.email.length > 320) || row.staff_updated_at !== null && typeof row.staff_updated_at !== 'string'
+      || row.ranked_statistics_enabled !== undefined && typeof row.ranked_statistics_enabled !== 'boolean') invalid();
     seen.add(row.id);
     return { id: row.id, username: row.username, role: row.role, staff_kind: row.staff_kind,
-      staff_enabled: row.staff_enabled, staff_updated_at: row.staff_updated_at, email: row.email ?? null, email_confirmed: row.email_confirmed };
+      staff_enabled: row.staff_enabled, staff_updated_at: row.staff_updated_at, email: row.email ?? null, email_confirmed: row.email_confirmed,
+      ranked_statistics_enabled: row.ranked_statistics_enabled === true };
   });
   return { items, total: value.total, offset: query.offset, limit: query.limit };
+}
+
+export function rankedStatisticsAccessPayload(userId, body = {}) {
+  if (!uuid(userId) || !keys(body, ['enabled']) || typeof body.enabled !== 'boolean') fail('Selecciona un permiso de estadísticas válido.');
+  return { user_id: userId, enabled: body.enabled };
+}
+
+export function rankedStatisticsAccessResponse(value, payload) {
+  if (!object(value) || value.id !== payload.user_id || value.enabled !== payload.enabled
+    || typeof value.changed !== 'boolean' || value.updated_at !== null && typeof value.updated_at !== 'string') {
+    throw new HttpError(502, 'CTP no ha confirmado el permiso de estadísticas.');
+  }
+  return { id: value.id, enabled: value.enabled, changed: value.changed, updated_at: value.updated_at };
 }
 
 export function staffAccessResponse(value, payload) {

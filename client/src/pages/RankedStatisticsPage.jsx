@@ -6,7 +6,7 @@ import { useApp } from '../context.jsx';
 import { Spinner } from '../components/ui.jsx';
 import { DataTable, Empty } from '../operations/ui.jsx';
 import { dateTime } from '../operations/model.js';
-import { canManageRanked } from '../../../shared/access.js';
+import { canManageRanked, canReadRankedStatistics } from '../../../shared/access.js';
 import {
   ACTIVITY_METRICS, AGE_BANDS, INTERACTION_KINDS, STATISTICS_PERIODS, WEEKDAYS,
   activitySeries, change, formatCompact, formatDate, formatDay, formatDecimal, formatHours, formatLongDay, formatMinutes,
@@ -210,7 +210,7 @@ export function Methodology() {
 
 export default function RankedStatisticsPage() {
   const { me } = useApp();
-  const allowed = canManageRanked(me), actorKey = `${me?.id}:${me?.ctp_user_id || ''}:${me?.ctp_role || ''}`;
+  const allowed = canReadRankedStatistics(me), actorKey = JSON.stringify([me?.id, me?.ctp_user_id, me?.ctp_role, me?.ctp_scopes]);
   const [params, setParams] = useSearchParams(), period = statisticsPeriod(params.get('periodo'));
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [notice, setNotice] = useState('');
   const [seasonAvailable, setSeasonAvailable] = useState(true), [manualSummary, setManualSummary] = useState('');
@@ -221,7 +221,7 @@ export default function RankedStatisticsPage() {
     setBusy(true); setError('');
     try {
       const next = await api.get(`/operations/ranked/statistics?period=${encodeURIComponent(period)}`);
-      if (request.current === serial) { setData(next); setSeasonAvailable(Boolean(next.season)); }
+      if (request.current === serial) { setData({ snapshot: next, actorKey }); setSeasonAvailable(Boolean(next.season)); }
     } catch (cause) {
       if (request.current !== serial) return;
       setError(cause.message);
@@ -229,11 +229,12 @@ export default function RankedStatisticsPage() {
       if ([401, 403].includes(cause.status)) setData(null);
     } finally { if (request.current === serial) setBusy(false); }
   }, [allowed, actorKey, period]);
+  useEffect(() => { setData(null); setError(''); setManualSummary(''); setSeasonAvailable(true); }, [actorKey]);
   useEffect(() => { void load(); return () => { ++request.current; }; }, [load]);
   useEffect(() => { if (!notice) return undefined; const timer = setTimeout(() => setNotice(''), 2500); return () => clearTimeout(timer); }, [notice]);
   if (!allowed) return <Navigate to="/operaciones/jornada" replace/>;
   const choose = key => setParams(previous => { const next = new URLSearchParams(previous); key === '30d' ? next.delete('periodo') : next.set('periodo', key); return next; }, { replace: true });
-  const shown = data;
+  const shown = data?.actorKey === actorKey ? data.snapshot : null;
   const copy = async () => {
     const text = summaryText(shown);
     try { await navigator.clipboard.writeText(text); setManualSummary(''); setNotice('Resumen copiado'); }
@@ -246,7 +247,7 @@ export default function RankedStatisticsPage() {
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const stale = data && data.period.key !== period;
+  const stale = shown && shown.period.key !== period;
   return <div className="page wide op-page rs-page">
     <header className="op-heading"><div><div className="op-eyebrow"><ChartColumnBig size={15}/> COMPETICIÓN · DATOS PARA MARCAS</div><h1>Estadísticas Ranked</h1>
       <p>Alcance, actividad y comunidad de Ranked con partidas confirmadas en CTP.</p></div>
@@ -268,7 +269,7 @@ export default function RankedStatisticsPage() {
       <p>Este navegador no permite copiar automáticamente. Selecciona el texto y cópialo con Ctrl+C.</p></div><button className="btn" onClick={() => setManualSummary('')}>Cerrar</button></div>
       <textarea readOnly value={manualSummary} rows={manualSummary.split('\n').length + 1} onFocus={event => event.target.select()} autoFocus/>
     </section>}
-    {error && <div className="op-error" role="alert"><CircleAlert size={18}/><span>{error}{data ? ' Se muestran los últimos datos cargados.' : ''}</span><button className="btn" onClick={() => void load()} disabled={busy}>Reintentar</button></div>}
+    {error && <div className="op-error" role="alert"><CircleAlert size={18}/><span>{error}{shown ? ' Se muestran los últimos datos cargados.' : ''}</span><button className="btn" onClick={() => void load()} disabled={busy}>Reintentar</button></div>}
     {!shown ? busy ? <div className="op-loading"><Spinner/>Calculando estadísticas en CTP…</div> : !error && <Empty title="Sin datos disponibles">Pulsa Actualizar para consultar CTP.</Empty>
       : <div className={`rs-content${busy || stale ? ' is-refreshing' : ''}`} aria-busy={busy}>
         <StatisticsKpis data={shown}/>
@@ -280,7 +281,7 @@ export default function RankedStatisticsPage() {
         <AllTimePanel data={shown}/>
         <DailyTable data={shown}/>
         <Methodology/>
-        <p className="muted rs-note no-print">¿Necesitas el estado en directo? Consulta el <Link to="/ranked/monitor">monitor de Ranked</Link>.</p>
+        {canManageRanked(me) && <p className="muted rs-note no-print">¿Necesitas el estado en directo? Consulta el <Link to="/ranked/monitor">monitor de Ranked</Link>.</p>}
       </div>}
   </div>;
 }

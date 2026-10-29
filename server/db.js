@@ -200,6 +200,8 @@ addColumn('sessions', 'user_id', 'INTEGER REFERENCES users(id) ON DELETE CASCADE
 addColumn('users', 'ctp_user_id', 'TEXT');
 addColumn('users', 'ctp_role', "TEXT NOT NULL DEFAULT ''");
 addColumn('users', 'ctp_staff_kind', "TEXT NOT NULL DEFAULT ''");
+// Mirrored only from the centrally verified identity, refreshed on every request.
+addColumn('users', 'ctp_ranked_statistics_read', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('sessions', 'auth_mode', "TEXT NOT NULL DEFAULT 'local'");
 addColumn('sessions', 'ctp_tokens', 'TEXT');
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_ctp_identity ON users(ctp_user_id) WHERE ctp_user_id IS NOT NULL;

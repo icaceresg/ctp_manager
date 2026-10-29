@@ -12,8 +12,8 @@ import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
 import { PRO_VIEW_ACTION, proViewSettings, proViewState } from './pro-view-contract.js';
-import { canAccess, canManageStaff, canManageRanked } from '../shared/access.js';
-import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse } from './staff-access-contract.js';
+import { canAccess, canManageStaff, canManageRanked, canReadRankedStatistics } from '../shared/access.js';
+import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse, rankedStatisticsAccessPayload, rankedStatisticsAccessResponse } from './staff-access-contract.js';
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import {
@@ -413,7 +413,10 @@ export async function getRankedMonitor(user) {
   return rankedMonitorState(await request({action: 'ranked_monitor', actor_id: getOperatorIdentity(user.id)}));
 }
 export async function getRankedStatistics(user, value) {
-  requireRankedOperator(user);
+  if (!user?.id) throw integrationError(401, 'Necesitas iniciar sesión.');
+  if (!canReadRankedStatistics(user) || (user.auth_mode !== 'ctp' && config.configured && !config.localTestMode)) {
+    throw integrationError(403, 'No tienes permiso para consultar las estadísticas de Ranked.');
+  }
   const period = rankedStatisticsPeriod(value);
   try {
     return rankedStatisticsState(await request({action: 'ranked_statistics', actor_id: getOperatorIdentity(user.id), period}), period);
@@ -657,6 +660,14 @@ export async function setStaffAccess(user, userId, body) {
   const payload = staffAccessPayload(userId, body);
   const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'staff', payload });
   return staffAccessResponse(result, payload);
+}
+
+export async function setRankedStatisticsAccess(user, userId, body) {
+  if (!canManageStaff(user)) throw integrationError(403, 'La gestión de staff requiere administración o coordinación de CTP.');
+  if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  const payload = rankedStatisticsAccessPayload(userId, body);
+  const result = await request({ action: 'ranked_statistics_access_set', actor_id: getOperatorIdentity(user.id), ...payload });
+  return rankedStatisticsAccessResponse(result, payload);
 }
 
 /** Referees read and answer a CTP ticket directly; CTP applies it at once and notifies the player. */

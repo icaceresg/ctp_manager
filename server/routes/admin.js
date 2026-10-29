@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin, requireAuth, HttpError } from '../auth.js';
 import { canManageStaff } from '../../shared/access.js';
-import { getStaffDirectory, setStaffAccess } from '../integration.js';
+import { getStaffDirectory, setStaffAccess, setRankedStatisticsAccess } from '../integration.js';
 import { rememberStaffAccess, rememberStaffDirectory } from '../ruleta.js';
 import {
   createRole,
@@ -31,6 +31,10 @@ adminRouter.patch('/staff-access/:id', requireAuth, staffManager, async (req, re
   const change = await setStaffAccess(req.user, req.params.id, req.body);
   rememberStaffAccess(change);
   res.json(change);
+});
+adminRouter.patch('/staff-access/:id/ranked-statistics', requireAuth, staffManager, async (req, res) => {
+  if (Object.keys(req.query).length) throw new HttpError(400, 'El permiso de estadísticas no admite parámetros.');
+  res.json(await setRankedStatisticsAccess(req.user, req.params.id, req.body));
 });
 adminRouter.use('/users', requireAuth, requireAdmin);
 adminRouter.use('/roles', requireAuth, requireAdmin);

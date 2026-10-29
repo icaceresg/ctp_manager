@@ -44,11 +44,13 @@ test('staff identity is self-only and cannot substitute actors or grant player a
   }
 });
 
-test('explicit staff identity requires a known kind and exclusive staff scope without competition authority', () => {
+test('explicit staff identity accepts only staff access and the optional individual statistics scope', () => {
   const caster = { ...identity, role: 'staff', staff_kind: 'caster', scopes: ['staff.access'] };
   assert.equal(validateIdentity(caster, subject).staff_kind, 'caster');
   for (const staff_kind of ['operations', 'referee', 'production', 'caster', 'communications', 'clubs', 'executive']) {
     assert.equal(validateIdentity({ ...caster, staff_kind }, subject).staff_kind, staff_kind);
+    assert.deepEqual(validateIdentity({ ...caster, staff_kind, scopes: ['staff.access', 'ranked.statistics.read'] }, subject).scopes,
+      ['staff.access', 'ranked.statistics.read']);
   }
   for (const update of [
     { role: 'player' }, { role: 'admin' }, { role: 'referee' },
@@ -57,8 +59,14 @@ test('explicit staff identity requires a known kind and exclusive staff scope wi
     { scopes: ['staff.access', 'admin.console'] },
     { scopes: ['staff.access', 'incident.reply'] },
     { scopes: ['staff.access', 'staff.access'] },
+    { scopes: ['ranked.statistics.read'] },
+    { scopes: ['staff.access', 'ranked.statistics.read', 'ranked.statistics.read'] },
+    { scopes: ['staff.access', 'ranked.statistics.read', 'ranked.read'] },
     { actor_id: 'another-caster' }, { ctp_user_id: '10000000-0000-4000-8000-000000000002' },
   ]) assert.throws(() => validateIdentity({ ...caster, ...update }, subject), { status: 403 });
+  for (const role of ['admin', 'referee']) {
+    assert.throws(() => validateIdentity({ ...identity, role, scopes: ['ranked.statistics.read'] }, subject), { status: 403 });
+  }
 });
 
 test('provider uses password/refresh grants and self-binding RPC with server-only headers', async () => {

@@ -19,11 +19,19 @@ export function elapsedLabel(value, now = Date.now()) {
   if (minutes < 1440) return `${Math.floor(minutes / 60)} h`;
   return `${Math.floor(minutes / 1440)} d`;
 }
+// Official assignment may not have a matching local Manager account.
+export function hasIncidentAssignee(incident) {
+  return Boolean(incident?.assignee_id || incident?.assignee_ctp_id || (typeof incident?.assigned_name === 'string' && incident.assigned_name.trim()));
+}
 export function incidentNextAction(incident) {
   if (CLOSED_INCIDENTS.includes(incident.status)) return 'Consultar resolución';
   if (incident.status === 'resolution_pending') return 'Comprobar entrega a CTP';
-  if (!incident.assignee_id) return 'Asignar un árbitro';
-  if (incident.status === 'waiting') return 'Revisar la respuesta pendiente';
+  const ticket = incident.source === 'ctp' && incident.kind !== 'ranked';
+  // This flag describes who wrote last, not whether somebody read the thread.
+  if (incident.awaiting_staff) return ticket ? 'Responder al jugador' : 'Revisar conversación';
+  if (!hasIncidentAssignee(incident)) return ticket ? 'Asignar responsable' : 'Asignar un árbitro';
+  // Waiting is manually selected; the DTO does not say which party must reply.
+  if (incident.status === 'waiting') return 'Revisar seguimiento';
   if (incident.status === 'investigating') return 'Valorar pruebas y resolver';
   return 'Iniciar revisión';
 }
@@ -33,7 +41,7 @@ export function incidentRows(incidents, { state = 'active', bucket = 'all', quer
     const closed = CLOSED_INCIDENTS.includes(i.status);
     if (state !== 'all' && (state === 'resolved' ? !closed : closed)) return false;
     if (bucket === 'mine' && i.assignee_id !== meId) return false;
-    if (bucket === 'unassigned' && i.assignee_id) return false;
+    if (bucket === 'unassigned' && hasIncidentAssignee(i)) return false;
     if (bucket === 'urgent' && i.priority !== 'urgent') return false;
     if (!text) return true;
     const match = matches.find((m) => m.id === i.match_id);

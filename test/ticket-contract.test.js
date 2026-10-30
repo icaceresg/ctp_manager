@@ -11,7 +11,7 @@ after(() => { db.close(); fs.rmSync(temp, { recursive: true, force: true, maxRet
 
 const id = '11111111-1111-4111-8111-111111111111', req = '22222222-2222-4222-8222-222222222222';
 const thread = () => ({
-  ticket: { id, code: 'TK-1', type: 'otro', status: 'abierto', priority: 'media', description: 'Hola', proof_url: 'javascript:x', created_at: 'x', updated_at: 'x',
+  ticket: { id, code: 'TK-1', type: 'otro', status: 'abierto', priority: 'media', manager_version: 1, description: 'Hola', proof_url: 'javascript:x', created_at: 'x', updated_at: 'x',
     author: { id, username: 'player', gamertag: null, activision_id: 'p#1', email: 'p@x.com' }, assigned: null },
   messages: [{ id: 'm1', author_id: id, author_name: 'player', is_staff: false, body: 'hola', created_at: '2026-01-01T00:00:00Z' }],
   events: [{ id: 'e1', kind: 'status', value: 'en_revision', actor_name: 'ref', created_at: '2026-01-01T00:00:01Z' }],
@@ -34,10 +34,20 @@ test('ticket threads are bounded and stripped of unknown fields', () => {
   assert.equal(out.ticket.author.activision_id, 'p#1');
   assert.equal(out.viewer_id, req);
   assert.equal(out.can_change_status, true);
+  assert.equal(out.ticket.manager_version, 1);
   assert.equal(out.receipt, undefined);
   assert.equal(out.events[0].value, 'en_revision');
   assert.throws(() => ticketThreadResponse({ ...thread(), ticket: { ...thread().ticket, id: req } }, id), { status: 502 });
   assert.throws(() => ticketThreadResponse({ ...thread(), events: [{ id: 'e', kind: 'deleted', value: 'x', created_at: 'x' }] }, id), { status: 502 });
+});
+
+test('canonical ticket revisions must be positive integers supplied by CTP', () => {
+  for (const manager_version of [undefined, null, 0, -1, 1.5, '4', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    const invalid = thread(); invalid.ticket.manager_version = manager_version;
+    assert.throws(() => ticketThreadResponse(invalid, id), { status: 502 });
+  }
+  const current = thread(); current.ticket.manager_version = 4;
+  assert.equal(ticketThreadResponse(current, id).ticket.manager_version, 4);
 });
 
 test('account navigation uses only the typed ticket author, never a name or message sender', () => {

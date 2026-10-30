@@ -3,6 +3,7 @@ import {Bell,CheckCircle2,ExternalLink,RefreshCw,Radio} from 'lucide-react';
 import {api} from '../api.js';
 import {useApp} from '../context.jsx';
 import StaffAlertsPanel from './StaffAlertsPanel.jsx';
+import RankedEventPanel from './RankedEventPanel.jsx';
 
 const marker='manager.twitch.owner';
 const ownerUrl=value=>{
@@ -53,6 +54,7 @@ export default function AdministrationIntegrations(){
   return <div className="stack">
     {error&&<p className="op-error" role="alert">{error}</p>}{notice&&<p className="op-notice" role="status">{notice}</p>}
     <StaffAlertsPanel key={me.id} user={me} snapshot={data?.staff_alerts} onSnapshot={staff_alerts=>setData(current=>({...current,staff_alerts}))}/>
+    <RankedEventPanel key={`event-${me.id}`} user={me}/>
     <section className="op-card stack"><div className="op-section-title"><h2><Radio size={20}/> Twitch · playctp</h2><button className="btn" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={16}/> Actualizar</button></div>
       <p>Autoriza la cuenta del canal para comprobar las suscripciones de los jugadores. Sirve cualquier nivel de suscripción.</p>
       <p role="status">{!twitch?'Consultando conexión…':twitch.error?twitch.error:twitch.status==='config_pending'?'Configuración del servicio pendiente':connected?'Cuenta autorizada':twitch.status==='expired'?'Autorización caducada':'Cuenta sin autorizar'}{connected&&twitch.healthy&&<CheckCircle2 size={16}/>}</p>

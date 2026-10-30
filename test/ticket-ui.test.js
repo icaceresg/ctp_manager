@@ -35,7 +35,7 @@ const renderIncident=record=>{
 
 test('ticket proof opens explicitly with isolated navigation and no remote embedding',()=>{
   const html=renderThread(thread());
-  assert.match(html,/<a[^>]+href="https:\/\/proof\.example\.test\/clip\?a=1&amp;b=2"[^>]+target="_blank"[^>]+rel="noopener noreferrer"/);
+  assert.match(html,/<a[^>]+href="https:\/\/proof\.example\.test\/clip\?a=1&amp;b=2"[^>]+target="_blank"[^>]+rel="noopener noreferrer nofollow ugc"/);
   assert.match(html,/Ver prueba adjunta/);
   assert.doesNotMatch(html,/<iframe|<video|<img|<embed|<object/);
   assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
@@ -49,7 +49,8 @@ test('referees reach only the canonical ticket author and keep the case return c
   const html=renderThread(thread());
   assert.match(html,new RegExp(`href="/jugadores/${authorId}\\?returnTo=%2Foperaciones%2Fincidencias%3Fbucket%3Dmine%26case%3D${ticketId}"`));
   assert.match(html,/Ver ficha de Autor exacto/);
-  assert.match(html,/Responsable:<\/strong> Otro árbitro/);
+  assert.match(html,/Responsable/);
+  assert.match(html,/<strong>Otro árbitro<\/strong>/);
   assert.match(html,/Hacerme cargo/);
   assert.doesNotMatch(html,/administracion\/usuarios/);
   const other=renderThread(thread(),{id:2,is_admin:false,auth_mode:'ctp',ctp_role:'staff',ctp_user_id:staffId,sections:['arbitraje']});
@@ -80,4 +81,8 @@ test('Ranked disputes keep one result decision destination while internal and to
   const tournament=renderIncident({...base,source:'ctp',kind:'tournament'});
   assert.match(tournament,/Preparar resolución/);
   assert.doesNotMatch(tournament,/Abrir partida y resolver/);
+  assert.match(tournament,/Partido vinculado/);
+  assert.match(tournament,new RegExp(`href="/operaciones/partidos/${matchId}"`));
+  const unlinked=renderIncident({...base,source:'ctp',kind:'support',match_id:null,reason:`https://playctp.com/es/ranked?lobby=${matchId}`});
+  assert.doesNotMatch(unlinked,/Partido vinculado|href="\/operaciones\/partidos\//);
 });

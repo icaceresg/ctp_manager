@@ -27,7 +27,9 @@ Candidato DEV basado en `origin/main` de Manager, commit
 - El checkbox individual del directorio está separado de la función del
   usuario. Sólo se ofrece a jugadores confirmados con staff activo. No
   modifica su rol competitivo ni asigna una función nueva.
-- CTP debe implementar la migración 295 y la acción firmada correspondiente.
+- CTP debe implementar la migración 296 y la acción firmada correspondiente.
+  La migración inicialmente reservada como 295 se renumeró antes de publicarse,
+  sin cambiar sus bytes SQL, para dejar 295 al horario de Halloween.
   Los rechazos de un backend anterior conservan el acceso cerrado.
 
 ## Validación local

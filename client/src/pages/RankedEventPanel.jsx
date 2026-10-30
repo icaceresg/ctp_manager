@@ -33,6 +33,8 @@ export default function RankedEventPanel({user}){
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[uncertain,setUncertain]=useState(false),[stale,setStale]=useState(false);
  const [receivedAt,setReceivedAt]=useState(0),[now,setNow]=useState(Date.now),[readingStatus,setReadingStatus]=useState(false);
  const owner=useRef(user?.id),mounted=useRef(true),lifecycle=useRef(0),lock=useRef(false),pending=useRef(null),reader=useRef(null),lastAttempt=useRef(null),lastBoundary=useRef(null);
+ // The polling effect keeps its first callback; refs preserve the latest intent.
+ const draftActor=useRef(user?.id),draftTouched=useRef(false);
  const latest=useRef({snapshot,receivedAt,stale});owner.current=user?.id;latest.current={snapshot,receivedAt,stale};
  function accept(result){
   const at=Date.now(),previous=latest.current;
@@ -53,12 +55,17 @@ export default function RankedEventPanel({user}){
   try{
    const result=await readStatus();
    if(!mounted.current||owner.current!==actor||lifecycle.current!==generation)return;
-   accept(result);if(!pending.current){setError('');setEnabled(rankedEventConfigured(result));}
+   accept(result);if(!pending.current){setError('');if(!draftTouched.current)setEnabled(rankedEventConfigured(result));}
   }catch(problem){if(mounted.current&&owner.current===actor&&lifecycle.current===generation){setError(problem.message);setStale(true);}}
   finally{if(lifecycle.current===generation){lock.current=false;if(mounted.current&&owner.current===actor){setReadingStatus(false);if(!automatic)setBusy(false);}}}
  }
  useEffect(()=>{
   mounted.current=true;lifecycle.current+=1;
+  if(draftActor.current!==user?.id||!user?.is_admin){
+   draftActor.current=user?.id;draftTouched.current=false;pending.current=null;
+   latest.current={snapshot:null,receivedAt:0,stale:false};lastAttempt.current=null;lastBoundary.current=null;
+   setSnapshot(null);setReceivedAt(0);setEnabled(false);setReason('');setError('');setNotice('');setUncertain(false);setStale(false);setBusy(false);setReadingStatus(false);
+  }
   if(!user?.is_admin)return()=>{mounted.current=false;};
   const observe=()=>{
    const at=Date.now(),visible=document.visibilityState!=='hidden';
@@ -70,36 +77,36 @@ export default function RankedEventPanel({user}){
   document.addEventListener('visibilitychange',observe);window.addEventListener('focus',observe);
   return()=>{mounted.current=false;lifecycle.current+=1;reader.current?.abort();lock.current=false;clearInterval(timer);document.removeEventListener('visibilitychange',observe);window.removeEventListener('focus',observe);};
  },[user?.id,user?.is_admin]);
- if(!user?.is_admin)return null;
+ if(!user?.is_admin||draftActor.current!==user?.id)return null;
  const reading=rankedEventReading(snapshot,receivedAt,now,stale),expired=stale||reading.status==='stale',unverified=expired||reading.status==='boundary';
  const canActivate=!!snapshot?.map_rotation;
  async function save(event){
   event.preventDefault();if(lock.current||!snapshot||unverified||!canActivate&&enabled)return;
   if(!pending.current&&(reason.trim().length<12||reason.length>500))return;
   const payload=pending.current||{action:'configure',expected_version:snapshot.revision,request_id:crypto.randomUUID(),reason:reason.trim(),enabled};
-  const retried=Boolean(pending.current),actor=owner.current;pending.current=payload;
+  const retried=Boolean(pending.current),actor=owner.current,generation=lifecycle.current;pending.current=payload;
   lock.current=true;setBusy(true);setError('');setNotice('');
   try{
    const result=await api.post('/administration/ranked-event',payload);
-   if(!mounted.current||owner.current!==actor)return;
-   setEnabled(rankedEventConfigured(result));setReason('');setUncertain(false);pending.current=null;setStale(true);
+   if(!mounted.current||owner.current!==actor||lifecycle.current!==generation)return;
+   draftTouched.current=false;setEnabled(rankedEventConfigured(result));setReason('');setUncertain(false);pending.current=null;setStale(true);
    setNotice(configurationNotice(result));
    // A retried acknowledgement may describe an older, successfully applied
    // revision. Always read current policy before offering another switch.
    try{
     const observed=await readStatus();
-    if(!mounted.current||owner.current!==actor)return;
+    if(!mounted.current||owner.current!==actor||lifecycle.current!==generation)return;
     if(observed.revision<result.revision)throw new Error('No se ha podido confirmar la revisión actual del evento.');
     accept(observed);setEnabled(rankedEventConfigured(observed));
     if(observed.revision>result.revision)setNotice('Tu cambio quedó confirmado. Se muestra la configuración más reciente, modificada después por administración.');
    }catch(problem){
-    if(mounted.current&&owner.current===actor){setStale(true);setError(`Cambio confirmado. ${problem.message}`);}
+    if(mounted.current&&owner.current===actor&&lifecycle.current===generation){setStale(true);setError(`Cambio confirmado. ${problem.message}`);}
    }
   }catch(problem){
-   if(!mounted.current||owner.current!==actor)return;setError(problem.message);
+   if(!mounted.current||owner.current!==actor||lifecycle.current!==generation)return;setError(problem.message);
    if(!retried&&[400,401,403,409,422].includes(problem.status)){pending.current=null;setUncertain(false);setStale(true);}
    else{setUncertain(true);if([401,403,409].includes(problem.status))setStale(true);}
-  }finally{lock.current=false;if(mounted.current&&owner.current===actor)setBusy(false);}
+  }finally{if(lifecycle.current===generation){lock.current=false;if(mounted.current&&owner.current===actor)setBusy(false);}}
  }
  return <section className="op-card stack ranked-event-panel" aria-label="Evento Halloween Ranked">
   <div className="op-section-title"><h2><Flame size={22}/> Halloween · Ranked</h2><button type="button" className="btn" disabled={busy||readingStatus} onClick={()=>void refresh()}><RefreshCw size={16}/> Actualizar evento</button></div>
@@ -115,7 +122,7 @@ export default function RankedEventPanel({user}){
    <p className="muted">Cada partida guarda la política al formarse. Las partidas formadas dentro del horario conservan sus reglas y recompensas aunque terminen después. Habilitar o deshabilitar afecta a partidas nuevas; no recalcula resultados. La apariencia se actualiza en hasta 30 segundos. El audio necesita consentimiento del jugador.</p>
    <p className="muted">La música de búsqueda no está disponible: falta el MP3 completo aprobado. No se activa ni se sustituye por efectos de sonido.</p>
    <form onSubmit={save} className="stack">
-    <label className="op-check"><input type="checkbox" checked={enabled} disabled={busy||unverified||uncertain||!canActivate&&!rankedEventConfigured(snapshot)} onChange={event=>setEnabled(event.target.checked)}/> {snapshot.timezone==='Europe/Madrid'?'Habilitar el horario de Halloween y su rotación para las partidas nuevas':'Activar Halloween y la rotación de mapas para las partidas nuevas'}</label>
+    <label className="op-check"><input type="checkbox" checked={enabled} disabled={busy||unverified||uncertain||!canActivate&&!rankedEventConfigured(snapshot)} onChange={event=>{draftTouched.current=true;setEnabled(event.target.checked);}}/> {snapshot.timezone==='Europe/Madrid'?'Habilitar el horario de Halloween y su rotación para las partidas nuevas':'Activar Halloween y la rotación de mapas para las partidas nuevas'}</label>
     {!canActivate&&<p className="op-notice">La lectura no incluye la nueva rotación. No se permite activar el evento con información incompleta; sí se puede desactivar si ya estaba activo.</p>}
     <label className="op-field">Motivo del cambio<input required minLength={12} maxLength={500} value={reason} disabled={busy||unverified||uncertain} onChange={event=>setReason(event.target.value)}/></label>
     {uncertain&&<p className="op-notice" role="status">Confirmación pendiente. Conservamos la misma referencia para reintentar sin duplicar el cambio.</p>}

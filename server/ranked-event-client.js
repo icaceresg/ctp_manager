@@ -6,16 +6,22 @@ const fixedMaps=['Lotus','Mumbai','Munition','Reactor U92','Rooftops','Silkworm'
 const ordinaryMaps=['Coal',...fixedMaps];
 const rotatingMaps=['Sentry','Lithium'];
 const eventStarts=Date.parse('2026-10-30T14:00:00Z'),eventEnds=Date.parse('2026-11-03T14:00:00Z');
+const previewEarliest=Date.parse('2026-10-30T00:00:00Z');
 const sameNames=(value,expected)=>Array.isArray(value)&&value.length===expected.length&&new Set(value).size===expected.length&&expected.every(name=>value.includes(name));
 function scheduleResponse(value,fail){
  const keys=['configured_enabled','phase','timezone'];
- if(keys.every(key=>value[key]===undefined)&&value.starts_at===null&&value.ends_at===null)return null;
+ const preview=Object.prototype.hasOwnProperty.call(value,'preview_environment');
+ if(preview&&value.preview_environment!=='pre')fail();
+ if(keys.every(key=>value[key]===undefined)&&value.starts_at===null&&value.ends_at===null){if(preview)fail();return null;}
  if(typeof value.configured_enabled!=='boolean'||value.timezone!=='Europe/Madrid'
-  ||!stamp(value.starts_at)||!stamp(value.ends_at)||Date.parse(value.starts_at)!==eventStarts||Date.parse(value.ends_at)!==eventEnds)fail();
+  ||!stamp(value.starts_at)||!stamp(value.ends_at)||Date.parse(value.ends_at)!==eventEnds)fail();
+ const starts=Date.parse(value.starts_at);
+ if(preview?starts<previewEarliest||starts>=eventStarts:starts!==eventStarts)fail();
  const observed=Date.parse(value.server_time);
- const phase=!value.configured_enabled?'disabled':observed<eventStarts?'scheduled':observed<eventEnds?'active':'ended';
+ const phase=!value.configured_enabled?'disabled':observed<starts?'scheduled':observed<eventEnds?'active':'ended';
  if(value.phase!==phase||value.enabled!==(phase==='active'))fail();
- return{configured_enabled:value.configured_enabled,phase,timezone:'Europe/Madrid',starts_at:value.starts_at,ends_at:value.ends_at};
+ return{configured_enabled:value.configured_enabled,phase,timezone:'Europe/Madrid',starts_at:value.starts_at,ends_at:value.ends_at,
+  ...(preview?{preview_environment:'pre'}:{})};
 }
 function rotationResponse(value,event,fail){
  if(!object(value)||value.schema_version!==1||value.event_id!=='hw-2026'||typeof value.enabled!=='boolean'

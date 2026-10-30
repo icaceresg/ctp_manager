@@ -48,6 +48,29 @@ test('scheduled event rejects partial, arbitrary and internally inconsistent sch
  const parsed=rankedEventResponse({...source,staff_token:'PRIVATE_VALUE'});assert.equal(parsed.staff_token,undefined);
 });
 
+test('only an explicit PRE preview accepts a bounded early start and server phase',()=>{
+ const source={...scheduled(true,'2026-10-30T10:02:00Z'),starts_at:'2026-10-30T10:01:00.123456Z',
+  preview_environment:'pre',phase:'active',enabled:true};
+ const at=Date.parse(source.server_time),slot=Math.floor(at/1200000)*1200000;
+ source.map_rotation={...rotation(true),observed_at:source.server_time,slot_starts_at:new Date(slot).toISOString(),next_rotation_at:new Date(slot+1200000).toISOString()};
+ assert.deepEqual(rankedEventResponse(source),source);
+ assert.equal(rankedEventReading(rankedEventResponse(source),1000,1500).status,'active');
+ const before={...source,server_time:'2026-10-30T10:00:59Z',phase:'scheduled',enabled:false,
+  map_rotation:{...rotation(false),observed_at:'2026-10-30T10:00:59Z'}};
+ assert.deepEqual(rankedEventResponse(before),before);
+ assert.equal(rankedEventBoundaryWindow(before),source.starts_at);
+ assert.equal(rankedEventReading(before,1000,3000).status,'boundary');
+ const normal={...source};delete normal.preview_environment;
+ assert.throws(()=>rankedEventResponse(normal),error=>error.status===502,'ordinary PROD contract still rejects early start');
+ for(const mutation of[{preview_environment:'prod'},{preview_environment:'PRE'},{preview_environment:null},{preview_environment:undefined},
+  {starts_at:'2026-10-29T23:59:59.999Z'},{starts_at:'2026-10-30T14:00:00Z'},{starts_at:'2026-10-30T15:00:00Z'},
+  {ends_at:'2026-11-03T13:59:59Z'},{phase:'scheduled'},{enabled:false}]){
+  assert.throws(()=>rankedEventResponse({...source,...mutation}),error=>error.status===502);
+ }
+ for(const preview_environment of['pre','prod',null,undefined])assert.throws(()=>rankedEventResponse({...snapshot(),preview_environment}),error=>error.status===502);
+ assert.throws(()=>rankedEventPayload({...request(),preview_environment:'pre'}),error=>error.status===400);
+});
+
 test('configure acknowledges armed state before start and after expiry, preserving exact receipt replay',()=>{
  for(const at of['2026-10-30T13:59:59Z','2026-11-03T14:00:00Z']){
   const result={...scheduled(true,at),revision:2,request_id:request().request_id};

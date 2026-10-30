@@ -2,8 +2,16 @@ import {useEffect,useRef,useState} from 'react';
 import {Clock3,Flame,Map as MapIcon,RefreshCw,Save} from 'lucide-react';
 import {api} from '../api.js';
 import {dateTime} from '../operations/model.js';
-import {eventObservationReceivedAt,rankedEventBoundaryAttempt,rankedEventReadDue,rankedEventReading,rotationCountdown} from '../operations/ranked-event-model.js';
+import {eventObservationReceivedAt,rankedEventBoundaryAttempt,rankedEventBoundaryWindow,rankedEventConfigured,rankedEventReadDue,rankedEventReading,rotationCountdown} from '../operations/ranked-event-model.js';
 import './ranked-event.css';
+
+const madridTime=value=>new Intl.DateTimeFormat('es-ES',{timeZone:'Europe/Madrid',dateStyle:'full',timeStyle:'short'}).format(new Date(value));
+function configurationNotice(result){
+ if(!rankedEventConfigured(result))return'Halloween deshabilitado. Las partidas en curso conservan su política y su pool.';
+ if(result.phase==='scheduled')return'Horario de Halloween habilitado. El servidor lo activará el 30 de octubre a las 15:00 de Madrid y lo finalizará el 3 de noviembre a las 15:00.';
+ if(result.phase==='ended')return'Configuración confirmada. El horario de Halloween ya ha terminado; las partidas nuevas utilizan las reglas habituales.';
+ return'Halloween y su rotación activos hasta el final del horario. Las partidas nuevas reciben el pool del evento.';
+}
 
 function MapRotationReading({reading}){
  const rotation=reading.rotation;
@@ -35,7 +43,7 @@ export default function RankedEventPanel({user}){
  }
  async function readStatus(){
   const controller=new AbortController();reader.current=controller;lastAttempt.current=Date.now();
-  if(rankedEventReading(latest.current.snapshot,latest.current.receivedAt,lastAttempt.current,latest.current.stale).status==='boundary')lastBoundary.current={window:latest.current.snapshot.map_rotation.next_rotation_at,at:lastAttempt.current};
+  if(rankedEventReading(latest.current.snapshot,latest.current.receivedAt,lastAttempt.current,latest.current.stale).status==='boundary')lastBoundary.current={window:rankedEventBoundaryWindow(latest.current.snapshot),at:lastAttempt.current};
   const timeout=window.setTimeout(()=>controller.abort(),6000);
   try{return await api.get('/administration/ranked-event',{signal:controller.signal});}
   finally{clearTimeout(timeout);if(reader.current===controller)reader.current=null;}
@@ -45,7 +53,7 @@ export default function RankedEventPanel({user}){
   try{
    const result=await readStatus();
    if(!mounted.current||owner.current!==actor||lifecycle.current!==generation)return;
-   accept(result);if(!pending.current){setError('');setEnabled(result.enabled);}
+   accept(result);if(!pending.current){setError('');setEnabled(rankedEventConfigured(result));}
   }catch(problem){if(mounted.current&&owner.current===actor&&lifecycle.current===generation){setError(problem.message);setStale(true);}}
   finally{if(lifecycle.current===generation){lock.current=false;if(mounted.current&&owner.current===actor){setReadingStatus(false);if(!automatic)setBusy(false);}}}
  }
@@ -63,10 +71,10 @@ export default function RankedEventPanel({user}){
   return()=>{mounted.current=false;lifecycle.current+=1;reader.current?.abort();lock.current=false;clearInterval(timer);document.removeEventListener('visibilitychange',observe);window.removeEventListener('focus',observe);};
  },[user?.id,user?.is_admin]);
  if(!user?.is_admin)return null;
- const reading=rankedEventReading(snapshot,receivedAt,now,stale),expired=stale||reading.status==='stale';
+ const reading=rankedEventReading(snapshot,receivedAt,now,stale),expired=stale||reading.status==='stale',unverified=expired||reading.status==='boundary';
  const canActivate=!!snapshot?.map_rotation;
  async function save(event){
-  event.preventDefault();if(lock.current||!snapshot||expired||!canActivate&&enabled)return;
+  event.preventDefault();if(lock.current||!snapshot||unverified||!canActivate&&enabled)return;
   if(!pending.current&&(reason.trim().length<12||reason.length>500))return;
   const payload=pending.current||{action:'configure',expected_version:snapshot.revision,request_id:crypto.randomUUID(),reason:reason.trim(),enabled};
   const retried=Boolean(pending.current),actor=owner.current;pending.current=payload;
@@ -74,15 +82,15 @@ export default function RankedEventPanel({user}){
   try{
    const result=await api.post('/administration/ranked-event',payload);
    if(!mounted.current||owner.current!==actor)return;
-   setEnabled(result.enabled);setReason('');setUncertain(false);pending.current=null;setStale(true);
-   setNotice(result.enabled?'Halloween y su rotación activados. Las partidas nuevas reciben el pool del evento.':'Halloween desactivado. Las partidas en curso conservan su política y su pool.');
+   setEnabled(rankedEventConfigured(result));setReason('');setUncertain(false);pending.current=null;setStale(true);
+   setNotice(configurationNotice(result));
    // A retried acknowledgement may describe an older, successfully applied
    // revision. Always read current policy before offering another switch.
    try{
     const observed=await readStatus();
     if(!mounted.current||owner.current!==actor)return;
     if(observed.revision<result.revision)throw new Error('No se ha podido confirmar la revisión actual del evento.');
-    accept(observed);setEnabled(observed.enabled);
+    accept(observed);setEnabled(rankedEventConfigured(observed));
     if(observed.revision>result.revision)setNotice('Tu cambio quedó confirmado. Se muestra la configuración más reciente, modificada después por administración.');
    }catch(problem){
     if(mounted.current&&owner.current===actor){setStale(true);setError(`Cambio confirmado. ${problem.message}`);}
@@ -98,19 +106,20 @@ export default function RankedEventPanel({user}){
   <p>Temática, mapas, XP de victoria, rachas, efectos de sonido y overlay. Se cambia desde aquí sin desplegar la web.</p>
   {error&&<p className="op-error" role="alert">{error}</p>}{notice&&<p className="op-notice" role="status">{notice}</p>}
   {snapshot?<>
-   <div className="ranked-event-state"><strong className={!expired&&snapshot.enabled?'event-on':''}>{expired?'Estado pendiente de comprobar':snapshot.enabled?'Evento ACTIVO':'Evento DESACTIVADO'}</strong><span>Revisión observada {snapshot.revision} · {dateTime(snapshot.server_time)}</span></div>
+   <div className="ranked-event-state"><strong className={!unverified&&snapshot.enabled?'event-on':''}>{unverified?'Estado pendiente de comprobar':snapshot.phase==='scheduled'?'Evento PROGRAMADO':snapshot.phase==='ended'?'Evento FINALIZADO':snapshot.enabled?'Evento ACTIVO':'Evento DESHABILITADO'}</strong><span>Revisión observada {snapshot.revision} · {dateTime(snapshot.server_time)}</span></div>
+   {snapshot.timezone==='Europe/Madrid'&&<div className="ranked-event-schedule"><strong>Horario de Madrid · Europe/Madrid</strong><dl><div><dt>Inicio</dt><dd>{madridTime(snapshot.starts_at)}</dd></div><div><dt>Fin</dt><dd>{madridTime(snapshot.ends_at)}</dd></div></dl><p className="muted">Habilitar el horario no adelanta el inicio. El servidor activa Halloween desde el viernes 30 de octubre a las 15:00 hasta el martes 3 de noviembre a las 15:00, sin depender de un navegador abierto. Deshabilitarlo interrumpe el evento para las partidas nuevas.</p></div>}
    {expired&&<p className="op-notice">Esta lectura puede estar desactualizada. Actualiza antes de preparar otro cambio.</p>}
    <MapRotationReading reading={reading}/>
    <dl className="ranked-event-rewards"><div><dt>De 1 a 4 victorias consecutivas</dt><dd>total ×2</dd></div><div><dt>Desde 5 victorias consecutivas</dt><dd>total ×4</dd></div><div><dt>Desde 10 victorias consecutivas</dt><dd>total ×5</dd></div></dl>
    <p className="muted">Con Halloween activo, la XP base de una victoria se multiplica por ×2. La racha aplica por separado ×1 hasta cuatro victorias consecutivas, ×2 desde la quinta y ×2,5 desde la décima, incluyendo la victoria actual. Los factores se aplican una sola vez: una base de 50 XP da 100, 200 o 250 XP. La XP perdida y el MMR mantienen sus reglas.</p>
-   <p className="muted">Cada partida guarda la política al formarse. Activar o desactivar afecta a partidas nuevas; no recalcula resultados. La apariencia se actualiza en hasta 30 segundos. El audio necesita consentimiento del jugador.</p>
+   <p className="muted">Cada partida guarda la política al formarse. Las partidas formadas dentro del horario conservan sus reglas y recompensas aunque terminen después. Habilitar o deshabilitar afecta a partidas nuevas; no recalcula resultados. La apariencia se actualiza en hasta 30 segundos. El audio necesita consentimiento del jugador.</p>
    <p className="muted">La música de búsqueda no está disponible: falta el MP3 completo aprobado. No se activa ni se sustituye por efectos de sonido.</p>
    <form onSubmit={save} className="stack">
-    <label className="op-check"><input type="checkbox" checked={enabled} disabled={busy||expired||uncertain||!canActivate&&!snapshot.enabled} onChange={event=>setEnabled(event.target.checked)}/> Activar Halloween y la rotación de mapas para las partidas nuevas</label>
+    <label className="op-check"><input type="checkbox" checked={enabled} disabled={busy||unverified||uncertain||!canActivate&&!rankedEventConfigured(snapshot)} onChange={event=>setEnabled(event.target.checked)}/> {snapshot.timezone==='Europe/Madrid'?'Habilitar el horario de Halloween y su rotación para las partidas nuevas':'Activar Halloween y la rotación de mapas para las partidas nuevas'}</label>
     {!canActivate&&<p className="op-notice">La lectura no incluye la nueva rotación. No se permite activar el evento con información incompleta; sí se puede desactivar si ya estaba activo.</p>}
-    <label className="op-field">Motivo del cambio<input required minLength={12} maxLength={500} value={reason} disabled={busy||expired||uncertain} onChange={event=>setReason(event.target.value)}/></label>
+    <label className="op-field">Motivo del cambio<input required minLength={12} maxLength={500} value={reason} disabled={busy||unverified||uncertain} onChange={event=>setReason(event.target.value)}/></label>
     {uncertain&&<p className="op-notice" role="status">Confirmación pendiente. Conservamos la misma referencia para reintentar sin duplicar el cambio.</p>}
-    <button type="submit" className="btn primary" disabled={busy||readingStatus||expired||!canActivate&&enabled||!uncertain&&(enabled===snapshot.enabled||reason.trim().length<12)}><Save size={16}/>{busy?'Confirmando…':uncertain?'Reintentar el mismo cambio':enabled?'Activar Halloween y rotación':'Desactivar evento'}</button>
+    <button type="submit" className="btn primary" disabled={busy||readingStatus||unverified||!canActivate&&enabled||!uncertain&&(enabled===rankedEventConfigured(snapshot)||reason.trim().length<12)}><Save size={16}/>{busy?'Confirmando…':uncertain?'Reintentar el mismo cambio':enabled?(snapshot.timezone==='Europe/Madrid'?'Habilitar horario de Halloween':'Activar Halloween y rotación'):'Deshabilitar evento'}</button>
    </form>
   </>:<p className="muted" role="status">{busy?'Consultando el estado del evento…':'Estado no disponible. Actualiza para comprobarlo.'}</p>}
  </section>;

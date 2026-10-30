@@ -1,9 +1,23 @@
 export const EVENT_READ_INTERVAL_MS=30000;
 export const EVENT_STALE_MS=75000;
 
-/** No slot exists before the first read, while OFF, or for a legacy response. */
+export function rankedEventConfigured(snapshot){
+ return typeof snapshot?.configured_enabled==='boolean'?snapshot.configured_enabled:!!snapshot?.enabled;
+}
+
+/** Earliest server-observed boundary, without predicting its next state. */
+export function rankedEventBoundaryWindow(snapshot){
+ const rotation=snapshot?.map_rotation?.next_rotation_at;
+ if(snapshot?.phase==='scheduled')return snapshot.starts_at;
+ if(snapshot?.phase==='active'&&Number.isFinite(Date.parse(snapshot.ends_at))){
+  return rotation&&Date.parse(rotation)<Date.parse(snapshot.ends_at)?rotation:snapshot.ends_at;
+ }
+ return rotation||null;
+}
+
+/** No boundary exists before the first read or while the event is disabled. */
 export function rankedEventBoundaryAttempt(snapshot,lastBoundary){
- const window=snapshot?.map_rotation?.next_rotation_at;
+ const window=rankedEventBoundaryWindow(snapshot);
  return window&&lastBoundary?.window===window?lastBoundary.at:null;
 }
 
@@ -22,6 +36,8 @@ export function rankedEventReading(snapshot,receivedAt,now,stale=false){
  if(!snapshot)return{status:'unavailable',serverNow:null,seconds:null,rotation:null};
  if(stale||!Number.isFinite(elapsed)||elapsed<0||elapsed>=EVENT_STALE_MS||!Number.isFinite(server))return{status:'stale',serverNow:null,seconds:null,rotation:null};
  const rotation=snapshot.map_rotation,serverNow=server+elapsed;
+ const boundary=Date.parse(rankedEventBoundaryWindow(snapshot));
+ if(Number.isFinite(boundary)&&serverNow>=boundary)return{status:'boundary',serverNow,seconds:0,rotation:null};
  if(!rotation)return{status:'unavailable',serverNow,seconds:null,rotation:null};
  if(!snapshot.enabled||!rotation.enabled)return{status:'off',serverNow,seconds:null,rotation};
  const end=Date.parse(rotation.next_rotation_at);

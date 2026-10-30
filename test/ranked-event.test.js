@@ -5,7 +5,7 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-event-test-'));
 Object.assign(process.env,{DATA_DIR:directory,DB_PATH:path.join(directory,'fixture.sqlite'),CTP_AUTH_MODE:'local',CTP_AUTH_URL:'',PUBLIC_ORIGIN:'',CTP_SYNC_SECONDS:'0'});
 const{createRankedEventClient,rankedEventPayload,rankedEventResponse}=await import('../server/ranked-event-client.js');
 const{db}=await import('../server/db.js');
-const{eventObservationReceivedAt,rankedEventBoundaryAttempt,rankedEventReadDue,rankedEventReading,rotationCountdown}=await import('../client/src/operations/ranked-event-model.js');
+const{eventObservationReceivedAt,rankedEventBoundaryAttempt,rankedEventBoundaryWindow,rankedEventConfigured,rankedEventReadDue,rankedEventReading,rotationCountdown}=await import('../client/src/operations/ranked-event-model.js');
 after(()=>{db.close();assert.equal(path.dirname(path.resolve(directory)),path.resolve(os.tmpdir()));assert(path.basename(directory).startsWith('ctp-event-test-'));fs.rmSync(directory,{recursive:true,force:true,maxRetries:5});});
 const admin={id:1,is_admin:true,auth_mode:'ctp',ctp_role:'admin'};
 const snapshot=()=>({schema_version:1,event_id:'hw-2026',enabled:false,theme:'halloween',xp_multiplier:2,streak_bonus:0.5,starts_at:null,ends_at:null,revision:1,server_time:'2026-10-27T12:00:00Z'});
@@ -16,9 +16,67 @@ const rotation=(enabled=true,active='Sentry')=>({schema_version:1,event_id:'hw-2
  slot_starts_at:enabled?'2026-10-28T12:00:00Z':null,next_rotation_at:enabled?'2026-10-28T12:20:00Z':null,
  observed_at:'2026-10-28T12:19:59Z',fixed_maps:[...fixed],active_pool:enabled?[...fixed,active]:['Coal',...fixed]});
 const rotated=(enabled=true)=>({...snapshot(),enabled,server_time:'2026-10-28T12:19:59Z',map_rotation:rotation(enabled)});
+const scheduled=(configured_enabled=true,server_time='2026-10-30T13:59:59Z')=>{
+ const at=Date.parse(server_time),phase=!configured_enabled?'disabled':at<Date.parse('2026-10-30T14:00:00Z')?'scheduled':at<Date.parse('2026-11-03T14:00:00Z')?'active':'ended';
+ const enabled=phase==='active',slot=Math.floor(at/1200000)*1200000;
+ return{...snapshot(),configured_enabled,phase,enabled,server_time,timezone:'Europe/Madrid',starts_at:'2026-10-30T14:00:00Z',ends_at:'2026-11-03T14:00:00Z',
+  map_rotation:{...rotation(enabled),observed_at:server_time,slot_starts_at:enabled?new Date(slot).toISOString():null,next_rotation_at:enabled?new Date(slot+1200000).toISOString():null}};
+};
 test('event payload accepts only fixed switches and safe reasons',()=>{
  assert.deepEqual(rankedEventPayload(request()),request());assert.deepEqual(rankedEventPayload({action:'status'}),{action:'status'});
- for(const mutation of[{xp_multiplier:99},{streak_bonus:99},{map_rotation:{}},{active_map:'Sentry'},{interval_seconds:1},{user_id:'1'},{enabled:'true'},{reason:'short'},{reason:'bad\n'.repeat(5)},{expected_version:0},{request_id:'wrong'}])assert.throws(()=>rankedEventPayload({...request(),...mutation}),error=>error.status===400);
+ for(const mutation of[{xp_multiplier:99},{streak_bonus:99},{map_rotation:{}},{active_map:'Sentry'},{interval_seconds:1},{user_id:'1'},{starts_at:'2026-10-30T14:00:00Z'},{ends_at:'2026-11-03T14:00:00Z'},{configured_enabled:true},{phase:'active'},{timezone:'Europe/Madrid'},{enabled:'true'},{reason:'short'},{reason:'bad\n'.repeat(5)},{expected_version:0},{request_id:'wrong'}])assert.throws(()=>rankedEventPayload({...request(),...mutation}),error=>error.status===400);
+});
+
+test('scheduled event validates the fixed Madrid window, server phases and effective activity',()=>{
+ for(const [configured,at,phase]of[[false,'2026-10-30T14:00:00Z','disabled'],[true,'2026-10-30T13:59:59.999999Z','scheduled'],[true,'2026-10-30T14:00:00Z','active'],[true,'2026-11-03T13:59:59.999999Z','active'],[true,'2026-11-03T14:00:00Z','ended']]){
+  const source=scheduled(configured,at),result=rankedEventResponse(source);
+  assert.deepEqual(result,source);assert.equal(result.phase,phase);assert.equal(result.enabled,phase==='active');
+  assert.equal(result.map_rotation.enabled,result.enabled);assert.equal(rankedEventConfigured(result),configured);
+ }
+ const offsets=scheduled();offsets.starts_at='2026-10-30T15:00:00+01:00';offsets.ends_at='2026-11-03T15:00:00+01:00';
+ assert.deepEqual(rankedEventResponse(offsets),offsets);
+ assert.equal(Date.parse(offsets.ends_at)-Date.parse(offsets.starts_at),96*60*60*1000);
+});
+
+test('scheduled event rejects partial, arbitrary and internally inconsistent schedule responses',()=>{
+ const source=scheduled();
+ for(const mutation of[{configured_enabled:undefined},{configured_enabled:'true'},{phase:undefined},{timezone:undefined},{timezone:'UTC'},
+  {starts_at:null},{ends_at:null},{starts_at:'2026-10-30T15:00:00Z'},{ends_at:'2026-11-03T15:00:00Z'},
+  {phase:'active'},{phase:'ended'},{enabled:true},{configured_enabled:false},{phase:'disabled'},
+  {map_rotation:{...source.map_rotation,enabled:true}}])assert.throws(()=>rankedEventResponse({...source,...mutation}),error=>error.status===502);
+ for(const key of['configured_enabled','phase','timezone'])assert.throws(()=>rankedEventResponse({...snapshot(),[key]:source[key]}),error=>error.status===502);
+ const parsed=rankedEventResponse({...source,staff_token:'PRIVATE_VALUE'});assert.equal(parsed.staff_token,undefined);
+});
+
+test('configure acknowledges armed state before start and after expiry, preserving exact receipt replay',()=>{
+ for(const at of['2026-10-30T13:59:59Z','2026-11-03T14:00:00Z']){
+  const result={...scheduled(true,at),revision:2,request_id:request().request_id};
+  assert.equal(result.enabled,false);assert.deepEqual(rankedEventResponse(result,request()),result);
+  assert.throws(()=>rankedEventResponse({...result,configured_enabled:false,phase:'disabled'},request()),error=>error.status===502);
+ }
+ const disabled={...scheduled(false),revision:2,request_id:request().request_id};
+ assert.deepEqual(rankedEventResponse(disabled,{...request(),enabled:false}),disabled);
+});
+
+test('schedule boundaries request a fresh server read without inferring activity or resetting armed state',()=>{
+ const before=scheduled(true,'2026-10-30T13:59:59Z');
+ assert.equal(rankedEventConfigured(before),true);assert.equal(before.enabled,false);
+ assert.equal(rankedEventReading(before,1000,1500).status,'off');
+ assert.equal(rankedEventBoundaryWindow(before),before.starts_at);
+ const boundary=rankedEventReading(before,1000,2000);assert.equal(boundary.status,'boundary');assert.equal(boundary.rotation,null);
+ assert.equal(before.phase,'scheduled');assert.equal(before.enabled,false);
+ assert.equal(rankedEventBoundaryAttempt(before,{window:before.starts_at,at:2000}),2000);
+ const read={snapshot:before,receivedAt:1000,lastAttemptAt:1000,lastBoundaryAttemptAt:null,now:2000,visible:true};
+ assert.equal(rankedEventReadDue(read),true);assert.equal(rankedEventReadDue({...read,visible:false}),false);
+ assert.equal(rankedEventReadDue({...read,lastBoundaryAttemptAt:2000,now:6999}),false);
+ assert.equal(rankedEventReadDue({...read,lastBoundaryAttemptAt:2000,now:7000}),true);
+ const ending=scheduled(true,'2026-11-03T13:59:59Z');
+ assert.equal(rankedEventBoundaryWindow(ending),ending.ends_at);
+ assert.equal(rankedEventReading(ending,1000,1500).status,'active');
+ assert.equal(rankedEventReading(ending,1000,2000).status,'boundary');
+ assert.equal(rankedEventConfigured(scheduled(true,'2026-11-03T14:00:00Z')),true);
+ assert.equal(rankedEventReading(scheduled(true,'2026-11-03T14:00:00Z'),1000,1500).status,'off');
+ assert.equal(rankedEventBoundaryWindow(scheduled(false)),null);
 });
 
 test('event rotation whitelists the exact seven-map server pool with Lotus and preserves the ordinary OFF pool',()=>{

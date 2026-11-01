@@ -66,7 +66,7 @@ test('Ranked supervision adds Ranked and player workspaces without granting admi
   assert.equal(items[1].title, 'Estadísticas Ranked');
   assert.equal(items[2].to, '/jugadores');
   assert.deepEqual(navigationSearch(items, 'marcas audiencia').map(item => item.id), ['ranked-stats']);
-  assert.equal(items.some(item => ['administracion','usuarios','crm','integracion','metrics'].includes(item.id)),false);
+  assert.equal(items.some(item => ['publicacion','administracion','usuarios','crm','integracion','metrics'].includes(item.id)),false);
 });
 
 test('Inicio and Jugadores stay on top and every other allowed tool sits once in its area group',()=>{
@@ -94,7 +94,7 @@ test('coordination receives only delegated user management in addition to its ow
   const delegated = managerNavigation(value => ['operaciones', 'tablero', 'disponibilidad'].includes(value), false, true);
   assert.deepEqual(delegated.filter(item => !normal.some(existing => existing.id === item.id)).map(item => item.id), ['usuarios']);
   assert.equal(delegated.find(item => item.id === 'usuarios').to, '/usuarios');
-  assert.equal(delegated.some(item => ['administracion', 'crm', 'integracion'].includes(item.id)), false);
+  assert.equal(delegated.some(item => ['publicacion', 'administracion', 'crm', 'integracion'].includes(item.id)), false);
   assert.equal(new Set(managerNavigation(() => true, true, true).map(item => item.to)).size, managerNavigation(() => true, true, true).length);
 });
 test('tool search matches accents and multiple words only within allowed tools', () => {

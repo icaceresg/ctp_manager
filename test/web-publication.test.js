@@ -1,21 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWebPublicationClient, webPublicationPayload, webPublicationResponse } from '../server/web-publication-client.js';
-import { EMPTY_DRAFT, canOpenRegistration, draftChanges, pendingCount, percentToBps, setClub, setSection, setTaxZone, setTournament } from '../client/src/pages/webPublicationModel.js';
+import { EMPTY_DRAFT, canOpenRegistration, draftChanges, ossProgress, pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament } from '../client/src/pages/webPublicationModel.js';
 import { managerNavigation, navigationSearch } from '../client/src/navigation.js';
 
 const T = '31100000-0000-4000-8000-0000000000aa', C = '31100000-0000-4000-8000-0000000000bb', R = '31100000-0000-4000-8000-0000000000cc';
 const snapshot = { schema_version: 1, revision: 3, sections: { calendar: false, market: false },
   tournaments: [{ id: T, name: 'CTP Cup #4', status: 'inscripcion_abierta', visible: true, registration_open: false, registration_open_at: '2099-01-01T00:00:00Z', registration_close_at: '2099-02-01T00:00:00Z', entrants: 0, host: { id: C, name: 'Blast', announced: true } }],
-  clubs: [{ id: C, name: 'Blast', tag: 'BLST', announced: true, hosting: [] }], tax_zones: [{ code: 'ES', tax_name: 'IVA', rate_bps: 2100, active: true }] };
+  clubs: [{ id: C, name: 'Blast', tag: 'BLST', announced: true, hosting: [] }], tax: { spain_rate_bps: 2100, oss_active: false, oss_threshold_cents: 1000000, eu_consumer_sales_cents: 850000, eu_rates: [{ country: 'FR', rate_bps: 2000 }] } };
 
 test('draft collects one batch and forgets changes reverted to the published value', () => {
   let draft = setSection(EMPTY_DRAFT, snapshot, 'calendar', true);
   draft = setClub(draft, snapshot.clubs[0], false);
   draft = setTournament(draft, snapshot.tournaments[0], { registration_open_now: true });
-  draft = setTaxZone(draft, snapshot.tax_zones[0], { rate_bps: 2100 });
+  draft = setTax(draft, snapshot, 'spain_rate_bps', 2100);
   assert.equal(pendingCount(draft), 3);
   assert.deepEqual(draftChanges(draft), { sections: { calendar: true }, tournaments: [{ id: T, registration_open_now: true }], clubs: [{ id: C, announced: false }] });
+  draft = setTax(draft, snapshot, 'oss_active', true);
+  draft = setEuRate(draft, snapshot.tax.eu_rates[0], 2100);
+  assert.deepEqual(draftChanges(draft).tax, { oss_active: true, eu_rates: [{ country: 'FR', rate_bps: 2100 }] });
+  draft = setTax(setEuRate(draft, snapshot.tax.eu_rates[0], 2000), snapshot, 'oss_active', false);
+  assert.equal(pendingCount(draft), 3);
+  assert.equal(ossProgress(snapshot.tax).level, 'near');
   draft = setClub(draft, snapshot.clubs[0], true);
   draft = setTournament(draft, snapshot.tournaments[0], { registration_open_now: false });
   assert.equal(pendingCount(draft), 1);
@@ -27,9 +33,11 @@ test('draft collects one batch and forgets changes reverted to the published val
 test('payload accepts only known changes and keeps the request id for retries', () => {
   const payload = { action: 'configure', expected_version: 3, request_id: R, reason: 'Anuncio de Blast y su Major', changes: { clubs: [{ id: C, announced: true }] } };
   assert.deepEqual(webPublicationPayload(payload), payload);
-  for (const changes of [{}, { sql: 1 }, { clubs: [] }, { tournaments: [{ id: T }] }, { tax_zones: [{ code: 'XX', rate_bps: 1 }] }, { tax_zones: [{ code: 'ES', rate_bps: 3500 }] }])
+  for (const changes of [{}, { sql: 1 }, { clubs: [] }, { tournaments: [{ id: T }] }, { tax: { spain_rate_bps: 3500 } }, { tax: { eu_rates: [{ country: 'ES', rate_bps: 2100 }] } }, { tax: { oss_active: 'yes' } }, { tax: {} }])
     assert.throws(() => webPublicationPayload({ ...payload, changes }), /./);
   assert.throws(() => webPublicationPayload({ ...payload, reason: 'corto' }), /./);
+  const tax = { ...payload, changes: { tax: { oss_active: true, eu_rates: [{ country: 'FR', rate_bps: 2000 }] } } };
+  assert.deepEqual(webPublicationPayload(tax), tax);
   assert.throws(() => webPublicationResponse({ ...snapshot }, payload), /verificar/);
   assert.equal(webPublicationResponse({ ...snapshot, request_id: R }, payload).request_id, R);
 });

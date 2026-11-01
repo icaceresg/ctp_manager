@@ -3,8 +3,8 @@ import { CalendarDays, DoorOpen, Eye, EyeOff, Globe, Percent, RefreshCw, Save, S
 import { api } from '../api.js';
 import { dateTime } from '../operations/model.js';
 import {
-  EMPTY_DRAFT, KIND_LABELS, STATUS_LABELS, ZONE_LABELS, bpsToPercent, canOpenRegistration, draftChanges, effective, pendingCount,
-  percentToBps, setClub, setSection, setTaxZone, setTournament, tournamentToggleable,
+  COUNTRY_LABELS, EMPTY_DRAFT, KIND_LABELS, STATUS_LABELS, bpsToPercent, canOpenRegistration, draftChanges, effective, euros, ossProgress,
+  pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament, tournamentToggleable,
 } from './webPublicationModel.js';
 import '../operations/operations.css';
 import './web-publication.css';
@@ -13,7 +13,7 @@ const TABS = [
   { id: 'secciones', label: 'Secciones', icon: Globe },
   { id: 'equipos', label: 'Equipos del Team Pass', icon: Shield },
   { id: 'torneos', label: 'Torneos y calendario', icon: Trophy },
-  { id: 'iva', label: 'IVA por zona', icon: Percent },
+  { id: 'iva', label: 'Impuestos', icon: Percent },
 ];
 const madrid = value => (value ? new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—');
 
@@ -97,27 +97,57 @@ function Tournaments({ snapshot, draft, setDraft }) {
   </section>;
 }
 
-function TaxZones({ snapshot, draft, setDraft }) {
-  return <section className="op-card" aria-labelledby="wp-tax">
-    <div className="op-section-title"><div><h2 id="wp-tax">IVA por zona de facturación</h2>
-      <p>Antes de pagar, el jugador elige país y zona. El precio ya incluye el impuesto; aquí se fija el tipo de cada zona. Confirma los tipos con la gestoría antes de activar pagos reales.</p></div></div>
-    <div className="table-card"><table className="data-table">
-      <thead><tr><th>Zona</th><th>Impuesto</th><th>Tipo (%)</th><th className="center">Disponible</th></tr></thead>
-      <tbody>{snapshot.tax_zones.map(zone => <TaxRow key={zone.code} zone={zone} draft={draft} setDraft={setDraft} />)}</tbody>
-    </table></div>
-  </section>;
-}
-function TaxRow({ zone, draft, setDraft }) {
-  const rate = effective.rate(draft, zone);
-  const [text, setText] = useState(bpsToPercent(rate));
-  useEffect(() => { setText(bpsToPercent(rate)); }, [rate]);
+// Criterio de la asesoría (respuesta de dudas, punto 8). El precio final es el
+// mismo para todos: cambia la base, no el total.
+const TAX_RULES = [
+  ['Particular o empresa de Península y Baleares', 'IVA español', 'Factura con IVA. Se pide el NIF.'],
+  ['Particular de otro país de la UE', 'IVA español o, con OSS, el de su país', 'Con más de 10.000 € al año en ventas a particulares de la UE se activa OSS.'],
+  ['Empresa o profesional de otro país de la UE', 'Sin IVA (inversión del sujeto pasivo)', 'Su NIF-IVA se comprueba en VIES antes del pago; si no es válido, no puede comprar como empresa.'],
+  ['Particular o empresa de fuera de la UE', 'Sin IVA español', 'No sujeto. A las empresas se les pide su número fiscal como prueba.'],
+  ['Canarias, Ceuta y Melilla', 'Sin IVA español', 'No forman parte del territorio del IVA.'],
+];
+
+function RateInput({ value, label, onCommit }) {
+  const [text, setText] = useState(bpsToPercent(value));
+  useEffect(() => { setText(bpsToPercent(value)); }, [value]);
   const parsed = percentToBps(text);
-  return <tr className={draft.tax_zones[zone.code] ? 'wp-row-changed' : ''}>
-    <td>{ZONE_LABELS[zone.code]}</td><td>{zone.tax_name === 'NONE' ? 'Sin impuesto' : zone.tax_name}</td>
-    <td><input className="wp-rate" inputMode="decimal" aria-label={`Tipo de ${ZONE_LABELS[zone.code]}`} aria-invalid={parsed === null} value={text}
-      onChange={event => setText(event.target.value)} onBlur={() => { if (parsed !== null) setDraft(d => setTaxZone(d, zone, { rate_bps: parsed })); else setText(bpsToPercent(rate)); }} /></td>
-    <td className="center"><Toggle on={effective.active(draft, zone)} changed={'active' in (draft.tax_zones[zone.code] || {})} labelOn="Sí" labelOff="No" onChange={value => setDraft(d => setTaxZone(d, zone, { active: value }))} /></td>
-  </tr>;
+  return <input className="wp-rate" inputMode="decimal" aria-label={label} aria-invalid={parsed === null} value={text}
+    onChange={event => setText(event.target.value)} onBlur={() => { if (parsed !== null) onCommit(parsed); else setText(bpsToPercent(value)); }} />;
+}
+
+function Taxes({ snapshot, draft, setDraft }) {
+  const tax = snapshot.tax, oss = effective.tax(draft, snapshot, 'oss_active'), progress = ossProgress(tax);
+  return <>
+    <section className="op-card" aria-labelledby="wp-tax">
+      <div className="op-section-title"><div><h2 id="wp-tax">Cómo se cobra el impuesto</h2>
+        <p>Antes de pagar, el comprador indica si es particular o empresa, su nombre o razón social, dirección, país (y en España, territorio) y su NIF o NIF-IVA. Todos pagan el mismo precio final con impuestos incluidos.</p></div></div>
+      <div className="table-card"><table className="data-table">
+        <thead><tr><th>Cliente</th><th>Qué se cobra</th><th>Cómo</th></tr></thead>
+        <tbody>{TAX_RULES.map(([who, what, how]) => <tr key={who}><td>{who}</td><td><strong>{what}</strong></td><td>{how}</td></tr>)}</tbody>
+      </table></div>
+    </section>
+    <section className="op-card" aria-labelledby="wp-tax-es">
+      <div className="op-section-title"><div><h2 id="wp-tax-es">IVA español</h2><p>Se aplica en Península y Baleares y a los particulares de la UE mientras OSS esté desactivado.</p></div></div>
+      <ul className="wp-list"><li className={'spain_rate_bps' in draft.tax ? 'wp-row-changed' : ''}><Percent size={20} aria-hidden /><div><strong>Tipo general</strong><small>Publicado: {bpsToPercent(tax.spain_rate_bps)} %</small></div>
+        <RateInput value={effective.tax(draft, snapshot, 'spain_rate_bps')} label="Tipo de IVA español" onCommit={value => setDraft(d => setTax(d, snapshot, 'spain_rate_bps', value))} /> %</li></ul>
+    </section>
+    <section className="op-card" aria-labelledby="wp-tax-oss">
+      <div className="op-section-title"><div><h2 id="wp-tax-oss">Ventanilla única (OSS)</h2>
+        <p>Ventas a particulares de otros países de la UE este año (base sin IVA): <strong>{euros(tax.eu_consumer_sales_cents)}</strong> de {euros(tax.oss_threshold_cents)}.
+          Al superar el umbral, date de alta en OSS con la asesoría y actívalo aquí: desde entonces cada particular de la UE paga el IVA de su país.</p></div>
+        <Toggle on={oss} changed={'oss_active' in draft.tax} labelOn="OSS activo" labelOff="OSS desactivado" onChange={value => setDraft(d => setTax(d, snapshot, 'oss_active', value))} /></div>
+      <div className={`wp-meter is-${progress.level}`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-label="Umbral OSS"><span style={{ width: `${progress.percent}%` }} /></div>
+      {progress.level !== 'ok' && !tax.oss_active && <p className="wp-warn">{progress.level === 'over' ? 'Se ha superado el umbral de 10.000 €: hay que activar OSS.' : 'Cerca del umbral de 10.000 €: avisa a la asesoría.'}</p>}
+      <div className="table-card"><table className="data-table">
+        <thead><tr><th>País</th><th>IVA general (%)</th></tr></thead>
+        <tbody>{tax.eu_rates.map(rate => <tr key={rate.country} className={rate.country in draft.eu_rates ? 'wp-row-changed' : ''}>
+          <td>{COUNTRY_LABELS[rate.country] || rate.country}</td>
+          <td><RateInput value={effective.euRate(draft, rate)} label={`IVA de ${COUNTRY_LABELS[rate.country] || rate.country}`} onCommit={value => setDraft(d => setEuRate(d, rate, value))} /></td>
+        </tr>)}</tbody>
+      </table></div>
+      <p className="muted">Tipos generales de cada país, a revisar con la asesoría antes de activar OSS.</p>
+    </section>
+  </>;
 }
 
 export default function WebPublicationPage() {
@@ -176,7 +206,7 @@ export default function WebPublicationPage() {
       {tab === 'secciones' && <Sections snapshot={snapshot} draft={draft} setDraft={setDraft} />}
       {tab === 'equipos' && <Clubs snapshot={snapshot} draft={draft} setDraft={setDraft} />}
       {tab === 'torneos' && <Tournaments snapshot={snapshot} draft={draft} setDraft={setDraft} />}
-      {tab === 'iva' && <TaxZones snapshot={snapshot} draft={draft} setDraft={setDraft} />}
+      {tab === 'iva' && <Taxes snapshot={snapshot} draft={draft} setDraft={setDraft} />}
       {(count > 0 || pending.current) && <form className="wp-publish" onSubmit={publish} aria-label="Publicar cambios">
         <strong>{count} {count === 1 ? 'cambio pendiente' : 'cambios pendientes'}</strong>
         <label className="op-field">Motivo (queda en la auditoría)<input required minLength={12} maxLength={500} value={reason} disabled={busy || !!pending.current} placeholder="Ej.: Anuncio de Blast y su Major del 20 de diciembre" onChange={event => setReason(event.target.value)} /></label>

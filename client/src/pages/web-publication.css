@@ -27,6 +27,11 @@
 .wp-ok { color: var(--accent-text); }
 .wp-warn { color: #f0b46a; }
 .wp-rate { width: 90px; }
+.wp-list li.wp-row-changed { box-shadow: inset 3px 0 0 var(--accent); }
+.wp-meter { height: 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin: 4px 0 12px; }
+.wp-meter span { display: block; height: 100%; background: var(--accent); }
+.wp-meter.is-near span { background: #f0b46a; }
+.wp-meter.is-over span { background: #c2475f; }
 .wp-rate[aria-invalid=true] { border-color: #c2475f; }
 .wp-publish { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(880px, calc(100vw - 32px)); z-index: 40;
   display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 16px; padding: 16px 18px;

@@ -50,6 +50,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/administration/images', express.json({limit:'3mb'}));
+app.use('/api/administration/web-publication/upload', express.json({limit:'3mb'}));
 app.use('/api/administration/crm', express.json({limit:'2mb'}));
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', authRouter, ruletaRouter, administrationRouter, obsRouter, integrationRouter, operationsRouter, adminRouter, boardRouter, apiRouter);

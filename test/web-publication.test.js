@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWebPublicationClient, webPublicationPayload, webPublicationResponse } from '../server/web-publication-client.js';
-import { EMPTY_DRAFT, canOpenRegistration, draftChanges, ossProgress, pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament } from '../client/src/pages/webPublicationModel.js';
+import { EMPTY_DRAFT, canOpenRegistration, draftChanges, effective, ossProgress, pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament } from '../client/src/pages/webPublicationModel.js';
 import { managerNavigation, navigationSearch } from '../client/src/navigation.js';
 
 const T = '31100000-0000-4000-8000-0000000000aa', C = '31100000-0000-4000-8000-0000000000bb', R = '31100000-0000-4000-8000-0000000000cc';
@@ -11,7 +11,7 @@ const snapshot = { schema_version: 1, revision: 3, sections: { calendar: false, 
 
 test('draft collects one batch and forgets changes reverted to the published value', () => {
   let draft = setSection(EMPTY_DRAFT, snapshot, 'calendar', true);
-  draft = setClub(draft, snapshot.clubs[0], false);
+  draft = setClub(draft, snapshot.clubs[0], { announced: false });
   draft = setTournament(draft, snapshot.tournaments[0], { registration_open_now: true });
   draft = setTax(draft, snapshot, 'spain_rate_bps', 2100);
   assert.equal(pendingCount(draft), 3);
@@ -26,12 +26,40 @@ test('draft collects one batch and forgets changes reverted to the published val
   assert.deepEqual(draftChanges(draft).tax, { management_fee_active: true, management_fee_cents: 150 });
   assert.equal(percentToBps('1,5', 20), 150);
   assert.equal(percentToBps('25', 20), null);
-  draft = setClub(draft, snapshot.clubs[0], true);
+  draft = setClub(draft, snapshot.clubs[0], { announced: true });
   draft = setTournament(draft, snapshot.tournaments[0], { registration_open_now: false });
   assert.equal(pendingCount(draft), 3);
   assert.equal(draftChanges(EMPTY_DRAFT), null);
   assert.equal(canOpenRegistration(snapshot.tournaments[0], Date.parse('2026-11-01')), true);
   assert.equal(percentToBps('21,5'), 2150); assert.equal(percentToBps('31'), null);
+});
+
+test('draft handles hosts, hidden dates, programs and club pages', () => {
+  const t = { ...snapshot.tournaments[0], date_visible: true };
+  let draft = setTournament(EMPTY_DRAFT, t, { host_club_id: null, date_visible: false });
+  assert.deepEqual(draftChanges(draft).tournaments, [{ id: T, host_club_id: null, date_visible: false }]);
+  assert.equal(effective.host(draft, t), null); assert.equal(effective.dateVisible(draft, t), false);
+  draft = setTournament(draft, t, { host_club_id: C, date_visible: true });
+  assert.equal(pendingCount(draft), 0);
+  const found = { id: R, name: 'Imperial', tag: 'IMP', program: null, found: true };
+  draft = setClub(draft, found, { program: 'semi_team_pass' });
+  assert.deepEqual(draft.found, { [R]: { name: 'Imperial', tag: 'IMP' } });
+  const club = { ...snapshot.clubs[0], program: 'team_pass', branding: { primary_color: '#D4A843', secondary_color: '#F5F1E8', tagline: '', logo_path: null, cover_path: null } };
+  draft = setClub(draft, club, { primary_color: '#112233', logo_path: C + '/' + R + '.png' });
+  assert.deepEqual(draftChanges(draft).clubs, [{ id: R, program: 'semi_team_pass' }, { id: C, primary_color: '#112233', logo_path: C + '/' + R + '.png' }]);
+  assert.equal(effective.club(draft, club, 'primary_color'), '#112233');
+  draft = setClub(setClub(draft, found, { program: null }), club, { primary_color: '#D4A843', logo_path: null });
+  assert.equal(pendingCount(draft), 0); assert.deepEqual(draft.found, {});
+  const configure = { action: 'configure', expected_version: 3, request_id: R, reason: 'Imagen del club anfitrión',
+    changes: { tournaments: [{ id: T, host_club_id: null, date_visible: false }], clubs: [{ id: C, primary_color: '#aabbcc', tagline: 'Lema', cover_path: C + '/' + R + '.jpg' }, { id: R, program: 'semi_team_pass' }, { id: T, circuit_pass: true }] } };
+  assert.equal(webPublicationPayload(configure).changes.clubs[0].primary_color, '#AABBCC');
+  for (const clubs of [[{ id: C, logo_path: R + '/' + R + '.png' }], [{ id: C, cover_path: C + '/' + R + '.png' }], [{ id: C, program: 'team_pass' }], [{ id: C, primary_color: 'red' }], [{ id: C, tagline: 'x'.repeat(81) }]])
+    assert.throws(() => webPublicationPayload({ ...configure, changes: { clubs } }), { status: 400 });
+  assert.deepEqual(webPublicationPayload({ action: 'search', query: ' imp ' }), { action: 'search', query: 'imp' });
+  assert.throws(() => webPublicationPayload({ action: 'search', query: 'i' }), { status: 400 });
+  const upload = { action: 'upload', team_id: C, kind: 'logo', content_type: 'image/png', base64: 'iVBORw0KGgo=', request_id: R };
+  assert.deepEqual(webPublicationPayload(upload), upload);
+  assert.throws(() => webPublicationPayload({ ...upload, content_type: 'image/jpeg' }), { status: 400 });
 });
 
 test('payload accepts only known changes and keeps the request id for retries', () => {

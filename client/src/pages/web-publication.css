@@ -41,3 +41,29 @@
   .wp-publish { grid-template-columns: 1fr; }
   .wp-list li { flex-wrap: wrap; }
 }
+.wp-dim { color: var(--muted); }
+.wp-table td .wp-toggle { margin-top: 6px; min-height: 28px; padding: 4px 10px; }
+.wp-select { min-width: 180px; max-width: 240px; }
+.wp-select.is-changed { box-shadow: 0 0 0 2px var(--accent); }
+.wp-grid li.wp-card-changed { box-shadow: inset 3px 0 0 var(--accent); }
+.wp-logo { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; }
+.wp-page-button { align-self: start; }
+.wp-search { display: flex; flex-direction: column; gap: 8px; min-width: min(360px, 100%); }
+.wp-search input { flex: 1; min-width: 180px; }
+.wp-results { list-style: none; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.wp-results li { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.wp-editor-images { display: grid; grid-template-columns: 220px 1fr; gap: 16px; margin-bottom: 16px; }
+.wp-image { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.wp-image.is-changed { box-shadow: inset 3px 0 0 var(--accent); }
+.wp-image-frame { display: grid; place-items: center; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+.wp-image.is-logo .wp-image-frame { aspect-ratio: 1; }
+.wp-image.is-cover .wp-image-frame { aspect-ratio: 8 / 3; }
+.wp-image-frame img { width: 100%; height: 100%; object-fit: contain; }
+.wp-image.is-cover .wp-image-frame img { object-fit: cover; }
+.wp-image-actions { display: flex; flex-direction: column; gap: 6px; }
+.wp-image-actions small { color: var(--muted); font-size: 12px; }
+.wp-editor-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.wp-color { display: inline-flex; align-items: center; gap: 8px; }
+.wp-color input[type=color] { width: 44px; height: 34px; padding: 2px; border-radius: 6px; }
+.wp-tagline { grid-column: 1 / -1; }
+@media (max-width: 760px) { .wp-editor-images { grid-template-columns: 1fr; } }

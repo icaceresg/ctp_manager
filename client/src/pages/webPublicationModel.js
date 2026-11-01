@@ -1,6 +1,8 @@
 // Borrador de «Publicación web»: los cambios se acumulan y se publican juntos
 // con un único motivo, en una sola revisión de CTP.
-export const EMPTY_DRAFT = Object.freeze({ sections: {}, tournaments: {}, clubs: {}, tax: {}, eu_rates: {} });
+// `found` guarda nombre y etiqueta de los clubes añadidos desde la búsqueda; no se envía.
+export const EMPTY_DRAFT = Object.freeze({ sections: {}, tournaments: {}, clubs: {}, tax: {}, eu_rates: {}, found: {} });
+export const PROGRAM_LABELS = Object.freeze({ team_pass: 'Team Pass', semi_team_pass: 'Semi-Team Pass', circuit_pass: 'Circuit Pass' });
 
 export const COUNTRY_LABELS = Object.freeze({
   AT: 'Austria', BE: 'Bélgica', BG: 'Bulgaria', HR: 'Croacia', CY: 'Chipre', CZ: 'Chequia', DK: 'Dinamarca', EE: 'Estonia', FI: 'Finlandia',
@@ -17,13 +19,25 @@ export function setSection(draft, snapshot, key, value) {
   const sections = snapshot.sections[key] === value ? drop(draft.sections, key) : { ...draft.sections, [key]: value };
   return { ...draft, sections };
 }
-export function setClub(draft, club, announced) {
-  const clubs = club.announced === announced ? drop(draft.clubs, club.id) : { ...draft.clubs, [club.id]: announced };
-  return { ...draft, clubs };
+/** Valores publicados de un club (o de uno recién encontrado, que aún no tiene programa). */
+function clubBase(club) {
+  const branding = club.branding || {};
+  return { announced: club.announced === true, program: club.program === 'semi_team_pass' ? 'semi_team_pass' : null, circuit_pass: club.circuit_pass === true,
+    primary_color: branding.primary_color, secondary_color: branding.secondary_color, tagline: branding.tagline ?? '', logo_path: branding.logo_path ?? null, cover_path: branding.cover_path ?? null };
+}
+/** change: announced | program | circuit_pass | colores, lema e imágenes. */
+export function setClub(draft, club, change) {
+  const base = clubBase(club), current = { ...(draft.clubs[club.id] || {}), ...change };
+  for (const key of Object.keys(current)) if (current[key] === base[key]) delete current[key];
+  const clubs = Object.keys(current).length ? { ...draft.clubs, [club.id]: current } : drop(draft.clubs, club.id);
+  const found = club.found && clubs[club.id] ? { ...draft.found, [club.id]: { name: club.name, tag: club.tag } } : clubs[club.id] ? draft.found : drop(draft.found, club.id);
+  return { ...draft, clubs, found };
 }
 export function setTournament(draft, tournament, change) {
   const current = { ...(draft.tournaments[tournament.id] || {}), ...change };
   if (current.visible === tournament.visible) delete current.visible;
+  if (current.date_visible === tournament.date_visible) delete current.date_visible;
+  if ('host_club_id' in current && current.host_club_id === (tournament.host?.id ?? null)) delete current.host_club_id;
   if (current.registration_open_now !== true) delete current.registration_open_now;
   const tournaments = Object.keys(current).length ? { ...draft.tournaments, [tournament.id]: current } : drop(draft.tournaments, tournament.id);
   return { ...draft, tournaments };
@@ -49,7 +63,7 @@ export function draftChanges(draft) {
   if (Object.keys(draft.sections).length) changes.sections = { ...draft.sections };
   const tournaments = Object.entries(draft.tournaments).map(([id, change]) => ({ id, ...change }));
   if (tournaments.length) changes.tournaments = tournaments;
-  const clubs = Object.entries(draft.clubs).map(([id, announced]) => ({ id, announced }));
+  const clubs = Object.entries(draft.clubs).map(([id, change]) => ({ id, ...change }));
   if (clubs.length) changes.clubs = clubs;
   const tax = { ...draft.tax };
   const rates = Object.entries(draft.eu_rates).map(([country, rate_bps]) => ({ country, rate_bps }));
@@ -61,8 +75,10 @@ export function draftChanges(draft) {
 /** Valor efectivo (borrador o publicado) para pintar cada control. */
 export const effective = {
   section: (draft, snapshot, key) => (key in draft.sections ? draft.sections[key] : snapshot.sections[key]),
-  club: (draft, club) => (club.id in draft.clubs ? draft.clubs[club.id] : club.announced),
+  club: (draft, club, key = 'announced') => (draft.clubs[club.id] && key in draft.clubs[club.id] ? draft.clubs[club.id][key] : clubBase(club)[key]),
   visible: (draft, t) => (draft.tournaments[t.id] && 'visible' in draft.tournaments[t.id] ? draft.tournaments[t.id].visible : t.visible),
+  dateVisible: (draft, t) => (draft.tournaments[t.id] && 'date_visible' in draft.tournaments[t.id] ? draft.tournaments[t.id].date_visible : t.date_visible !== false),
+  host: (draft, t) => (draft.tournaments[t.id] && 'host_club_id' in draft.tournaments[t.id] ? draft.tournaments[t.id].host_club_id : t.host?.id ?? null),
   openNow: (draft, t) => draft.tournaments[t.id]?.registration_open_now === true,
   tax: (draft, snapshot, key) => (key in draft.tax ? draft.tax[key] : snapshot.tax[key]),
   euRate: (draft, rate) => (rate.country in draft.eu_rates ? draft.eu_rates[rate.country] : rate.rate_bps),

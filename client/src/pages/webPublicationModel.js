@@ -28,7 +28,7 @@ export function setTournament(draft, tournament, change) {
   const tournaments = Object.keys(current).length ? { ...draft.tournaments, [tournament.id]: current } : drop(draft.tournaments, tournament.id);
   return { ...draft, tournaments };
 }
-/** key: spain_rate_bps | oss_active. */
+/** key: spain_rate_bps | oss_active | management_fee_active | management_fee_cents. */
 export function setTax(draft, snapshot, key, value) {
   const tax = snapshot.tax[key] === value ? drop(draft.tax, key) : { ...draft.tax, [key]: value };
   return { ...draft, tax };
@@ -75,14 +75,14 @@ export const canOpenRegistration = (t, now = Date.now()) => !t.registration_open
   && (!t.registration_close_at || Date.parse(t.registration_close_at) > now)
   && (!t.registration_open_at || Date.parse(t.registration_open_at) > now);
 
-/** Parse «21» o «21,5» → 2100 / 2150 puntos básicos. */
-export function percentToBps(text) {
+/** Parse «21» o «21,5» → 2100 / 2150 puntos básicos (o «1,50» € → 150 céntimos con max 20). */
+export function percentToBps(text, max = 30) {
   const value = Number(String(text).trim().replace(',', '.'));
-  if (!Number.isFinite(value) || value < 0 || value > 30) return null;
+  if (!Number.isFinite(value) || value < 0 || value > max) return null;
   return Math.round(value * 100);
 }
 export const bpsToPercent = bps => (bps / 100).toLocaleString('es-ES', { maximumFractionDigits: 2 });
-export const euros = cents => (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+export const euros = cents => (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 /** Ventas a particulares de la UE este año frente al umbral OSS (10.000 €). */
 export function ossProgress(tax) {
   const ratio = tax.oss_threshold_cents > 0 ? tax.eu_consumer_sales_cents / tax.oss_threshold_cents : 0;

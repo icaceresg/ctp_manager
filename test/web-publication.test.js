@@ -7,7 +7,7 @@ import { managerNavigation, navigationSearch } from '../client/src/navigation.js
 const T = '31100000-0000-4000-8000-0000000000aa', C = '31100000-0000-4000-8000-0000000000bb', R = '31100000-0000-4000-8000-0000000000cc';
 const snapshot = { schema_version: 1, revision: 3, sections: { calendar: false, market: false },
   tournaments: [{ id: T, name: 'CTP Cup #4', status: 'inscripcion_abierta', visible: true, registration_open: false, registration_open_at: '2099-01-01T00:00:00Z', registration_close_at: '2099-02-01T00:00:00Z', entrants: 0, host: { id: C, name: 'Blast', announced: true } }],
-  clubs: [{ id: C, name: 'Blast', tag: 'BLST', announced: true, hosting: [] }], tax: { spain_rate_bps: 2100, oss_active: false, oss_threshold_cents: 1000000, eu_consumer_sales_cents: 850000, eu_rates: [{ country: 'FR', rate_bps: 2000 }] } };
+  clubs: [{ id: C, name: 'Blast', tag: 'BLST', announced: true, hosting: [] }], tax: { spain_rate_bps: 2100, oss_active: false, oss_threshold_cents: 1000000, management_fee_active: false, management_fee_cents: 100, eu_consumer_sales_cents: 850000, eu_rates: [{ country: 'FR', rate_bps: 2000 }] } };
 
 test('draft collects one batch and forgets changes reverted to the published value', () => {
   let draft = setSection(EMPTY_DRAFT, snapshot, 'calendar', true);
@@ -22,9 +22,13 @@ test('draft collects one batch and forgets changes reverted to the published val
   draft = setTax(setEuRate(draft, snapshot.tax.eu_rates[0], 2000), snapshot, 'oss_active', false);
   assert.equal(pendingCount(draft), 3);
   assert.equal(ossProgress(snapshot.tax).level, 'near');
+  draft = setTax(setTax(draft, snapshot, 'management_fee_active', true), snapshot, 'management_fee_cents', 150);
+  assert.deepEqual(draftChanges(draft).tax, { management_fee_active: true, management_fee_cents: 150 });
+  assert.equal(percentToBps('1,5', 20), 150);
+  assert.equal(percentToBps('25', 20), null);
   draft = setClub(draft, snapshot.clubs[0], true);
   draft = setTournament(draft, snapshot.tournaments[0], { registration_open_now: false });
-  assert.equal(pendingCount(draft), 1);
+  assert.equal(pendingCount(draft), 3);
   assert.equal(draftChanges(EMPTY_DRAFT), null);
   assert.equal(canOpenRegistration(snapshot.tournaments[0], Date.parse('2026-11-01')), true);
   assert.equal(percentToBps('21,5'), 2150); assert.equal(percentToBps('31'), null);
@@ -33,7 +37,7 @@ test('draft collects one batch and forgets changes reverted to the published val
 test('payload accepts only known changes and keeps the request id for retries', () => {
   const payload = { action: 'configure', expected_version: 3, request_id: R, reason: 'Anuncio de Blast y su Major', changes: { clubs: [{ id: C, announced: true }] } };
   assert.deepEqual(webPublicationPayload(payload), payload);
-  for (const changes of [{}, { sql: 1 }, { clubs: [] }, { tournaments: [{ id: T }] }, { tax: { spain_rate_bps: 3500 } }, { tax: { eu_rates: [{ country: 'ES', rate_bps: 2100 }] } }, { tax: { oss_active: 'yes' } }, { tax: {} }])
+  for (const changes of [{}, { sql: 1 }, { clubs: [] }, { tournaments: [{ id: T }] }, { tax: { spain_rate_bps: 3500 } }, { tax: { eu_rates: [{ country: 'ES', rate_bps: 2100 }] } }, { tax: { oss_active: 'yes' } }, { tax: {} }, { tax: { management_fee_cents: 2500 } }, { tax: { management_fee_active: 1 } }])
     assert.throws(() => webPublicationPayload({ ...payload, changes }), /./);
   assert.throws(() => webPublicationPayload({ ...payload, reason: 'corto' }), /./);
   const tax = { ...payload, changes: { tax: { oss_active: true, eu_rates: [{ country: 'FR', rate_bps: 2000 }] } } };

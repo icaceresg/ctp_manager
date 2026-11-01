@@ -34,7 +34,9 @@ export function webPublicationPayload(value){
  }
  if('tax' in c){
   const t=c.tax,message='El IVA debe estar entre 0 % y 30 %.';
-  if(!only(t,['spain_rate_bps','oss_active','eu_rates'])||!Object.keys(t).length)invalid(message);
+  if(!only(t,['spain_rate_bps','oss_active','eu_rates','management_fee_active','management_fee_cents'])||!Object.keys(t).length)invalid(message);
+  if('management_fee_active' in t&&typeof t.management_fee_active!=='boolean')invalid();
+  if('management_fee_cents' in t&&!(Number.isSafeInteger(t.management_fee_cents)&&t.management_fee_cents>=0&&t.management_fee_cents<=2000))invalid('Los gastos de gestión deben estar entre 0 y 20 €.');
   if('spain_rate_bps' in t&&!rate(t.spain_rate_bps))invalid(message);
   if('oss_active' in t&&typeof t.oss_active!=='boolean')invalid();
   if('eu_rates' in t&&(!Array.isArray(t.eu_rates)||!t.eu_rates.length||t.eu_rates.length>EU_COUNTRIES.length
@@ -58,7 +60,8 @@ export function webPublicationResponse(value,payload){
   clubs:value.clubs.filter(c=>object(c)&&uuid(c.id)).map(c=>({id:c.id,name:String(c.name??''),tag:String(c.tag??''),announced:c.announced===true,
    announced_at:c.announced_at??null,hosting:Array.isArray(c.hosting)?c.hosting.filter(object).map(h=>({id:h.id,name:String(h.name??'')})):[]})),
   tax:{spain_rate_bps:Number(value.tax.spain_rate_bps)||0,oss_active:value.tax.oss_active===true,
-   oss_threshold_cents:Number(value.tax.oss_threshold_cents)||1000000,eu_consumer_sales_cents:Number(value.tax.eu_consumer_sales_cents)||0,
+   oss_threshold_cents:Number(value.tax.oss_threshold_cents)||1000000,
+   management_fee_active:value.tax.management_fee_active===true,management_fee_cents:Number(value.tax.management_fee_cents)||0,eu_consumer_sales_cents:Number(value.tax.eu_consumer_sales_cents)||0,
    eu_rates:value.tax.eu_rates.filter(r=>object(r)&&EU_COUNTRIES.includes(r.country)).map(r=>({country:r.country,rate_bps:Number(r.rate_bps)||0}))},
   ...(payload?.action==='configure'?{request_id:value.request_id}:{})};
 }

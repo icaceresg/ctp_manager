@@ -107,17 +107,26 @@ const TAX_RULES = [
   ['Canarias, Ceuta y Melilla', 'Sin IVA español', 'No forman parte del territorio del IVA.'],
 ];
 
-function RateInput({ value, label, onCommit }) {
+function RateInput({ value, label, onCommit, max }) {
   const [text, setText] = useState(bpsToPercent(value));
   useEffect(() => { setText(bpsToPercent(value)); }, [value]);
-  const parsed = percentToBps(text);
+  const parsed = percentToBps(text, max);
   return <input className="wp-rate" inputMode="decimal" aria-label={label} aria-invalid={parsed === null} value={text}
     onChange={event => setText(event.target.value)} onBlur={() => { if (parsed !== null) onCommit(parsed); else setText(bpsToPercent(value)); }} />;
 }
 
 function Taxes({ snapshot, draft, setDraft }) {
   const tax = snapshot.tax, oss = effective.tax(draft, snapshot, 'oss_active'), progress = ossProgress(tax);
+  const feeOn = effective.tax(draft, snapshot, 'management_fee_active'), feeChanged = 'management_fee_active' in draft.tax || 'management_fee_cents' in draft.tax;
   return <>
+    <section className="op-card" aria-labelledby="wp-fee">
+      <div className="op-section-title"><div><h2 id="wp-fee">Gastos de gestión</h2>
+        <p>Importe que se suma a cada compra online: torneo suelto, Season Pass y Circuit Pass. Lleva el mismo impuesto que el producto y sale como línea aparte en el pago y la factura. Se fija al crear el pedido.</p></div>
+        <Toggle on={feeOn} changed={'management_fee_active' in draft.tax} labelOn="Activados" labelOff="Desactivados" onChange={value => setDraft(d => setTax(d, snapshot, 'management_fee_active', value))} /></div>
+      <ul className="wp-list"><li className={feeChanged ? 'wp-row-changed' : ''}><ShoppingBag size={20} aria-hidden /><div><strong>Importe por compra</strong>
+        <small>Publicado: {tax.management_fee_active ? euros(tax.management_fee_cents) : 'desactivado'} · máximo 20 €</small></div>
+        <RateInput value={effective.tax(draft, snapshot, 'management_fee_cents')} max={20} label="Gastos de gestión en euros" onCommit={value => setDraft(d => setTax(d, snapshot, 'management_fee_cents', value))} /> €</li></ul>
+    </section>
     <section className="op-card" aria-labelledby="wp-tax">
       <div className="op-section-title"><div><h2 id="wp-tax">Cómo se cobra el impuesto</h2>
         <p>Antes de pagar, el comprador indica si es particular o empresa, su nombre o razón social, dirección, país (y en España, territorio) y su NIF o NIF-IVA. Todos pagan el mismo precio final con impuestos incluidos.</p></div></div>

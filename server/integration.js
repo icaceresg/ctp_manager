@@ -29,6 +29,7 @@ import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
 import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {createRankedEventClient} from './ranked-event-client.js';
 import {createWebPublicationClient} from './web-publication-client.js';
+import {createSiteNoticeClient} from './site-notice-client.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -315,6 +316,7 @@ const request = createOperationsTransport(config);
 const staffAlertsService=createStaffAlertsClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const rankedEventService=createRankedEventClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const webPublicationService=createWebPublicationClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
+export const siteNoticeService=createSiteNoticeClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 setIntegrationStatus({ configured: config.configured, write_enabled: config.configured && config.writes, local_test_mode: config.localTestMode === true, web_origin: webOrigin() });
 
 export function integrationStatus() {

@@ -138,7 +138,7 @@ function Clubs({ snapshot, draft, setDraft }) {
   const removed = all.filter(club => !program(club) && club.id in draft.clubs);
   const ids = new Set(all.filter(program).map(club => club.id));
   const editingClub = all.find(club => club.id === editing && ['team_pass', 'semi_team_pass'].includes(program(club)));
-  const card = (club, extra) => <li key={club.id} className={`${program(club) === 'team_pass' && !effective.club(draft, club) ? 'is-hidden' : ''}${club.id in draft.clubs ? ' wp-card-changed' : ''}`}>
+  const card = (club, extra) => <li key={club.id} className={`${['team_pass', 'semi_team_pass'].includes(program(club)) && !effective.club(draft, club) ? 'is-hidden' : ''}${club.id in draft.clubs ? ' wp-card-changed' : ''}`}>
     <div className="wp-club-name">{club.branding?.logo_url && <img className="wp-logo" src={club.branding.logo_url} alt="" />}<span className="wp-tag">{club.tag}</span><strong>{club.name}</strong></div>
     {extra}
     {['team_pass', 'semi_team_pass'].includes(program(club)) && !club.found && <button type="button" className="btn sm wp-page-button" aria-pressed={editing === club.id}
@@ -157,10 +157,11 @@ function Clubs({ snapshot, draft, setDraft }) {
     {editingClub && <ClubPage club={editingClub} draft={draft} setDraft={setDraft} previews={previews} setPreviews={setPreviews} onClose={() => setEditing(null)} />}
     <section className="op-card" aria-labelledby="wp-semi">
       <div className="op-section-title"><div><h2 id="wp-semi">Semi-Team Pass</h2>
-        <p>Clubes con página propia y distintivo dorado, sin torneo como anfitrión.</p></div>
+        <p>Uso interno: la web nunca muestra «Semi-Team Pass». Mientras está oculto, el club se ve como un equipo normal; al mostrarlo aparecen su página propia y el distintivo dorado. {semi.filter(club => !effective.club(draft, club)).length} de {semi.length} ocultos.</p></div>
         <ClubSearch label="Añadir club al Semi-Team Pass" exclude={ids} onPick={club => setDraft(d => setClub(d, club, { program: 'semi_team_pass' }))} /></div>
       {!semi.length ? <p className="muted">Ningún club en el Semi-Team Pass.</p> : <ul className="wp-grid">{semi.map(club => card(club, <>
         <small>{club.found ? 'Se añadirá al publicar' : `${club.members} miembros`}</small>
+        <Toggle on={effective.club(draft, club)} changed={'announced' in (draft.clubs[club.id] || {})} labelOn="Visible en la web" labelOff="Oculto" onChange={value => setDraft(d => setClub(d, club, { announced: value }))} />
         <button type="button" className="btn ghost sm" onClick={() => setDraft(d => setClub(d, club, { program: null }))}>Quitar del Semi-Team Pass</button>
       </>))}</ul>}
     </section>

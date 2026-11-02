@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
-import { noticeDraft, sameNoticeDraft, siteNoticeAttempt, siteNoticeError, siteNoticeState } from '../client/src/pages/siteNoticeModel.js';
+import { hasMeaningfulCanonicalHtml, noticeDraft, sameNoticeDraft, siteNoticeAttempt, siteNoticeError, siteNoticeState } from '../client/src/pages/siteNoticeModel.js';
 import { noticePreviewOrigin, siteNoticeDocument } from '../client/src/pages/siteNoticeDocument.js';
 const fixture = { schema_version: 1, revision: 5, enabled: false, title: 'Copa DEV', html: '<h2>Nuevo torneo</h2><p>Datos sintéticos.</p>' };
 let vite, views;
@@ -41,4 +41,13 @@ test('preview only resolves approved CTP environments and denies scripts at the 
   assert.match(document, /script-src &#39;none&#39;/); assert.match(document, /default-src &#39;none&#39;/);
   assert.equal(siteNoticeDocument(fixture.html, 'https://bad.invalid'), '');
   assert.equal(noticePreviewOrigin({ hostname: 'pre.manager.playctp.com' }), 'https://pre.playctp.com');
+});
+test('empty formatting, nonbreaking or invisible spaces stay hidden even when enabled', () => {
+  for (const html of ['', '<p><br></p>', '<p>&nbsp;<br></p>', '<div>\u00a0\u200b\u200c\u200d\u2060\ufeff</div>']) {
+    assert.equal(hasMeaningfulCanonicalHtml(html), false);
+    const preview = renderToStaticMarkup(createElement(views.SiteNoticePreview, { notice: { ...fixture, enabled: true, html }, origin: 'https://pre.playctp.com' }));
+    assert.doesNotMatch(preview, /iframe/); assert.match(preview, /permanecerá oculto/);
+  }
+  assert.equal(hasMeaningfulCanonicalHtml('<p>Información</p>'), true);
+  assert.equal(hasMeaningfulCanonicalHtml('<img src="/assets/fixture.webp">'), true);
 });

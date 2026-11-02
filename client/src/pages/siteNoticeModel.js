@@ -1,5 +1,10 @@
 // Canonical HTML can expand entities beyond the source editor's input limit.
 const MAX_HTML = 65536;
+/** Match public visibility: empty formatting is not a communication. */
+export function hasMeaningfulCanonicalHtml(html) {
+  return /<img\s[^>]*\bsrc=/i.test(html) || !!String(html || '').replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;|&#(?:160|x0*a0);/gi, '').replace(/[\s\u200b\u200c\u200d\u2060\ufeff]/g, '');
+}
 export function siteNoticeState(value) {
   if (!value || value.schema_version !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 1
     || typeof value.enabled !== 'boolean' || typeof value.title !== 'string' || value.title.length > 120

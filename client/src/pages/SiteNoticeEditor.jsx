@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Code2, Eye, EyeOff, Megaphone, Monitor, RefreshCw, Save, Smartphone } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
-import { noticeDraft, sameNoticeDraft, siteNoticeAttempt, siteNoticeError, siteNoticeState } from './siteNoticeModel.js';
+import { hasMeaningfulCanonicalHtml, noticeDraft, sameNoticeDraft, siteNoticeAttempt, siteNoticeError, siteNoticeState } from './siteNoticeModel.js';
 import { noticePreviewOrigin, siteNoticeDocument } from './siteNoticeDocument.js';
 import './site-notice.css';
 
 export function SiteNoticePreview({ notice, mobile, origin }) {
   if (!notice) return <p className="muted sn-preview-empty">Pulsa «Vista previa» para revisar el HTML saneado que mostrará CTP.</p>;
-  if (!notice.html.trim()) return <p className="muted sn-preview-empty">El contenido está vacío: el aviso permanecerá oculto.</p>;
+  if (!hasMeaningfulCanonicalHtml(notice.html)) return <p className="muted sn-preview-empty">El contenido está vacío: el aviso permanecerá oculto.</p>;
   return <div className={`sn-preview-stage${mobile ? ' is-mobile' : ''}`}>
     <div className="sn-preview-card"><div className="sn-preview-heading"><h3>{notice.title || 'Novedades de CTP'}</h3><span aria-hidden>×</span></div>
       <p className="sn-preview-label"><Megaphone size={14} />Comunidad · Competición</p>
@@ -63,7 +63,7 @@ export function SiteNoticeEditorBody({ client = api, origin }) {
       if (!mounted.current) return;
       if (raw.request_id !== payload.request_id) throw new Error('Unconfirmed response');
       pending.current = null; setUncertain(false); setSnapshot(result); setDraft(noticeDraft(result)); setPreview(result);
-      setNotice(result.enabled && result.html.trim() ? 'Aviso guardado y activado.' : 'Aviso guardado. Permanece oculto en CTP.');
+      setNotice(result.enabled && hasMeaningfulCanonicalHtml(result.html) ? 'Aviso guardado y activado.' : 'Aviso guardado. Permanece oculto en CTP.');
     } catch (problem) {
       if (!mounted.current) return;
       setError(siteNoticeError(problem));

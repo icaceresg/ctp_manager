@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWebPublicationClient, webPublicationPayload, webPublicationResponse } from '../server/web-publication-client.js';
-import { EMPTY_DRAFT, canOpenRegistration, draftChanges, effective, ossProgress, pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament } from '../client/src/pages/webPublicationModel.js';
+import { EMPTY_DRAFT, canOpenRegistration, draftChanges, effective, ossProgress, pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament, tournamentState } from '../client/src/pages/webPublicationModel.js';
 import { managerNavigation, navigationSearch } from '../client/src/navigation.js';
 
 const T = '31100000-0000-4000-8000-0000000000aa', C = '31100000-0000-4000-8000-0000000000bb', R = '31100000-0000-4000-8000-0000000000cc';
@@ -88,4 +88,22 @@ test('admins find Publicación web from the menu search', () => {
   assert.equal(items.find(item => item.id === 'publicacion')?.to, '/publicacion');
   for (const query of ['publicar web', 'anunciar equipo', 'calendario fechas', 'iva']) assert.ok(navigationSearch(items, query).some(item => item.id === 'publicacion'), query);
   assert.equal(managerNavigation(() => true, false).some(item => item.id === 'publicacion'), false);
+});
+
+
+test('publication and competition derive one state from the authoritative registration window', () => {
+  const now=Date.parse('2026-11-02T12:00:00Z');
+  const base={status:'inscripcion_abierta',visible:true,registration_open_at:'2026-11-01T00:00:00Z',registration_close_at:'2026-11-08T09:00:00Z'};
+  assert.equal(tournamentState(base,now).key,'open');
+  assert.equal(tournamentState({...base,registration_open_at:base.registration_close_at},now).key,'published');
+  assert.equal(tournamentState({...base,status:'borrador'},now).key,'hidden');
+  assert.equal(tournamentState(base,Date.parse('2026-11-08T09:00:00Z')).key,'published');
+});
+
+test('an administrator can close registration while leaving the tournament published', () => {
+  const t={...snapshot.tournaments[0],registration_open:true};
+  const draft=setTournament(EMPTY_DRAFT,t,{visible:true,registration_open_now:false});
+  assert.deepEqual(draftChanges(draft).tournaments,[{id:T,registration_open_now:false}]);
+  const payload={action:'configure',expected_version:3,request_id:R,reason:'Cerrar inscripción manteniendo el anuncio',changes:draftChanges(draft)};
+  assert.equal(webPublicationPayload(payload).changes.tournaments[0].registration_open_now,false);
 });

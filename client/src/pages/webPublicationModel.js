@@ -1,3 +1,4 @@
+export { tournamentState } from '../operations/tournamentState.js';
 // Borrador de «Publicación web»: los cambios se acumulan y se publican juntos
 // con un único motivo, en una sola revisión de CTP.
 // `found` guarda nombre y etiqueta de los clubes añadidos desde la búsqueda; no se envía.
@@ -38,7 +39,7 @@ export function setTournament(draft, tournament, change) {
   if (current.visible === tournament.visible) delete current.visible;
   if (current.date_visible === tournament.date_visible) delete current.date_visible;
   if ('host_club_id' in current && current.host_club_id === (tournament.host?.id ?? null)) delete current.host_club_id;
-  if (current.registration_open_now !== true) delete current.registration_open_now;
+  if (typeof current.registration_open_now !== 'boolean' || current.registration_open_now === tournament.registration_open) delete current.registration_open_now;
   const tournaments = Object.keys(current).length ? { ...draft.tournaments, [tournament.id]: current } : drop(draft.tournaments, tournament.id);
   return { ...draft, tournaments };
 }

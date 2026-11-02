@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, DoorOpen, Eye, EyeOff, Globe, Image as ImageIcon, Percent, RefreshCw, Save, Search, Shield, ShoppingBag, Trophy, Undo2, Upload, X } from 'lucide-react';
+import { CalendarDays, Eye, EyeOff, Globe, Image as ImageIcon, Percent, RefreshCw, Save, Search, Shield, ShoppingBag, Trophy, Undo2, Upload, X } from 'lucide-react';
 import { api } from '../api.js';
 import { dateTime } from '../operations/model.js';
 import {
-  COUNTRY_LABELS, EMPTY_DRAFT, KIND_LABELS, PROGRAM_LABELS, STATUS_LABELS, bpsToPercent, canOpenRegistration, draftChanges, effective, euros, ossProgress,
-  pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament, tournamentToggleable,
+  COUNTRY_LABELS, EMPTY_DRAFT, KIND_LABELS, PROGRAM_LABELS, bpsToPercent, draftChanges, effective, euros, ossProgress,
+  pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament, tournamentToggleable, tournamentState,
 } from './webPublicationModel.js';
 import '../operations/operations.css';
 import './web-publication.css';
@@ -183,23 +183,21 @@ function Tournaments({ snapshot, draft, setDraft }) {
   const [scope, setScope] = useState('circuit');
   const list = snapshot.tournaments.filter(t => scope === 'all' || t.circuit_code);
   const hosts = snapshot.clubs.filter(club => club.program === 'team_pass').sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  const openable = list.filter(t => effective.visible(draft, t) && canOpenRegistration(t) && !effective.openNow(draft, t));
   return <section className="op-card" aria-labelledby="wp-tournaments">
     <div className="op-section-title"><div><h2 id="wp-tournaments">Torneos y calendario</h2>
-      <p>Un torneo publicado aparece en /tournaments y en el calendario. Oculto vuelve a borrador: deja de verse, sin borrar inscripciones. Con la fecha oculta, la web muestra «Fecha por anunciar» en el calendario y en su página. Solo un club del Team Pass puede ser anfitrión.</p></div>
+      <p>Un único control define si el torneo está oculto, publicado con inscripción cerrada o publicado con inscripción abierta. Gestión de torneos muestra este mismo estado. Los pases se venden independientemente de la apertura de inscripción. Con la fecha oculta se muestra «Fecha por anunciar». Solo un club del Team Pass puede ser anfitrión.</p></div>
       <div className="btn-row">
         <div className="wp-segmented" role="group" aria-label="Torneos a mostrar">
           <button type="button" aria-pressed={scope === 'circuit'} onClick={() => setScope('circuit')}>Circuito</button>
           <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>Todos</button>
         </div>
-        <button type="button" className="btn" disabled={!openable.length} onClick={() => setDraft(d => openable.reduce((acc, t) => setTournament(acc, t, { registration_open_now: true }), d))}>
-          <DoorOpen size={16} /> Abrir inscripción en todos los visibles ({openable.length})</button>
+
       </div>
     </div>
     <div className="table-card"><table className="data-table wp-table">
-      <thead><tr><th>Torneo</th><th>Fecha (Madrid)</th><th>Anfitrión</th><th>Estado</th><th>Inscripción</th><th className="center">En la web</th></tr></thead>
+      <thead><tr><th>Torneo</th><th>Fecha (Madrid)</th><th>Anfitrión</th><th>Publicación e inscripción</th></tr></thead>
       <tbody>{list.map(t => {
-        const visible = effective.visible(draft, t), openNow = effective.openNow(draft, t), changed = !!draft.tournaments[t.id];
+        const visible = effective.visible(draft, t), changed = !!draft.tournaments[t.id];
         const dateOn = effective.dateVisible(draft, t), host = effective.host(draft, t), hostClub = hosts.find(club => club.id === host);
         return <tr key={t.id} className={`${visible ? '' : 'inactive'}${changed ? ' wp-row-changed' : ''}`}>
           <td><strong>{t.name}</strong><small className="wp-sub">{KIND_LABELS[t.kind] || t.kind}{t.season ? ` · Season ${t.season}` : ''}{t.circuit_code ? ` · ${t.circuit_code}` : ''}</small></td>
@@ -209,16 +207,15 @@ function Tournaments({ snapshot, draft, setDraft }) {
             <option value="">Sin anfitrión (CTP)</option>{hosts.map(club => <option key={club.id} value={club.id}>{club.name}{club.announced ? '' : ' · próximamente'}</option>)}</select>
             : t.host ? t.host.name : <span className="muted">CTP</span>}
           {hostClub && !effective.club(draft, hostClub) && <small className="wp-sub wp-warn">Se ve con la imagen de CTP hasta anunciar el club.</small>}</td>
-          <td>{STATUS_LABELS[t.status] || t.status}<small className="wp-sub">{t.entrants} inscritos</small></td>
-          <td>{t.registration_open ? <span className="wp-ok">Abierta hasta {madrid(t.registration_close_at)}</span>
-            : openNow ? <span className="wp-ok">Se abrirá al publicar</span>
-            : canOpenRegistration(t) ? <span>Abre {madrid(t.registration_open_at)}{' '}
-              <button type="button" className="btn sm" onClick={() => setDraft(d => setTournament(d, t, { registration_open_now: true }))}>Abrir ya</button></span>
-            : <span className="muted">Cerrada</span>}
-            {openNow && <button type="button" className="btn ghost sm" onClick={() => setDraft(d => setTournament(d, t, { registration_open_now: false }))}>Deshacer</button>}</td>
-          <td className="center">{tournamentToggleable(t)
-            ? <Toggle on={visible} changed={changed && 'visible' in (draft.tournaments[t.id] || {})} labelOn="Publicado" labelOff="Oculto" onChange={value => setDraft(d => setTournament(d, t, { visible: value }))} />
-            : <span className="muted">{STATUS_LABELS[t.status]}</span>}</td>
+          <td>{tournamentToggleable(t) ? <select aria-label={`Publicación e inscripción de ${t.name}`}
+            value={!visible ? 'hidden' : (draft.tournaments[t.id]?.registration_open_now ?? t.registration_open) ? 'open' : 'published'}
+            onChange={event => setDraft(d => setTournament(d, t, { visible: event.target.value !== 'hidden', registration_open_now: event.target.value === 'open' }))}>
+            <option value="hidden">Oculto</option>
+            <option value="published">Publicado · inscripción cerrada</option>
+            <option value="open" disabled={Date.parse(t.registration_close_at) <= Date.now()}>Publicado · inscripción abierta</option>
+          </select> : <span>{tournamentState(t).label}</span>}
+            <small className="wp-sub">{t.entrants} inscritos · Cierre: {madrid(t.registration_close_at)}</small>
+          </td>
         </tr>;
       })}</tbody>
     </table></div>
@@ -228,7 +225,7 @@ function Tournaments({ snapshot, draft, setDraft }) {
 // Criterio de la asesoría (respuesta de dudas, punto 8). El precio final es el
 // mismo para todos: cambia la base, no el total.
 const TAX_RULES = [
-  ['Particular o empresa de Península y Baleares', 'IVA español', 'Factura con IVA. Se pide el NIF.'],
+  ['Particular o empresa de Península y Baleares', 'IVA español', 'Factura con IVA. NIF en factura completa; opcional para particulares con factura simplificada hasta 400 € de total.'],
   ['Particular de otro país de la UE', 'IVA español o, con OSS, el de su país', 'Con más de 10.000 € al año en ventas a particulares de la UE se activa OSS.'],
   ['Empresa o profesional de otro país de la UE', 'Sin IVA (inversión del sujeto pasivo)', 'Su NIF-IVA se comprueba en VIES antes del pago; si no es válido, no puede comprar como empresa.'],
   ['Particular o empresa de fuera de la UE', 'Sin IVA español', 'No sujeto. A las empresas se les pide su número fiscal como prueba.'],

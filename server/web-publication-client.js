@@ -40,7 +40,7 @@ export function webPublicationPayload(value){
   if(!Array.isArray(c.tournaments)||!c.tournaments.length||c.tournaments.length>100)invalid();
   changes.tournaments=c.tournaments.map(item=>{
    if(!only(item,['id','visible','registration_open_now','host_club_id','date_visible'])||!uuid(item.id)||('visible' in item&&typeof item.visible!=='boolean')
-    ||('registration_open_now' in item&&item.registration_open_now!==true)||('date_visible' in item&&typeof item.date_visible!=='boolean')
+    ||('registration_open_now' in item&&typeof item.registration_open_now!=='boolean')||('date_visible' in item&&typeof item.date_visible!=='boolean')
     ||('host_club_id' in item&&item.host_club_id!==null&&!uuid(item.host_club_id))||Object.keys(item).length<2)invalid();
    return{...item,id:item.id.toLowerCase(),...(typeof item.host_club_id==='string'?{host_club_id:item.host_club_id.toLowerCase()}:{})};
   });

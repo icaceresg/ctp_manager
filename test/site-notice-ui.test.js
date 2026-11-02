@@ -41,6 +41,11 @@ test('preview only resolves approved CTP environments and denies scripts at the 
   assert.match(document, /script-src &#39;none&#39;/); assert.match(document, /default-src &#39;none&#39;/);
   assert.equal(siteNoticeDocument(fixture.html, 'https://bad.invalid'), '');
   assert.equal(noticePreviewOrigin({ hostname: 'pre.manager.playctp.com' }), 'https://pre.playctp.com');
+  const links = siteNoticeDocument('<a href="/es/ranked?tab=ranking&amp;page=2" target="_blank">CTP</a><img src="/assets/fixture.webp" alt="CTP">', 'https://pre.playctp.com');
+  assert.doesNotMatch(links, /<base\b/); assert.match(links, /base-uri &#39;none&#39;/);
+  assert.match(links, /href="https:\/\/pre.playctp.com\/es\/ranked\?tab=ranking&amp;page=2"/);
+  assert.match(links, /src="https:\/\/pre.playctp.com\/assets\/fixture.webp"/);
+  assert.doesNotMatch(links, /amp;amp/);
 });
 test('empty formatting, nonbreaking or invisible spaces stay hidden even when enabled', () => {
   for (const html of ['', '<p><br></p>', '<p>&nbsp;<br></p>', '<div>\u00a0\u200b\u200c\u200d\u2060\ufeff</div>']) {

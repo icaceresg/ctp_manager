@@ -9,7 +9,7 @@ export function siteNoticePayload(input){
  if(!['preview','save'].includes(input.action)
   ||!keys(input,input.action==='save'?['action','title','html','enabled','expected_revision','request_id']:['action','title','html','enabled'])
   ||typeof input.title!=='string'||input.title.length>120||/[\u0000-\u001f\u007f]/.test(input.title)
-  ||typeof input.html!=='string'||input.html.length>32768||typeof input.enabled!=='boolean'
+  ||typeof input.html!=='string'||input.html.length>65536||typeof input.enabled!=='boolean'
   ||input.action==='save'&&(!Number.isSafeInteger(input.expected_revision)||input.expected_revision<1||!uuid(input.request_id)))fail();
  return{...input,title:input.title.trim()};
 }

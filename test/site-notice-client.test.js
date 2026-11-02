@@ -8,7 +8,7 @@ const SAVE={action:'save',expected_revision:1,request_id:ID,enabled:true,title:'
 test('notice protocol rejects arbitrary fields, missing CAS/idempotency and unbounded input',()=>{
  assert.deepEqual(siteNoticePayload({action:'status'}),{action:'status'});
  assert.equal(siteNoticePayload(SAVE).title,'News');
- for(const input of [{...SAVE,request_id:undefined},{...SAVE,expected_revision:0},{...SAVE,document:[]},{...SAVE,html:'x'.repeat(32769)},{action:'preview',enabled:true,title:''}])assert.throws(()=>siteNoticePayload(input),{status:400});
+ for(const input of [{...SAVE,request_id:undefined},{...SAVE,expected_revision:0},{...SAVE,document:[]},{...SAVE,html:'x'.repeat(65537)},{action:'preview',enabled:true,title:''}])assert.throws(()=>siteNoticePayload(input),{status:400});
 });
 test('notice service enforces authenticated admin, native CTP role and official write switch',async()=>{
  let calls=0;const service=createSiteNoticeClient({request:async()=>{calls++;return STATE;},actorFor:()=> 'ctp:fixture',writesEnabled:()=>false});

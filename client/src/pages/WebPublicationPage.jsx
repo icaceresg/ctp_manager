@@ -8,6 +8,7 @@ import {
 } from './webPublicationModel.js';
 import '../operations/operations.css';
 import './web-publication.css';
+import SiteNoticeEditor from './SiteNoticeEditor.jsx';
 
 const TABS = [
   { id: 'secciones', label: 'Secciones', icon: Globe },
@@ -332,6 +333,7 @@ export default function WebPublicationPage() {
     <div className="page-header"><div><h1>Publicación web</h1>
       <p>Decide qué muestra la web pública de CTP sin desplegar: secciones, equipos del Team Pass, torneos y fechas del calendario, e IVA de los pagos.</p></div>
       <button type="button" className="btn" disabled={busy} onClick={() => void refresh()}><RefreshCw size={16} /> Actualizar</button></div>
+    <SiteNoticeEditor />
     {error && <p className="op-error" role="alert">{error}</p>}
     {notice && <p className="op-notice" role="status">{notice}</p>}
     {!snapshot ? <p className="muted" role="status">{busy ? 'Consultando la web…' : 'Estado no disponible. Actualiza para comprobarlo.'}</p> : <>

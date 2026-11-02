@@ -3,7 +3,7 @@ import { requireAuth,requireAdmin } from '../auth.js';
 import { queryAdministration,proposeAdministration } from '../administration.js';
 import { integrationServicesStatus,ownerAction,uploadAdministrationImage,staffAlertsAction } from '../administration-services.js';
 import { crmAction } from '../crm.js';
-import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,rankedEventService,webPublicationService } from '../integration.js';
+import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,rankedEventService,webPublicationService,siteNoticeService } from '../integration.js';
 import { metricsHandler } from '../metrics.js';
 
 export const administrationRouter=Router();
@@ -17,6 +17,8 @@ administrationRouter.post('/administration/integrations/staff-alerts',async(req,
 administrationRouter.get('/administration/ranked-event',async(req,res)=>res.json(await rankedEventService(req.user,{action:'status'})));
 administrationRouter.post('/administration/ranked-event',async(req,res)=>res.json(await rankedEventService(req.user,req.body)));
 administrationRouter.get('/administration/web-publication',async(req,res)=>res.json(await webPublicationService(req.user,{action:'status'})));
+administrationRouter.get('/administration/site-notice',async(req,res)=>res.json(await siteNoticeService(req.user,{action:'status'})));
+administrationRouter.post('/administration/site-notice',async(req,res)=>res.json(await siteNoticeService(req.user,req.body)));
 administrationRouter.post('/administration/web-publication',async(req,res)=>res.json(await webPublicationService(req.user,req.body)));
 administrationRouter.post('/administration/web-publication/search',async(req,res)=>res.json(await webPublicationService(req.user,{...req.body,action:'search'})));
 administrationRouter.post('/administration/web-publication/upload',async(req,res)=>res.json(await webPublicationService(req.user,{...req.body,action:'upload'})));

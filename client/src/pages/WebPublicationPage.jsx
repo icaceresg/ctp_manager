@@ -9,11 +9,15 @@ import {
 import '../operations/operations.css';
 import './web-publication.css';
 import SiteNoticeEditor from './SiteNoticeEditor.jsx';
+import PaymentPricingEditor from './PaymentPricingEditor.jsx';
+import { invalidPricingInputs } from './paymentPricingModel.js';
+import { translate } from '../i18n/runtime.js';
 
 const TABS = [
   { id: 'secciones', label: 'Secciones', icon: Globe },
   { id: 'equipos', label: 'Clubes y pases', icon: Shield },
   { id: 'torneos', label: 'Torneos y calendario', icon: Trophy },
+  { id: 'precios', label: translate('manager.pricing.tab'), icon: ShoppingBag },
   { id: 'iva', label: 'Impuestos', icon: Percent },
 ];
 const madrid = value => (value ? new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—');
@@ -241,17 +245,13 @@ function RateInput({ value, label, onCommit, max }) {
     onChange={event => setText(event.target.value)} onBlur={() => { if (parsed !== null) onCommit(parsed); else setText(bpsToPercent(value)); }} />;
 }
 
-function Taxes({ snapshot, draft, setDraft }) {
+function Taxes({ snapshot, draft, setDraft, onPricing }) {
   const tax = snapshot.tax, oss = effective.tax(draft, snapshot, 'oss_active'), progress = ossProgress(tax);
-  const feeOn = effective.tax(draft, snapshot, 'management_fee_active'), feeChanged = 'management_fee_active' in draft.tax || 'management_fee_cents' in draft.tax;
   return <>
     <section className="op-card" aria-labelledby="wp-fee">
-      <div className="op-section-title"><div><h2 id="wp-fee">Gastos de gestión</h2>
-        <p>Importe que se suma a cada compra online: torneo suelto, Season Pass y Circuit Pass. Lleva el mismo impuesto que el producto y sale como línea aparte en el pago y la factura. Se fija al crear el pedido.</p></div>
-        <Toggle on={feeOn} changed={'management_fee_active' in draft.tax} labelOn="Activados" labelOff="Desactivados" onChange={value => setDraft(d => setTax(d, snapshot, 'management_fee_active', value))} /></div>
-      <ul className="wp-list"><li className={feeChanged ? 'wp-row-changed' : ''}><ShoppingBag size={20} aria-hidden /><div><strong>Importe por compra</strong>
-        <small>Publicado: {tax.management_fee_active ? euros(tax.management_fee_cents) : 'desactivado'} · máximo 20 €</small></div>
-        <RateInput value={effective.tax(draft, snapshot, 'management_fee_cents')} max={20} label="Gastos de gestión en euros" onCommit={value => setDraft(d => setTax(d, snapshot, 'management_fee_cents', value))} /> €</li></ul>
+      <div className="op-section-title"><div><h2 id="wp-fee">{translate('manager.pricing.tab')}</h2>
+        <p>{translate('manager.pricing.taxHint')}</p></div>
+        <button type="button" className="btn" onClick={onPricing}>{translate('manager.pricing.open')}</button></div>
     </section>
     <section className="op-card" aria-labelledby="wp-tax">
       <div className="op-section-title"><div><h2 id="wp-tax">Cómo se cobra el impuesto</h2>
@@ -304,6 +304,7 @@ export default function WebPublicationPage() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const count = pendingCount(draft);
+  const invalidPricing = invalidPricingInputs(draft).length > 0;
   const changes = useMemo(() => draftChanges(draft), [draft]);
   useEffect(() => {
     if (!count) return undefined;
@@ -314,7 +315,7 @@ export default function WebPublicationPage() {
 
   async function publish(event) {
     event.preventDefault();
-    if (busy || !snapshot || (!pending.current && (!changes || reason.trim().length < 12))) return;
+    if (busy || !snapshot || invalidPricing || (!pending.current && (!changes || reason.trim().length < 12))) return;
     // Un reintento reutiliza la misma referencia para no aplicar el cambio dos veces.
     const payload = pending.current || { action: 'configure', expected_version: snapshot.revision, request_id: crypto.randomUUID(), reason: reason.trim(), changes };
     pending.current = payload; setBusy(true); setError(''); setNotice('');
@@ -331,7 +332,7 @@ export default function WebPublicationPage() {
 
   return <div className="wp-page stack">
     <div className="page-header"><div><h1>Publicación web</h1>
-      <p>Decide qué muestra la web pública de CTP sin desplegar: secciones, equipos del Team Pass, torneos y fechas del calendario, e IVA de los pagos.</p></div>
+      <p>{translate('manager.pricing.pageDescription')}</p></div>
       <button type="button" className="btn" disabled={busy} onClick={() => void refresh()}><RefreshCw size={16} /> Actualizar</button></div>
     <SiteNoticeEditor />
     {error && <p className="op-error" role="alert">{error}</p>}
@@ -342,13 +343,15 @@ export default function WebPublicationPage() {
       {tab === 'secciones' && <Sections snapshot={snapshot} draft={draft} setDraft={setDraft} />}
       {tab === 'equipos' && <Clubs snapshot={snapshot} draft={draft} setDraft={setDraft} />}
       {tab === 'torneos' && <Tournaments snapshot={snapshot} draft={draft} setDraft={setDraft} />}
-      {tab === 'iva' && <Taxes snapshot={snapshot} draft={draft} setDraft={setDraft} />}
+      {tab === 'precios' && <PaymentPricingEditor snapshot={snapshot} draft={draft} setDraft={setDraft} disabled={busy || !!pending.current} />}
+      {tab === 'iva' && <Taxes snapshot={snapshot} draft={draft} setDraft={setDraft} onPricing={() => setTab('precios')} />}
+      {invalidPricing && <p className="op-error" role="alert">{translate('manager.pricing.invalidDraft')}</p>}
       {(count > 0 || pending.current) && <form className="wp-publish" onSubmit={publish} aria-label="Publicar cambios">
         <strong>{count} {count === 1 ? 'cambio pendiente' : 'cambios pendientes'}</strong>
         <label className="op-field">Motivo (queda en la auditoría)<input required minLength={12} maxLength={500} value={reason} disabled={busy || !!pending.current} placeholder="Ej.: Anuncio de Blast y su Major del 20 de diciembre" onChange={event => setReason(event.target.value)} /></label>
         <div className="btn-row">
           <button type="button" className="btn ghost" disabled={busy} onClick={() => { setDraft(EMPTY_DRAFT); pending.current = null; }}><Undo2 size={16} /> Descartar</button>
-          <button type="submit" className="btn primary" disabled={busy || (!pending.current && reason.trim().length < 12)}><Save size={16} />{busy ? 'Publicando…' : pending.current ? 'Reintentar' : 'Publicar en la web'}</button>
+          <button type="submit" className="btn primary" disabled={busy || invalidPricing || (!pending.current && reason.trim().length < 12)}><Save size={16} />{busy ? 'Publicando…' : pending.current ? 'Reintentar' : 'Publicar en la web'}</button>
         </div>
       </form>}
     </>}

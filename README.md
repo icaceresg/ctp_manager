@@ -22,6 +22,7 @@ Debe mantenerse un único Panel por emisión. Manager no abre otra instancia del
 
 ### Competición y staff
 
+- **Publicación web → Precios y gastos:** edición del precio y gasto de gestión por producto, torneo y Season Pass de cada season. Cada campo de torneo o season puede usar la tarifa general o un importe propio; un gasto de 0 € desactiva el recargo en ese caso. Se muestra el total antes de publicar, con motivo y revisión compartidos. Los pedidos existentes conservan sus importes. Requiere la migración 344 del backend CTP y su puente actualizado; en un backend anterior el editor avisa de que no está disponible.
 - **Mi jornada:** tareas según rol, turnos propios por confirmar, expedientes y cobertura del equipo.
 - **Planificador:** semana, búsqueda y filtros, candidatos disponibles y turnos. Coordinación puede sustituir o reprogramar con motivo; el servidor comprueba permisos, disponibilidad y solapamientos y pide nueva confirmación al asignado.
 - **Tickets** (dentro de Competición, junto a Ranked): solo los tickets que abren los jugadores en CTP, por responsable, prioridad y estado, con búsqueda, notas privadas, conversación CTP y resoluciones. Las disputas de partidos (Ranked, torneo o reto) no aparecen aquí: se revisan desde la partida o la ficha del partido, donde también se abre un expediente interno.

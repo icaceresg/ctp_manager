@@ -1,4 +1,5 @@
 import {HttpError} from './auth.js';
+import {paymentPricingPayload,paymentPricingResponse} from './payment-pricing.js';
 // Publicación web: qué muestra la web pública de CTP (secciones, torneos con su
 // anfitrión y fecha, clubes del Team Pass, Semi-Team Pass y Circuit Pass con su
 // página) y los impuestos (IVA de España, OSS y tipos de la UE). CTP valida cada cambio.
@@ -30,7 +31,7 @@ export function webPublicationPayload(value){
  if(value.action!=='configure'||!only(value,['action','expected_version','request_id','reason','changes'])
   ||!Number.isSafeInteger(value.expected_version)||value.expected_version<1||!uuid(value.request_id)
   ||typeof value.reason!=='string'||value.reason.trim().length<12||value.reason.length>500||/[\u0000-\u001f\u007f]/.test(value.reason)
-  ||!only(value.changes,['sections','tournaments','clubs','tax'])||!Object.keys(value.changes).length)invalid();
+  ||!only(value.changes,['sections','tournaments','clubs','tax','pricing'])||!Object.keys(value.changes).length)invalid();
  const c=value.changes,changes={};
  if('sections' in c){
   if(!only(c.sections,['calendar','market'])||!Object.keys(c.sections).length||Object.values(c.sections).some(v=>typeof v!=='boolean'))invalid();
@@ -60,15 +61,14 @@ export function webPublicationPayload(value){
  }
  if('tax' in c){
   const t=c.tax,message='El IVA debe estar entre 0 % y 30 %.';
-  if(!only(t,['spain_rate_bps','oss_active','eu_rates','management_fee_active','management_fee_cents'])||!Object.keys(t).length)invalid(message);
-  if('management_fee_active' in t&&typeof t.management_fee_active!=='boolean')invalid();
-  if('management_fee_cents' in t&&!(Number.isSafeInteger(t.management_fee_cents)&&t.management_fee_cents>=0&&t.management_fee_cents<=2000))invalid('Los gastos de gestión deben estar entre 0 y 20 €.');
+  if(!only(t,['spain_rate_bps','oss_active','eu_rates'])||!Object.keys(t).length)invalid(message);
   if('spain_rate_bps' in t&&!rate(t.spain_rate_bps))invalid(message);
   if('oss_active' in t&&typeof t.oss_active!=='boolean')invalid();
   if('eu_rates' in t&&(!Array.isArray(t.eu_rates)||!t.eu_rates.length||t.eu_rates.length>EU_COUNTRIES.length
    ||t.eu_rates.some(r=>!only(r,['country','rate_bps'])||!EU_COUNTRIES.includes(r.country)||!rate(r.rate_bps))))invalid(message);
   changes.tax={...t,...('eu_rates' in t?{eu_rates:t.eu_rates.map(r=>({country:r.country,rate_bps:r.rate_bps}))}:{})};
  }
+ if('pricing' in c)changes.pricing=paymentPricingPayload(c.pricing,invalid);
  return{action:'configure',expected_version:value.expected_version,request_id:value.request_id.toLowerCase(),reason:value.reason.trim(),changes};
 }
 
@@ -104,6 +104,7 @@ export function webPublicationResponse(value,payload){
  if(payload?.action==='configure'&&(!uuid(value.request_id)||value.request_id.toLowerCase()!==payload.request_id))fail();
  return{schema_version:1,revision:value.revision,server_time:value.server_time,updated_at:value.updated_at,
   sections:{calendar:value.sections.calendar===true,market:value.sections.market===true},
+  pricing:paymentPricingResponse(value.pricing,fail),
   tournaments:value.tournaments.filter(t=>object(t)&&uuid(t.id)).map(t=>({id:t.id,name:String(t.name??''),kind:t.kind,circuit_code:t.circuit_code??null,
    season:t.season??null,status:t.status,start_at:t.start_at,registration_open_at:t.registration_open_at??null,registration_close_at:t.registration_close_at??null,
    visible:t.visible===true,registration_open:t.registration_open===true,entrants:Number(t.entrants)||0,date_visible:t.date_visible!==false,

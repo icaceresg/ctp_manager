@@ -1,8 +1,9 @@
 export { tournamentState } from '../operations/tournamentState.js';
+import { EMPTY_PRICING, pricingChanges, pricingPendingCount } from './paymentPricingModel.js';
 // Borrador de «Publicación web»: los cambios se acumulan y se publican juntos
 // con un único motivo, en una sola revisión de CTP.
 // `found` guarda nombre y etiqueta de los clubes añadidos desde la búsqueda; no se envía.
-export const EMPTY_DRAFT = Object.freeze({ sections: {}, tournaments: {}, clubs: {}, tax: {}, eu_rates: {}, found: {} });
+export const EMPTY_DRAFT = Object.freeze({ sections: {}, tournaments: {}, clubs: {}, tax: {}, eu_rates: {}, found: {}, pricing: EMPTY_PRICING, pricingInputs: {} });
 export const PROGRAM_LABELS = Object.freeze({ team_pass: 'Team Pass', semi_team_pass: 'Semi-Team Pass', circuit_pass: 'Circuit Pass' });
 
 export const COUNTRY_LABELS = Object.freeze({
@@ -43,7 +44,7 @@ export function setTournament(draft, tournament, change) {
   const tournaments = Object.keys(current).length ? { ...draft.tournaments, [tournament.id]: current } : drop(draft.tournaments, tournament.id);
   return { ...draft, tournaments };
 }
-/** key: spain_rate_bps | oss_active | management_fee_active | management_fee_cents. */
+/** key: spain_rate_bps | oss_active. */
 export function setTax(draft, snapshot, key, value) {
   const tax = snapshot.tax[key] === value ? drop(draft.tax, key) : { ...draft.tax, [key]: value };
   return { ...draft, tax };
@@ -55,7 +56,7 @@ export function setEuRate(draft, rate, value) {
 
 export function pendingCount(draft) {
   return Object.keys(draft.sections).length + Object.keys(draft.tournaments).length + Object.keys(draft.clubs).length
-    + Object.keys(draft.tax).length + Object.keys(draft.eu_rates).length;
+    + Object.keys(draft.tax).length + Object.keys(draft.eu_rates).length + pricingPendingCount(draft);
 }
 
 /** Convierte el borrador en el `changes` del protocolo; null si no hay nada. */
@@ -70,6 +71,8 @@ export function draftChanges(draft) {
   const rates = Object.entries(draft.eu_rates).map(([country, rate_bps]) => ({ country, rate_bps }));
   if (rates.length) tax.eu_rates = rates;
   if (Object.keys(tax).length) changes.tax = tax;
+  const pricing = pricingChanges(draft);
+  if (pricing) changes.pricing = pricing;
   return Object.keys(changes).length ? changes : null;
 }
 

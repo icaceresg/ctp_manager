@@ -8,6 +8,7 @@ import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js
 import { rankedMonitorState } from './ranked-monitor-contract.js';
 import { rankedStatisticsPeriod, rankedStatisticsState } from './ranked-statistics-contract.js';
 import { rankedLobbyDetail, rankedLobbyId, rankedChatCursor, rankedChatRequest, rankedLobbyChatReceipt, rankedDecisionRequest, rankedDecisionReceipt, rankedBanRequest, rankedBanReceipt } from './ranked-lobby-contract.js';
+import { rankedDisciplineTarget } from './ranked-player-discipline.js';
 import { CLUB_ACTIONS, manualClubPayload } from './manual-club-contract.js';
 import { ADMIN_ACTIONS, administrationPayload, administrationQuery } from './administration-contract.js';
 import { CASE_ACTIONS,casePayload,caseQueryParameters } from './case-contract.js';
@@ -456,6 +457,23 @@ export async function getRankedLobbyDetail(user,lobbyId,before=null) {
   // CTP grants Ranked moderation to every enabled admin/referee staff binding.
  const {can_moderate,...detail}=value,moderate=can_moderate&&config.writes;
  return {...detail,chat:{...detail.chat,can_send:detail.chat.can_send&&config.writes},can_decide:canDecideRanked(user)||moderate,can_ban:moderate};
+}
+/** On-demand disciplinary read for the exact player selected in this lobby. */
+export async function getRankedPlayerDiscipline(user,lobbyId,rawSlot,query={}) {
+ requireRankedOperator(user);
+ if(!user.is_admin&&!user.sections?.includes('arbitraje'))throw integrationError(403,'Necesitas acceso de arbitraje.');
+ lobbyId=rankedLobbyId(lobbyId);
+ if(typeof rawSlot!=='string'||!(/^[1-8]$/).test(rawSlot)||Object.keys(query).some(key=>key!=='username')
+   ||typeof query.username!=='string'||!query.username||Array.from(query.username).length>100
+   ||/[\u0000-\u001f\u007f]/.test(query.username))throw integrationError(400,'Selecciona un jugador de la partida.');
+ const slot=Number(rawSlot),username=query.username;
+ const [detail,historyPage]=await Promise.all([
+  getRankedLobbyDetail(user,lobbyId),getOperationHistory(user,{kind:'match',query:lobbyId,limit:100}),
+ ]);
+ const target=rankedDisciplineTarget(detail,historyPage,lobbyId,slot,username);
+ const history=await getDisciplineHistory(user,target);
+ if(history.user.username!==username)throw integrationError(409,'La identidad del jugador ha cambiado. Actualiza la partida antes de consultar el historial.');
+ return{...history,context:{lobby_id:lobbyId,slot,username}};
 }
 export async function sendRankedLobbyChat(user,lobbyId,body){
  requireRankedOperator(user);lobbyId=rankedLobbyId(lobbyId);const input=rankedChatRequest(body);

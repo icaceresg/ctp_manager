@@ -13,6 +13,7 @@ import {BAN_DURATIONS,reportReasonLabel} from './rankedLabels.js';
 import {operationReturnPath} from '../navigation.js';
 import {rankedPhaseLabel,safeRankedClipUrl} from '../../../shared/ranked-lobby-presentation.js';
 import '../operations/operations.css';
+import PlayerSanctionHistory from '../operations/PlayerSanctionHistory.jsx';
 import './ranked-monitor.css';
 
 const team=side=>side==='a'?'Equipo A':side==='b'?'Equipo B':'Sin asignar';
@@ -85,7 +86,7 @@ export function RankedDecision({lobby,players,onApplied}){
  </section>;
 }
 /** Temporary Ranked block: the player cannot search or join Ranked until it ends. */
-function RankedBan({lobby,players,onApplied,preset}){
+export function RankedBan({lobby,players,onApplied,preset}){
  const choices=players.filter(p=>p.username);
  const [slot,setSlot]=useState(''),[minutes,setMinutes]=useState(60),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState('');
  // A report's "Bloquear" preselects that player only while the slot still shows the same name.
@@ -109,6 +110,7 @@ function RankedBan({lobby,players,onApplied,preset}){
     <label>Jugador<select value={slot} disabled={busy} onChange={event=>{setSlot(event.target.value);setDone('');}}><option value="">Selecciona un jugador</option>{choices.map(p=><option key={p.slot} value={p.slot}>{p.username}{p.side?` · ${team(p.side)}`:''}</option>)}</select></label>
     <label>Duración<select value={minutes} disabled={busy} onChange={event=>setMinutes(Number(event.target.value))}>{BAN_DURATIONS.map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></label>
    </div>
+   {player && <PlayerSanctionHistory context={{ lobbyId: lobby.id, slot: player.slot, username: player.username }} />}
    <label htmlFor="ranked-ban-reason">Motivo (queda registrado en CTP)</label>
    <textarea id="ranked-ban-reason" rows={3} maxLength={1000} value={reason} disabled={busy} onChange={event=>{setReason(event.target.value);setDone('');}} placeholder="Explica el motivo del bloqueo…"/>
    <div className="rl-chat-compose-actions"><span className="muted">{length}/500 caracteres · mínimo 12. No se puede bloquear a administradores ni árbitros.</span><button className="btn danger" type="submit" disabled={busy||!player||length<12||length>500}>{busy?'Aplicando…':'Bloquear de Ranked'}</button></div>

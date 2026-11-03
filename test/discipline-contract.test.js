@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-discipline-'));
 Object.assign(process.env, { DATA_DIR: directory, DB_PATH: path.join(directory, 'manager.sqlite'), CTP_OPERATIONS_URL: '', CTP_OPERATIONS_TOKEN: '', PUBLIC_ORIGIN: '' });
 const contract = await import('../server/discipline-contract.js');
-const { integrationConfig, createOperationsTransport, getDisciplineOverview, writeDiscipline, deleteCtpUser } = await import('../server/integration.js');
+const { integrationConfig, createOperationsTransport, getDisciplineOverview, getDisciplineHistory, writeDiscipline, deleteCtpUser } = await import('../server/integration.js');
 const { db } = await import('../server/db.js');
 const { managerNavigation } = await import('../client/src/navigation.js');
 const { OP_TABS, OP_TAB_ALIASES } = await import('../client/src/operations/model.js');
@@ -118,6 +118,8 @@ test('un fallo de transporte o confirmación de borrado exige comprobar el estad
 test('sanciones y borrado comprueban permisos antes de llamar a CTP', async () => {
   const editorial = { id: 9, is_admin: false, sections: ['calendario'] };
   await assert.rejects(getDisciplineOverview(editorial), { status: 403 });
+  await assert.rejects(getDisciplineHistory(editorial, user), { status: 403 });
+  await assert.rejects(getDisciplineHistory({ id: 9, is_admin: false, sections: ['operaciones', 'casters'] }, user), { status: 403 });
   await assert.rejects(writeDiscipline(editorial, 'sanction', null, suspension), { status: 403 });
   const referee = { id: 9, is_admin: false, sections: ['arbitraje'] };
   await assert.rejects(writeDiscipline(referee, 'sanction', null, suspension), { status: 403 }); // writes disabled in this test process

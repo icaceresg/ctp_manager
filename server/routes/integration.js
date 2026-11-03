@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { allow, requireAdmin, requireAuth } from '../auth.js';
-import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedStatistics, getRankedLobbyDetail, sendRankedLobbyChat, decideRankedLobby, banRankedPlayer, getClubCandidates, getProViewState } from '../integration.js';
+import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperations, getCompetitionData, getOperationHistory, getOfficialMatchDossier, getGuardState, getRankedState, getRankedMonitor, getRankedStatistics, getRankedLobbyDetail, getRankedPlayerDiscipline, sendRankedLobbyChat, decideRankedLobby, banRankedPlayer, getClubCandidates, getProViewState } from '../integration.js';
 import { canManageRanked } from '../../shared/access.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
@@ -52,6 +52,9 @@ integrationRouter.get('/operations/ranked/statistics', requireAuth, requireRanke
 integrationRouter.get('/operations/ranked/lobbies/:id',requireAuth,requireRanked,async(req,res)=>{
   if(Object.keys(req.query).some(key=>key!=='before'))throw new HttpError(400,'La consulta del chat no es válida.');
   res.json(await getRankedLobbyDetail(req.user,req.params.id,req.query.before));
+});
+integrationRouter.get('/operations/ranked/lobbies/:id/players/:slot/discipline',requireAuth,allow('arbitraje'),requireRanked,async(req,res)=>{
+ res.json(await getRankedPlayerDiscipline(req.user,req.params.id,req.params.slot,req.query));
 });
 integrationRouter.post('/operations/ranked/lobbies/:id/chat',requireAuth,requireRanked,async(req,res)=>{
  if(Object.keys(req.query).length)throw new HttpError(400,'La solicitud del mensaje no admite parámetros.');

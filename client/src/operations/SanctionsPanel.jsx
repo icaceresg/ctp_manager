@@ -8,6 +8,7 @@ import { Badge, DataTable, Empty, Field, FormDialog } from './ui.jsx';
 import { dateTime } from './model.js';
 import { DURATIONS, KIND_LABELS, ROLE_LABELS, SCOPE_ACTIONS, SCOPE_LABELS, WARNING_DAYS, isStaffRole, periodLabel, remainingLabel, sanctionPeriod } from './sanctionsModel.js';
 import './sanctions.css';
+import PlayerSanctionHistory from './PlayerSanctionHistory.jsx';
 
 const TABS = [
   { id: 'activas', title: 'Sancionados ahora' },
@@ -77,7 +78,7 @@ export function SanctionsPanel({ data }) {
         {tab === 'recientes' && <SanctionTable rows={overview.data.recent} now={now} openUser={openUser} writable={writable} setDialog={setDialog} history empty="Todavía no hay decisiones" emptyDetail="Aquí se listan las últimas sanciones, amonestaciones y bloqueos de Ranked." />}
       </>}
     {userId && <UserHistory key={userId} id={userId} onClose={() => change('user', '')} writable={writable} setDialog={setDialog} now={now} />}
-    {dialog && <ActionDialog dialog={dialog} onClose={() => setDialog(null)} onDone={refresh} />}
+    {dialog && <ActionDialog key={`${dialog.type}:${dialog.user?.id || dialog.item?.id}`} dialog={dialog} now={now} onClose={() => setDialog(null)} onDone={refresh} />}
   </div>;
 }
 
@@ -204,7 +205,7 @@ function HistoryItem({ item, now, writable, setDialog }) {
 const isoAfter = (ms, from = Date.now()) => new Date(from + ms).toISOString();
 function toLocalInput(ms) { const date = new Date(ms); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); }
 
-function ActionDialog({ dialog, onClose, onDone }) {
+export function ActionDialog({ dialog, onClose, onDone, now: observedNow }) {
   const { toast } = useApp();
   const requestId = useRef(crypto.randomUUID());
   const [duration, setDuration] = useState('1d');
@@ -212,6 +213,8 @@ function ActionDialog({ dialog, onClose, onDone }) {
   const finish = (message, result) => { toast(result?.replayed ? 'CTP ya había aplicado esta decisión.' : message); dialog.after?.(); onDone(); };
   const send = (path, body) => api.post(`/operations/discipline${path}`, { request_id: requestId.current, ...body });
   const { type, item, user } = dialog;
+  const historyUserId = user?.id || (item?.subject_type === 'player' ? item.subject_id : null);
+  const history = historyUserId ? <PlayerSanctionHistory userId={historyUserId} now={observedNow} /> : null;
   if (type === 'suspension' || type === 'warning') {
     const warning = type === 'warning';
     return <FormDialog title={warning ? `Amonestar a ${user.username}` : `Sancionar a ${user.username}`} submitLabel={warning ? 'Enviar amonestación' : 'Aplicar sanción'} onClose={onClose}
@@ -226,6 +229,7 @@ function ActionDialog({ dialog, onClose, onDone }) {
         const result = await send('/sanctions', { user_id: user.id, restriction: warning ? 'warning' : 'competition_suspend', scopes: warning ? [] : scopes, starts_at: new Date(now).toISOString(), ends_at: ends, reason: body.reason });
         finish(warning ? 'Amonestación enviada al jugador.' : 'Sanción aplicada en CTP.', result);
       }}>
+      {history}
       {!warning && <fieldset className="op-scopes"><legend>Qué no podrá hacer</legend>
         {Object.entries(SCOPE_ACTIONS).map(([scope, title]) => <label key={scope} className="op-check"><input type="checkbox" checked={scopes.includes(scope)} onChange={event => setScopes(current => event.target.checked ? [...current, scope] : current.filter(value => value !== scope))} />{title}</label>)}
       </fieldset>}
@@ -237,17 +241,17 @@ function ActionDialog({ dialog, onClose, onDone }) {
   }
   if (type === 'revoke') return <FormDialog title="Revocar sanción" submitLabel="Revocar ahora" onClose={onClose} help="Deja de aplicarse al momento y el jugador recibe un aviso. Queda registrada en su historial como revocada."
     submit={async body => finish('Sanción revocada.', await send(`/sanctions/${encodeURIComponent(item.id)}/revoke`, { expected_version: item.version, reason: body.reason }))}>
-    <SummaryLine item={item} /><Field label="Motivo de la revocación"><textarea name="reason" rows={4} required minLength={12} maxLength={2000} /></Field>
+    <SummaryLine item={item} />{history}<Field label="Motivo de la revocación"><textarea name="reason" rows={4} required minLength={12} maxLength={2000} /></Field>
   </FormDialog>;
   if (type === 'review') return <FormDialog title="Resolver recurso" submitLabel="Resolver" onClose={onClose} help="Debe resolverlo un árbitro distinto de quien sancionó. El jugador recibe la resolución en su perfil."
     submit={async body => finish(body.decision === 'revoke' ? 'Recurso estimado: sanción revocada.' : 'Recurso desestimado: la sanción se mantiene.', await send(`/sanctions/${encodeURIComponent(item.id)}/review`, { expected_version: item.version, decision: body.decision, reason: body.reason }))}>
-    <SummaryLine item={item} />{item.appeal_reason && <blockquote className="op-quote"><small>Recurso del jugador</small><br />{item.appeal_reason}</blockquote>}
+    <SummaryLine item={item} />{history}{item.appeal_reason && <blockquote className="op-quote"><small>Recurso del jugador</small><br />{item.appeal_reason}</blockquote>}
     <Field label="Decisión"><select name="decision"><option value="uphold">Mantener la sanción</option><option value="revoke">Estimar el recurso y revocarla</option></select></Field>
     <Field label="Explicación para el jugador"><textarea name="reason" rows={4} required minLength={12} maxLength={2000} /></Field>
   </FormDialog>;
   if (type === 'lift') return <FormDialog title="Levantar bloqueo de Ranked" submitLabel="Levantar ahora" onClose={onClose} help="El jugador podrá volver a buscar partida en Ranked inmediatamente."
     submit={async body => finish('Bloqueo de Ranked levantado.', await send(`/bans/${encodeURIComponent(item.id)}/lift`, { reason: body.reason }))}>
-    <SummaryLine item={item} /><Field label="Motivo"><textarea name="reason" rows={3} required minLength={12} maxLength={500} /></Field>
+    <SummaryLine item={item} />{history}<Field label="Motivo"><textarea name="reason" rows={3} required minLength={12} maxLength={500} /></Field>
   </FormDialog>;
   return null;
 }

@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { dueWithin, formatWhen, todayKey } from '../dates.js';
 import { EmptyState, OwnerBadge, PlatformList, Spinner, StatusBadge } from '../components/ui.jsx';
+import { DriveLinks } from '../components/DriveLinks.jsx';
 
 // Periodos: incluyen siempre lo atrasado, que es lo más urgente.
 const PERIODS = [
@@ -12,7 +13,7 @@ const PERIODS = [
   { id: 'all', label: 'Todo', days: null },
 ];
 
-function ResourceGroup({ content, filter, onUpdated }) {
+export function ResourceGroup({ content, filter, onUpdated }) {
   const { toast, openContent, bump, can } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -60,16 +61,17 @@ function ResourceGroup({ content, filter, onUpdated }) {
             <PlatformList platforms={content.platforms} withFormat size={12} />
           </div>
         </div>
-        <div className="resource-count">
+        {content.resources.length > 0 ? <div className="resource-count">
           <span className={done === content.resources.length ? 'complete' : ''}>
             {done}/{content.resources.length}
           </span>
           <div className="progress" style={{ width: 80 }}>
             <div style={{ width: `${(done / content.resources.length) * 100}%` }} />
           </div>
-        </div>
+        </div> : <span className="muted small">Material en Drive</span>}
       </div>
-      <ul className="checklist-edit resource-list">
+      <DriveLinks url={content.drive_url} />
+      {content.resources.length > 0 && <ul className="checklist-edit resource-list">
         {visible.map((r) => (
           <li key={r.id} className={r.done ? 'done' : ''}>
             <label className="checkbox">
@@ -86,7 +88,7 @@ function ResourceGroup({ content, filter, onUpdated }) {
             <Check size={14} /> Todo listo
           </li>
         )}
-      </ul>
+      </ul>}
       <div className="resource-add">
         <input
           className="input sm"
@@ -116,9 +118,9 @@ export function ResourcesPage() {
   const owners = [...new Set((data || []).map((c) => c.owner).filter(Boolean))].sort();
   const total = inScope.reduce((n, c) => n + c.resources.length, 0);
   const done = inScope.reduce((n, c) => n + c.resources.filter((r) => r.done).length, 0);
-  const groups = filter === 'pending' ? inScope.filter((c) => c.resources.some((r) => !r.done)) : inScope;
+  const groups = filter === 'pending' ? inScope.filter((c) => c.resources.some((r) => !r.done) || (!c.resources.length && c.drive_url)) : inScope;
 
-  const replace = (updated) => setData((list) => list.map((c) => (c.id === updated.id ? updated : c)).filter((c) => c.resources.length));
+  const replace = (updated) => setData((list) => list.map((c) => (c.id === updated.id ? updated : c)).filter((c) => c.resources.length || c.drive_url));
 
   return (
     <div className="page" style={{ maxWidth: 900 }}>

@@ -106,10 +106,11 @@ test('borra los datos y claves de la antigua conexión con X', () => {
 
 test('adapta las tarjetas de antes a los estados nuevos', () => {
   const check = new DatabaseSync(dbPath, { readOnly: true });
-  const row = check.prepare("SELECT status, owner FROM contents WHERE title = 'Tarjeta antigua'").get();
+  const row = check.prepare("SELECT status, owner, drive_url FROM contents WHERE title = 'Tarjeta antigua'").get();
   check.close();
   assert.equal(row.status, 'no_listo');
   assert.equal(row.owner, '');
+  assert.equal(row.drive_url, '', 'la columna aditiva conserva las tarjetas antiguas sin inventar un enlace');
 });
 
 test('la contraseña de antes pasa a ser la del usuario "admin"', async () => {
@@ -640,4 +641,41 @@ test('fechas imposibles se rechazan por HTTP sin cambiar contenido, escaletas ni
     }
     assert.equal((await api('GET', `/contents/${contentId}`)).data.date, '2024-02-29');
   } finally { assert.equal((await api('DELETE', `/contents/${contentId}`)).status, 200); }
+});
+
+test('Drive queda guardado por publicación, sobrevive a cambios antiguos y mantiene permisos editoriales', async () => {
+  const shared = 'https://drive.google.com/file/d/QA_file_123/view?usp=sharing&resourcekey=0-QA_key';
+  const canonical = 'https://drive.google.com/file/d/QA_file_123/view?resourcekey=0-QA_key';
+  const created = await api('POST', '/contents', { title: 'QA material Drive', drive_url: shared });
+  assert.equal(created.status, 201);
+  const id = created.data.id;
+  let copyId;
+  try {
+    assert.equal(created.data.drive_url, canonical);
+    assert.equal((await api('GET', `/contents/${id}`)).data.drive_url, canonical);
+    assert.ok((await api('GET', '/contents?with_resources=1')).data.some(c => c.id === id && !c.resources.length), 'Drive solo también es material de la publicación');
+    const legacyUpdate = await api('PUT', `/contents/${id}`, { title: 'QA cambio de cliente anterior' });
+    assert.equal(legacyUpdate.data.drive_url, canonical, 'un cliente anterior no borra el enlace al omitir el campo');
+    assert.equal((await api('PATCH', `/contents/${id}`, { date: '2026-11-04', status: 'revision' })).data.drive_url, canonical);
+    const copy = await api('POST', `/contents/${id}/duplicate`);
+    copyId = copy.data.id;
+    assert.equal(copy.data.drive_url, canonical);
+    assert.equal(copy.data.status, 'no_listo');
+
+    const reader = await loginAs('dani', 'clave-segura-3');
+    assert.equal((await reader('GET', `/contents/${id}`)).data.drive_url, canonical);
+    assert.ok((await reader('GET', '/contents?with_resources=1')).data.some(c => c.id === id));
+    assert.equal((await reader('PUT', `/contents/${id}`, { title: 'No autorizado', drive_url: '' })).status, 403);
+    assert.equal((await makeClient()('GET', `/contents/${id}`)).status, 401);
+
+    for (const invalid of ['http://drive.google.com/file/d/QA_file_123/view', 'https://drive.google.com.evil.test/file/d/QA_file_123/view', 'javascript:alert(1)', 'https://example.com/file', {}, 'x'.repeat(2049)]) {
+      assert.equal((await api('PUT', `/contents/${id}`, { title: 'No cambia', drive_url: invalid })).status, 400);
+      assert.equal((await api('GET', `/contents/${id}`)).data.drive_url, canonical);
+    }
+    assert.equal((await api('PUT', `/contents/${id}`, { title: 'QA sin material', drive_url: '' })).data.drive_url, '');
+    assert.ok(!(await api('GET', '/contents?with_resources=1')).data.some(c => c.id === id));
+  } finally {
+    if (copyId) await api('DELETE', `/contents/${copyId}`);
+    await api('DELETE', `/contents/${id}`);
+  }
 });

@@ -42,6 +42,7 @@ La [recepción QA de PRE del 15 de octubre](docs/MANAGER_PRE_QA_2026-10-15.md) e
   - fecha y hora opcionales;
   - qué se va a publicar, el copy (con contador de caracteres para X e Instagram) y notas;
   - la lista de **recursos necesarios**, que puedes marcar como listos.
+  - un enlace al material de **Google Drive**, también visible en Recursos aunque no tenga checklist. Puedes abrirlo en Google o intentar descargar un archivo con **Descargar en Drive**. Google conserva sus permisos y puede pedir acceso o confirmación; las carpetas y los documentos de Google se abren allí para descargarlos.
 - Panel de **ideas sin fecha**: guarda ideas y arrástralas al calendario cuando decidas cuándo publicarlas, o arrastra una tarjeta al panel para quitarle la fecha.
 - Filtros por red social, estado y responsable.
 

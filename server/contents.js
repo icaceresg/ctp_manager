@@ -3,6 +3,7 @@ import { db, tx } from './db.js';
 import { HttpError } from './auth.js';
 import * as v from './validate.js';
 import { DEFAULT_STATUS, PLATFORMS, STATUS_IDS, sortPlatforms } from '../shared/catalog.js';
+import { parseDriveLink, MAX_DRIVE_URL_LENGTH } from '../shared/drive.js';
 
 const MAX_RESOURCES = 100;
 
@@ -28,6 +29,7 @@ function hydrate(rows) {
     description: c.description,
     copy: c.copy,
     notes: c.notes,
+    drive_url: c.drive_url,
     created_at: c.created_at,
     updated_at: c.updated_at,
     resources: (byContent.get(c.id) || []).map((r) => ({ id: r.id, text: r.text, done: Boolean(r.done) })),
@@ -57,7 +59,7 @@ export function listContents({ from, to, unscheduled, withResources } = {}) {
     where.push('date < ?');
     params.push(v.date(to));
   }
-  if (withResources) where.push('EXISTS (SELECT 1 FROM resources r WHERE r.content_id = contents.id)');
+  if (withResources) where.push("(drive_url != '' OR EXISTS (SELECT 1 FROM resources r WHERE r.content_id = contents.id))");
   const sql = `SELECT * FROM contents ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                ORDER BY date IS NULL, date, time IS NULL, time, updated_at DESC`;
   return hydrate(db.prepare(sql).all(...params));
@@ -91,6 +93,10 @@ function clean(body) {
   const status = body.status ?? DEFAULT_STATUS;
   if (!STATUS_IDS.includes(status)) throw new HttpError(400, 'Estado no válido.');
   const date = v.date(body.date);
+  const driveInput = body.drive_url ?? '';
+  if (typeof driveInput !== 'string' || driveInput.length > MAX_DRIVE_URL_LENGTH) throw new HttpError(400, 'El enlace de Drive no es válido.');
+  const driveLink = parseDriveLink(driveInput);
+  if (driveInput.trim() && !driveLink) throw new HttpError(400, 'Usa un enlace HTTPS de un archivo, carpeta o documento de Google Drive.');
   return {
     title: v.text(body.title, { field: 'El título', max: 200, required: true }),
     status,
@@ -101,6 +107,7 @@ function clean(body) {
     description: v.text(body.description, { field: 'La descripción' }),
     copy: v.text(body.copy, { field: 'El copy' }),
     notes: v.text(body.notes, { field: 'Las notas' }),
+    drive_url: driveLink?.url || '',
     resources: cleanResources(body.resources),
   };
 }
@@ -118,10 +125,10 @@ export function createContent(body = {}, { sourceRef = null } = {}) {
   return tx(() => {
     const { lastInsertRowid } = db
       .prepare(
-        `INSERT INTO contents (title, status, owner, date, time, platforms, description, copy, notes, source_ref, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO contents (title, status, owner, date, time, platforms, description, copy, notes, drive_url, source_ref, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(c.title, c.status, c.owner, c.date, c.time, JSON.stringify(c.platforms), c.description, c.copy, c.notes, sourceRef, now, now);
+      .run(c.title, c.status, c.owner, c.date, c.time, JSON.stringify(c.platforms), c.description, c.copy, c.notes, c.drive_url, sourceRef, now, now);
     const id = Number(lastInsertRowid);
     writeResources(id, c.resources);
     return id;
@@ -130,12 +137,12 @@ export function createContent(body = {}, { sourceRef = null } = {}) {
 
 export function updateContent(id, body = {}) {
   const existing = getContent(id);
-  const c = clean(body);
+  const c = clean({ ...body, drive_url: body.drive_url === undefined ? existing.drive_url : body.drive_url });
   tx(() => {
     db.prepare(
       `UPDATE contents SET title = ?, status = ?, owner = ?, date = ?, time = ?, platforms = ?, description = ?,
-              copy = ?, notes = ?, updated_at = ? WHERE id = ?`,
-    ).run(c.title, c.status, c.owner, c.date, c.time, JSON.stringify(c.platforms), c.description, c.copy, c.notes, Date.now(), existing.id);
+              copy = ?, notes = ?, drive_url = ?, updated_at = ? WHERE id = ?`,
+    ).run(c.title, c.status, c.owner, c.date, c.time, JSON.stringify(c.platforms), c.description, c.copy, c.notes, c.drive_url, Date.now(), existing.id);
     writeResources(existing.id, c.resources);
   });
   return existing.id;

@@ -191,6 +191,7 @@ function addColumn(table, column, definition) {
   if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 addColumn('contents', 'owner', "TEXT NOT NULL DEFAULT ''");
+addColumn('contents', 'drive_url', "TEXT NOT NULL DEFAULT ''");
 // Identifica las tarjetas importadas (p. ej. "CTP_Calendario#12") para no duplicarlas.
 addColumn('contents', 'source_ref', 'TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS contents_source_ref ON contents(source_ref) WHERE source_ref IS NOT NULL');

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Clapperboard, Lightbulb, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clapperboard, FolderOpen, Lightbulb, Plus } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
 import { PLATFORMS, PLATFORM_IDS, STATUSES } from '../../../shared/catalog.js';
@@ -71,6 +71,7 @@ function ContentCard({ content, onOpen, onDrag }) {
         <StatusBadge status={content.status} />
         {content.time && <span className="muted small">{content.time}</span>}
         <OwnerBadge owner={content.owner} />
+        {content.drive_url && <span className="content-drive-marker"><FolderOpen size={12} /> Drive</span>}
         <span className="spacer" />
         <ResourceProgress resources={content.resources} />
         <PlatformList platforms={content.platforms} withFormat size={12} />

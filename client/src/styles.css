@@ -828,6 +828,21 @@ p {
   flex-direction: column;
   gap: 20px;
 }
+.content-drive {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.content-drive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.content-drive-actions .btn { max-width: 100%; white-space: normal; }
+.resource-group > .content-drive { padding: 0 16px 12px; }
+.content-drive-error { color: var(--danger); }
+.content-drive-marker { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 @media (max-width: 900px) {
   .editor-grid {
     grid-template-columns: 1fr;

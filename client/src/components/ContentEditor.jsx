@@ -5,6 +5,8 @@ import { useApp } from '../context.jsx';
 import { DEFAULT_OWNERS, DEFAULT_STATUS, PLATFORMS, PLATFORM_IDS, STATUSES, sortPlatforms } from '../../../shared/catalog.js';
 import { tweetLength } from '../../../shared/tweet.js';
 import { Modal, PlatformIcon, Spinner } from './ui.jsx';
+import { DriveLinks } from './DriveLinks.jsx';
+import { MAX_DRIVE_URL_LENGTH, parseDriveLink } from '../../../shared/drive.js';
 
 let keySeq = 0;
 const withKey = (r) => ({ key: ++keySeq, text: r.text, done: Boolean(r.done) });
@@ -20,6 +22,7 @@ function emptyForm(date) {
     description: '',
     copy: '',
     notes: '',
+    drive_url: '',
     resources: [],
   };
 }
@@ -35,6 +38,7 @@ function fromContent(c) {
     description: c.description,
     copy: c.copy,
     notes: c.notes,
+    drive_url: c.drive_url || '',
     resources: c.resources.map(withKey),
   };
 }
@@ -134,6 +138,7 @@ export function ContentEditor({ content, date, onClose }) {
   const initial = useRef(snapshot(form));
   const titleRef = useRef(null);
   const [owners, setOwners] = useState(DEFAULT_OWNERS);
+  const driveInvalid = Boolean(form.drive_url.trim() && !parseDriveLink(form.drive_url));
 
   useEffect(() => {
     api
@@ -179,6 +184,11 @@ export function ContentEditor({ content, date, onClose }) {
     if (!form.title.trim()) {
       toast('Ponle un título a la publicación.', 'error');
       titleRef.current?.focus();
+      return;
+    }
+    if (driveInvalid) {
+      toast('Revisa el enlace de Google Drive.', 'error');
+      document.getElementById('c-drive')?.focus();
       return;
     }
     setSaving('save');
@@ -302,6 +312,18 @@ export function ContentEditor({ content, date, onClose }) {
               value={form.copy}
               onChange={(e) => set('copy')(e.target.value)}
             />
+          </div>
+
+          <div className="field">
+            <label htmlFor="c-drive">Archivo o carpeta de Google Drive</label>
+            <input id="c-drive" className="input" type="url" maxLength={MAX_DRIVE_URL_LENGTH}
+              placeholder="https://drive.google.com/file/d/…/view"
+              value={form.drive_url} onChange={e => set('drive_url')(e.target.value)}
+              aria-invalid={driveInvalid || undefined} aria-describedby="c-drive-hint" />
+            <span id="c-drive-hint" className={`hint${driveInvalid ? ' content-drive-error' : ''}`}>
+              {driveInvalid ? 'Usa un enlace HTTPS de Google Drive, Documentos, Hojas o Presentaciones.' : 'Enlaza el material de esta publicación. Sus permisos se gestionan en Google.'}
+            </span>
+            <DriveLinks url={form.drive_url} />
           </div>
 
           <div className="field">

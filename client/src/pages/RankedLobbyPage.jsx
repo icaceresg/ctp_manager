@@ -14,6 +14,7 @@ import {operationReturnPath} from '../navigation.js';
 import {rankedPhaseLabel,safeRankedClipUrl} from '../../../shared/ranked-lobby-presentation.js';
 import '../operations/operations.css';
 import PlayerSanctionHistory from '../operations/PlayerSanctionHistory.jsx';
+import {ReportEvidenceLinks} from '../operations/ReportEvidenceLinks.jsx';
 import './ranked-monitor.css';
 
 const team=side=>side==='a'?'Equipo A':side==='b'?'Equipo B':'Sin asignar';
@@ -48,6 +49,7 @@ function RankedReports({reports,canBan,onBlock}){
   <ol className="rl-dispute-list">{reports.map((report,index)=><li key={`${report.created_at}:${report.reported_slot}:${index}`}>
    <header><strong>{report.reported}</strong><span className="muted">{team(report.reported_side)}</span><span className="rl-report-reason">{reportReasonLabel(report.reason)}</span>{counts[report.reported_slot]>1&&<Badge value="disputed">{counts[report.reported_slot]} denuncias</Badge>}<time dateTime={report.created_at}>{dateTime(report.created_at)}</time></header>
    {report.details&&<p>{report.details}</p>}
+   <ReportEvidenceLinks details={report.details}/>
    <footer className="rl-report-footer"><span className="muted">Denunciado por {report.reporter} · {team(report.reporter_side)}</span>{canBan&&<button type="button" className="btn sm" onClick={()=>onBlock(report)}><Ban size={14}/> Bloquear de Ranked</button>}</footer>
   </li>)}</ol>
  </section>;

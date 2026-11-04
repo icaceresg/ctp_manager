@@ -261,6 +261,7 @@
   .op-dossier-hero h2 { overflow-wrap:anywhere; }
 }
 .op-roster-details > summary { cursor:pointer; font:700 23px/1.2 var(--font-display); color:var(--text); padding:4px 0; }
+.op-team-admin-search{display:grid;gap:8px}.op-team-admin-list{list-style:none;padding:0;display:grid;gap:8px}.op-team-admin-list li{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--border);border-radius:6px}.op-team-admin-list li>span{flex:1;display:grid;gap:3px}.op-team-admin-list small{color:var(--muted)}.op-team-admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin-top:12px}.op-team-admin-card{padding:14px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);min-width:0;overflow-wrap:anywhere}.op-team-admin-card h4{margin:0 0 8px}.op-team-admin-card h5{margin:14px 0 6px}.op-team-admin-card ul{padding-left:18px}.op-team-admin-overview{border-top:1px solid var(--border);padding-top:16px;margin-top:16px}.op-team-admin-card small{color:var(--muted)}@media(max-width:600px){.op-team-admin-list li{flex-wrap:wrap}.op-team-admin-list li>span{flex-basis:100%}.op-team-admin-list .btn{flex:1}.op-team-admin-grid{grid-template-columns:minmax(0,1fr)}}
 .op-roster-details[open] > summary { margin-bottom:16px; }
 .op-review-detail { display:flex; flex-direction:column; gap:16px; border-top:1px solid var(--border); padding-top:16px; }
 .op-section-title > select { width:auto; max-width:100%; min-width:180px; }

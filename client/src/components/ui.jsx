@@ -19,7 +19,7 @@ export function LoadError({ error, onRetry, busy = false, hasData = false }) {
 // Pila de modales abiertos: Escape solo cierra el de arriba.
 const modalStack = [];
 
-export function Modal({ title, onClose, children, footer, size, headerExtra }) {
+export function Modal({ title, onClose, children, footer, size, headerExtra, closeLabel = 'Cerrar' }) {
   const id = useRef(Symbol('modal'));
   const dialog = useRef(null);
   const closeRef = useRef(onClose);
@@ -59,7 +59,7 @@ export function Modal({ title, onClose, children, footer, size, headerExtra }) {
           <h2>{title}</h2>
           {headerExtra}
           <span className="spacer" />
-          <button className="btn ghost icon sm" onClick={onClose} disabled={!onClose} aria-label="Cerrar">
+          <button className="btn ghost icon sm" onClick={onClose} disabled={!onClose} aria-label={closeLabel}>
             <X size={18} />
           </button>
         </div>

@@ -3,7 +3,7 @@ import { requireAuth,requireAdmin } from '../auth.js';
 import { queryAdministration,proposeAdministration } from '../administration.js';
 import { integrationServicesStatus,ownerAction,uploadAdministrationImage,staffAlertsAction } from '../administration-services.js';
 import { crmAction } from '../crm.js';
-import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,updateCtpClub,rankedEventService,webPublicationService,siteNoticeService } from '../integration.js';
+import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,updateCtpClub,teamAdministratorService,rankedEventService,webPublicationService,siteNoticeService } from '../integration.js';
 import { metricsHandler } from '../metrics.js';
 
 export const administrationRouter=Router();
@@ -27,5 +27,10 @@ administrationRouter.post('/administration/crm',async(req,res)=>res.json(await c
 administrationRouter.get('/administration/users/:id',async(req,res)=>res.json(await getCtpUserProfile(req.user,req.params.id)));
 administrationRouter.patch('/administration/users/:id',async(req,res)=>res.json(await updateCtpUserProfile(req.user,req.params.id,req.body||{})));
 administrationRouter.patch('/administration/clubs/:id',async(req,res)=>res.json(await updateCtpClub(req.user,req.params.id,req.body||{})));
+administrationRouter.get('/administration/clubs/:id/managers',async(req,res)=>res.json(await teamAdministratorService(req.user,'get',req.params.id)));
+administrationRouter.post('/administration/clubs/:id/managers',async(req,res)=>res.json(await teamAdministratorService(req.user,'set',req.params.id,req.body||{})));
+administrationRouter.post('/administration/clubs/:id/managers/convert',async(req,res)=>res.json(await teamAdministratorService(req.user,'convert',req.params.id,req.body||{})));
+administrationRouter.get('/administration/team-administrators/candidates',async(req,res)=>res.json(await teamAdministratorService(req.user,'candidates',null,req.query)));
+administrationRouter.get('/administration/team-administrators/:id',async(req,res)=>res.json(await teamAdministratorService(req.user,'overview',req.params.id)));
 administrationRouter.post('/administration/users/:id/delete',async(req,res)=>res.json(await deleteCtpUser(req.user,req.params.id,req.body||{})));
 administrationRouter.post('/administration/images',async(req,res)=>res.json(await uploadAdministrationImage(req.user,req.body)));

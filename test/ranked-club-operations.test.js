@@ -60,3 +60,11 @@ test('manual club proposals are private, deduplicate retries and never fabricate
  assert.equal(operations.bootstrap(noAdmin).commands.some(row=>row.id===prepared.id),false);
  assert.equal(prepared.expected_version,0);assert.equal(prepared.payload.pass_active,undefined);assert.equal(prepared.payload.verified,undefined);
 });
+test('the same non-playing administrator can prepare three separate teams without null-leader collision',()=>{
+ const administrator_id=randomUUID();
+ const commands=['Principal','Academy','Femenino'].map((name,index)=>operations.prepareManualClubCommand(admin,{type:'club.create',payload:{name:`QA ${name}`,tag:`QA${index}`,leader_id:null,administrator_id,reason:'Alta separada de equipos con responsable administrativo común'}}).command);
+ assert.equal(new Set(commands.map(command=>command.id)).size,3);
+ assert.equal(commands.every(command=>command.payload.administrator_id===administrator_id&&command.payload.leader_id===null),true);
+ assert.equal(operations.prepareManualClubCommand(admin,{type:'club.create',payload:commands[0].payload}).command.id,commands[0].id);
+ assert.equal(commands.every(command=>!operations.bootstrap(admin).clubs.some(club=>club.id===command.target_id)),true);
+});

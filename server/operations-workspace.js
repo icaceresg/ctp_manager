@@ -130,7 +130,7 @@ function staffRows(user,p) {
 }
 function commandPage(user,p,focusedId) {
   const kinds=permittedKinds(user),where=[`c.resource_type IN(${marks(kinds)})`],args=[...kinds];
-  if(p.view==='administration')where.push("c.action LIKE 'admin.%'");
+  if(p.view==='administration')where.push("(c.action LIKE 'admin.%' OR c.action='club.create')");
   if(p.resource_type){if(!kinds.includes(p.resource_type))throw new HttpError(403,'No tienes permiso para estas solicitudes.');where.push('c.resource_type=?');args.push(p.resource_type);}
   if(focusedId)where.push('c.resource_id=?'),args.push(focusedId);
   if(!['1','true'].includes(p.include_closed)&&p.view!=='overview'&&!focusedId)where.push("c.status NOT IN('acknowledged','cancelled')");

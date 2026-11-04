@@ -7,7 +7,6 @@ import { useApp } from '../context.jsx';
 import { Badge, DataTable, Empty, Field, FormDialog, MatchLink, SelectMatch } from './ui.jsx';
 import { canSendCommand, dateTime, label, matchName, officialResult } from './model.js';
 import { ActionButton } from './ReviewPanels.jsx';
-import { ManualClubCreatePanel } from './ManualClubCreatePanel.jsx';
 import { useWorkspaceSearch } from './useWorkspaceSearch.js';
 import { ProViewPanel } from './ProViewPanel.jsx';
 
@@ -56,7 +55,7 @@ export function ClubsPanel({ data, mutate, me, reload }) {
     if(club&&openedClub.current!==focusedClub){openedClub.current=focusedClub;setSelected(club);setQuery('');}
   },[focusedClub,data.clubs]);
   const rows = data.clubs;
-  return <><ManualClubCreatePanel data={data} mutate={mutate} me={me} reload={reload} /><div className="op-section-title"><div><h2>Identidad y verificación</h2><p>Revisión CTP y acceso al circuito.</p></div><input aria-label="Buscar club" placeholder="Buscar club…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+  return <>{me?.is_admin && <p className="op-inline-note">Para crear un club o cambiar su nombre o tag, ve a <Link to="/administracion/clubes">Administración CTP → Clubes</Link>.</p>}<div className="op-section-title"><div><h2>Identidad y verificación</h2><p>Revisión CTP y acceso al circuito.</p></div><input aria-label="Buscar club" placeholder="Buscar club…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
     {focusedClub&&<div className="op-actions"><button className="btn" onClick={()=>{setSelected(null);setParams(previous=>{const next=new URLSearchParams(previous);next.delete('club');return next;},{replace:true});}}>Ver todos los clubes</button><Link className="btn" to="/administracion/clubes">Volver a administración de clubes</Link></div>}
     <div className="op-inline-note"><ShieldCheck size={18} /><p>Los pagos se gestionan fuera de la web. CTP revisa y aprueba manualmente los 16 clubes del circuito. Crear el club no concede acceso.</p></div>
     <DataTable rows={rows} empty="Sin clubes sincronizados" columns={[

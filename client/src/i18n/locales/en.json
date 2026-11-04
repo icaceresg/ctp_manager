@@ -60,7 +60,7 @@
   "manager.teamAdmins.reasonRequired": "Provide a reason of at least 12 characters.",
   "manager.teamAdmins.activeRoster": "The account has active competition participation or incompatible membership. Its role was not changed.",
   "manager.teamAdmins.limit": "The team administrator limit has been reached.",
-  "manager.teamAdmins.captainRequired": "Select another team player as captain.",
+  "manager.teamAdmins.captainRequired": "The team needs someone in charge. Assign another administrator or the replacement captain before continuing.",
   "manager.teamAdmins.writesDisabled": "CTP changes are disabled in this environment.",
   "manager.teamAdmins.invalidCreate": "Choose an administrative manager or a playing captain, never both.",
   "manager.teamAdmins.created": "Club created in CTP.",

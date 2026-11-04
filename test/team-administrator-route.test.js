@@ -10,7 +10,7 @@ import express from 'express';
 // Synthetic HTTP bridge only. No hosted CTP request, account or team is used.
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-team-administrator-route-'));
 const origin='https://pre.manager.playctp.com';
-const admin='10000000-0000-4000-8000-000000000001',referee='10000000-0000-4000-8000-000000000002',manager='10000000-0000-4000-8000-000000000003';
+const admin='10000000-0000-4000-8000-000000000001',referee='10000000-0000-4000-8000-000000000002',manager='10000000-0000-4000-8000-000000000003',backup='10000000-0000-4000-8000-000000000004';
 const teams=['20000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000003'];
 Object.assign(process.env,{DATA_DIR:temporary,DB_PATH:path.join(temporary,'route.db'),PUBLIC_ORIGIN:origin,
  CTP_AUTH_MODE:'ctp',CTP_AUTH_URL:'https://pre.playctp.com',CTP_WEB_ORIGIN:'https://pre.playctp.com',
@@ -40,7 +40,9 @@ globalThis.fetch=async(url,init)=>{
   if(p.action==='convert')assert.ok(Object.hasOwn(p,'captain_id'));
   const enabled=p.action==='convert'||p.enabled;
   const changed=enabled?!current.items.some(row=>row.user_id===p.user_id):current.items.some(row=>row.user_id===p.user_id);
-  const next={...current,version:current.version+Number(changed),items:enabled?[{user_id:p.user_id,username:'QA Coordinator',created_at:'2026-11-04T10:00:00Z',email:'private@example.invalid'}]:[],request_id:p.request_id,changed};
+  if(!enabled&&changed&&current.items.length===1&&!current.competitive_members.length)return Response.json({ok:false,team_administrators_error:'teams.administration.captainRequired'},{status:422});
+  const items=enabled?(changed?[...current.items,{user_id:p.user_id,username:'QA Coordinator',created_at:'2026-11-04T10:00:00Z',email:'private@example.invalid'}]:current.items):current.items.filter(row=>row.user_id!==p.user_id);
+  const next={...current,version:current.version+Number(changed),items,request_id:p.request_id,changed};
   snapshots.set(p.team_id,next);receipts.set(p.request_id,next);
   return Response.json({ok:true,data:next});
  }
@@ -83,9 +85,12 @@ test('one confirmed administrator can assign a non-player to three teams and ins
 test('revocation checks source version, preserves other teams and converts only an explicit body',async()=>{
  const cookie=await signIn('admin');
  const stale=await api('POST',pathFor(teams[0]),bodyFor(0,false),cookie);assert.equal(stale.status,409);assert.equal(stale.data.error,'manager.teamAdmins.conflict');
- const revoke=await api('POST',pathFor(teams[0]),bodyFor(1,false),cookie);assert.equal(revoke.status,200);assert.equal(revoke.data.version,2);assert.equal(revoke.data.items.length,0);
+ const orphan=await api('POST',pathFor(teams[0]),bodyFor(1,false),cookie);assert.equal(orphan.status,422);assert.equal(orphan.data.error,'manager.teamAdmins.captainRequired');
+ assert.equal((await api('GET',pathFor(teams[0]),undefined,cookie)).data.version,1);
+ const added=await api('POST',pathFor(teams[0]),{...bodyFor(1),user_id:backup},cookie);assert.equal(added.status,200);assert.equal(added.data.version,2);
+ const revoke=await api('POST',pathFor(teams[0]),bodyFor(2,false),cookie);assert.equal(revoke.status,200);assert.equal(revoke.data.version,3);assert.equal(revoke.data.items.length,1);assert.equal(revoke.data.items[0].user_id,backup);
  const others=await api('GET',`/administration/team-administrators/${manager}`,undefined,cookie);assert.equal(others.data.teams.length,2);
- const convert={...bodyFor(2),captain_id:null};delete convert.enabled;
+ const convert={...bodyFor(3),captain_id:null};delete convert.enabled;
  const converted=await api('POST',`${pathFor(teams[0])}/convert`,convert,cookie);assert.equal(converted.status,200);assert.equal(requests.at(-1).payload.action,'convert');
  assert.equal(requests.at(-1).payload.captain_id,null);
 });

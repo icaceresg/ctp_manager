@@ -8,6 +8,8 @@ En **Administración → Clubes**, administración CTP puede abrir **Responsable
 
 El alta manual distingue un **responsable administrativo (no juega)** de un **capitán jugador**. La primera opción envía `leader_id: null` y `administrator_id`; la segunda mantiene el contrato antiguo de `leader_id`. Sólo se admite una función por alta. Un mismo responsable puede crear varios equipos; el control de duplicados del capitán jugador se conserva.
 
+Un equipo sin capitán no puede perder su último responsable administrativo. Antes de retirar ese acceso hay que asignar un sustituto; CTP rechaza el cambio y conserva la versión si el club quedaría sin responsable.
+
 Un líder antiguo que sólo vaya a administrar necesita una **conversión explícita**. El diálogo pide motivo y confirmación de que dejará de ser jugador. Si hay otros integrantes, exige elegir entre ellos al capitán sustituto. CTP comprueba que no exista participación competitiva activa incompatible. Si es el único integrante, el equipo puede quedar sin jugadores y conserva al responsable administrativo. No hay migraciones automáticas de jugadores.
 
 ## Contrato privado

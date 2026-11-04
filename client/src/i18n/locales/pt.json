@@ -60,7 +60,7 @@
   "manager.teamAdmins.reasonRequired": "Indica um motivo com pelo menos 12 caracteres.",
   "manager.teamAdmins.activeRoster": "A conta participa numa competição ativa ou tem participação incompatível. O papel não foi alterado.",
   "manager.teamAdmins.limit": "Foi atingido o limite de responsáveis da equipa.",
-  "manager.teamAdmins.captainRequired": "Seleciona outro jogador da equipa como capitão.",
+  "manager.teamAdmins.captainRequired": "A equipa precisa de um responsável. Atribui outro administrador ou o capitão substituto antes de continuar.",
   "manager.teamAdmins.writesDisabled": "As alterações CTP estão desativadas neste ambiente.",
   "manager.teamAdmins.invalidCreate": "Escolhe um responsável administrativo ou um capitão jogador, nunca ambos.",
   "manager.teamAdmins.created": "Clube criado no CTP.",

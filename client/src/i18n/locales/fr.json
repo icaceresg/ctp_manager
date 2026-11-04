@@ -60,7 +60,7 @@
   "manager.teamAdmins.reasonRequired": "Indiquez un motif d’au moins 12 caractères.",
   "manager.teamAdmins.activeRoster": "Le compte participe à une compétition active ou a une appartenance incompatible. Son rôle est conservé.",
   "manager.teamAdmins.limit": "La limite de responsables de l’équipe est atteinte.",
-  "manager.teamAdmins.captainRequired": "Choisissez un autre joueur de l’équipe comme capitaine.",
+  "manager.teamAdmins.captainRequired": "L’équipe doit garder un responsable. Attribuez un autre administrateur ou le capitaine remplaçant avant de continuer.",
   "manager.teamAdmins.writesDisabled": "Les modifications CTP sont désactivées dans cet environnement.",
   "manager.teamAdmins.invalidCreate": "Choisissez un responsable administratif ou un capitaine joueur, jamais les deux.",
   "manager.teamAdmins.created": "Club créé dans CTP.",

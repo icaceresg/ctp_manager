@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import { createWebPublicationClient, webPublicationPayload, webPublicationResponse } from '../server/web-publication-client.js';
 import { EMPTY_DRAFT, canOpenRegistration, draftChanges, effective, ossProgress, pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament, tournamentState } from '../client/src/pages/webPublicationModel.js';
 import { managerNavigation, navigationSearch } from '../client/src/navigation.js';
+import {deflateSync} from 'node:zlib';
+import {pngCrc32} from '../shared/transparent-logo.js';
+function logoFixture(transparent=true){
+ const chunk=(name,data)=>{const b=Buffer.alloc(data.length+12);b.writeUInt32BE(data.length);b.write(name,4);b.set(data,8);b.writeUInt32BE(pngCrc32(b.subarray(4,b.length-4)),b.length-4);return b;};
+ const header=Buffer.alloc(13);header.writeUInt32BE(2);header.writeUInt32BE(2,4);header.set([8,6],8);
+ const pixels=Buffer.from([0,255,0,0,transparent?0:255,0,255,0,255,0,0,0,255,255,255,0,0,255]);
+ return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
+}
 
 const T = '31100000-0000-4000-8000-0000000000aa', C = '31100000-0000-4000-8000-0000000000bb', R = '31100000-0000-4000-8000-0000000000cc';
 const snapshot = { schema_version: 1, revision: 3, sections: { calendar: false, market: false },
@@ -57,9 +65,20 @@ test('draft handles hosts, hidden dates, programs and club pages', () => {
     assert.throws(() => webPublicationPayload({ ...configure, changes: { clubs } }), { status: 400 });
   assert.deepEqual(webPublicationPayload({ action: 'search', query: ' imp ' }), { action: 'search', query: 'imp' });
   assert.throws(() => webPublicationPayload({ action: 'search', query: 'i' }), { status: 400 });
-  const upload = { action: 'upload', team_id: C, kind: 'logo', content_type: 'image/png', base64: 'iVBORw0KGgo=', request_id: R };
+  const upload = { action: 'upload', team_id: C, kind: 'logo', content_type: 'image/png', base64: logoFixture().toString('base64'), request_id: R };
   assert.deepEqual(webPublicationPayload(upload), upload);
   assert.throws(() => webPublicationPayload({ ...upload, content_type: 'image/jpeg' }), { status: 400 });
+});
+
+test('logo upload validates actual decoded alpha before the privileged CTP bridge',async()=>{
+ const calls=[];const client=createWebPublicationClient({request:async body=>{calls.push(body);return{kind:'logo',path:C+'/'+R+'.png',url:null};},actorFor:async()=> 'ctp:admin',writesEnabled:()=>true});
+ const base={action:'upload',team_id:C,kind:'logo',content_type:'image/png',request_id:R};
+ await assert.rejects(client({id:'u',is_admin:true},{...base,base64:logoFixture(false).toString('base64')}),{status:400});
+ assert.equal(calls.length,0);
+ assert.equal((await client({id:'u',is_admin:true},{...base,base64:logoFixture().toString('base64')})).kind,'logo');
+ assert.equal(calls.length,1);
+ await assert.rejects(client({id:'u',is_admin:true},{...base,content_type:'image/webp',base64:logoFixture().toString('base64')}),{status:400});
+ assert.equal(calls.length,1);
 });
 
 test('payload accepts only known changes and keeps the request id for retries', () => {

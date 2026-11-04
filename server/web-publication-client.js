@@ -1,5 +1,7 @@
 import {HttpError} from './auth.js';
 import {paymentPricingPayload,paymentPricingResponse} from './payment-pricing.js';
+import {readImageInfo} from '../shared/image-format.js';
+import {requireTransparentLogoPng} from '../shared/transparent-logo.js';
 // Publicación web: qué muestra la web pública de CTP (secciones, torneos con su
 // anfitrión y fecha, clubes del Team Pass, Semi-Team Pass y Circuit Pass con su
 // página) y los impuestos (IVA de España, OSS y tipos de la UE). CTP valida cada cambio.
@@ -22,10 +24,13 @@ export function webPublicationPayload(value){
   return{action:'search',query:value.query.trim()};
  }
  if(value.action==='upload'){
-  const kind=value.kind,type=kind==='logo'?'image/png':'image/jpeg';
+  const kind=value.kind,type=kind==='logo'?'image/png':'image/webp';
   if(!only(value,['action','team_id','kind','content_type','base64','request_id'])||!uuid(value.team_id)||!uuid(value.request_id)
    ||!['logo','cover'].includes(kind)||value.content_type!==type||typeof value.base64!=='string'||value.base64.length>2796204
-   ||!/^[A-Za-z0-9+/]+={0,2}$/.test(value.base64))invalid('La imagen debe ser un PNG (escudo) o un JPEG (banner) de menos de 2 MB.');
+   ||!/^[A-Za-z0-9+/]+={0,2}$/.test(value.base64))invalid('El escudo debe ser PNG transparente y el banner WebP. Máximo 2 MB.');
+  const bytes=Buffer.from(value.base64,'base64');
+  if(bytes.length>2*1024*1024||bytes.toString('base64')!==value.base64)invalid('Sube la imagen de nuevo.');
+  try{const info=readImageInfo(bytes,type);if(info.animated||kind==='cover'&&(info.width>1600||info.height>600))invalid('Usa una imagen estática con las dimensiones admitidas.');}catch{invalid('La imagen no coincide con su formato.');}
   return{action:'upload',team_id:value.team_id.toLowerCase(),kind,content_type:type,base64:value.base64,request_id:value.request_id.toLowerCase()};
  }
  if(value.action!=='configure'||!only(value,['action','expected_version','request_id','reason','changes'])
@@ -55,7 +60,7 @@ export function webPublicationPayload(value){
     ||('program' in item&&item.program!==null&&item.program!=='semi_team_pass'))invalid();
    if(('primary_color' in item&&!color(item.primary_color))||('secondary_color' in item&&!color(item.secondary_color)))invalid('Los colores deben ser hexadecimales, por ejemplo #D4A843.');
    if('tagline' in item&&(typeof item.tagline!=='string'||item.tagline.length>80||/[\u0000-\u001f\u007f]/.test(item.tagline)))invalid('El lema admite hasta 80 caracteres.');
-   if(('logo_path' in item&&!imagePath(item.logo_path,id,'png'))||('cover_path' in item&&!imagePath(item.cover_path,id,'jpg')))invalid('Sube la imagen de nuevo.');
+   if(('logo_path' in item&&!imagePath(item.logo_path,id,'png'))||('cover_path' in item&&!imagePath(item.cover_path,id,'(?:jpg|webp)')))invalid('Sube la imagen de nuevo.');
    return{...item,id,...('primary_color' in item?{primary_color:item.primary_color.toUpperCase()}:{}),...('secondary_color' in item?{secondary_color:item.secondary_color.toUpperCase()}:{})};
   });
  }
@@ -126,6 +131,10 @@ export function createWebPublicationClient({request,actorFor,writesEnabled}){
   if(!user.is_admin||(user.auth_mode==='ctp'&&user.ctp_role!=='admin'))throw new HttpError(403,'Solo administración de CTP puede cambiar lo que muestra la web.');
   const payload=webPublicationPayload(input);
   if(['configure','upload'].includes(payload.action)&&!writesEnabled())throw new HttpError(403,'Los cambios oficiales están desactivados.');
+  if(payload.action==='upload'&&payload.kind==='logo'){
+   try{await requireTransparentLogoPng(new Uint8Array(Buffer.from(payload.base64,'base64')));}
+   catch{throw new HttpError(400,'El escudo debe ser un PNG válido con fondo transparente hasta el borde.');}
+  }
   const actor_id=await actorFor(user);
   if(typeof actor_id!=='string'||!/^[A-Za-z0-9._:@-]{1,100}$/.test(actor_id))throw new HttpError(403,'No se ha podido verificar la identidad de administración.');
   let result;

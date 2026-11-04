@@ -10,9 +10,9 @@ import {ctpAuthConfig} from '../server/ctp-auth.js';
 
 export let PROJECT='ctp-dev-20261026';
 export const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const OWNER_ROOT='D:/CTP/worktrees/ctp-manager-dev-local-20261026';
-export let CTP_ROOT='D:/CTP/worktrees/ConnectToPlay-dev-local-20261026';
-let ctpToolRoot=path.join(CTP_ROOT,'infra','dev');
+const SHARED_OWNER='D:/CTP/dev/ctp/owner.json';
+export let CTP_ROOT='';
+let ctpToolRoot='';
 export let SECRETS='D:/CTP/dev/ctp/secrets.private.json';
 export let DATA='D:/CTP/dev/manager';
 export let API='http://127.0.0.1:58021';
@@ -38,12 +38,35 @@ export function validateDevProfile(value,sourceRoot=ROOT){
   ||!equalPath(sourceRoot,CANDIDATE_PROFILE.managerRoot))fail('dev_manager_profile_invalid');
  return CANDIDATE_PROFILE;
 }
-export function requireOwnerWorktree(sourceRoot=ROOT){
- if(!equalPath(sourceRoot,OWNER_ROOT))fail('dev_manager_profile_required');
+export function validateSharedOwner(value,sourceRoot=ROOT){
+ if(!value||value.schemaVersion!==1||value.projectId!=='ctp-dev-20261026'||value.persistent!==true
+  ||value.apiPort!==58021||value.databasePort!==58022||value.webPort!==58080||value.managerPort!==58090)fail('dev_manager_shared_owner_invalid');
+ const normalize=target=>{
+  if(typeof target!=='string'||!/^D:[\\/]CTP[\\/]worktrees[\\/][^\\/:]+$/i.test(target)||target.split(/[\\/]/).some(part=>part==='.'||part==='..'))fail('dev_manager_shared_repository_invalid');
+  return path.win32.normalize(target).toLowerCase();
+ };
+ const ctp=normalize(value.sourceRepo),manager=normalize(value.managerRepo);
+ if(ctp===manager||manager!==normalize(sourceRoot))fail('dev_manager_profile_required');
+ return {sourceRepo:value.sourceRepo,managerRepo:value.managerRepo};
+}
+export function requireOwnerWorktree(sourceRoot=ROOT,owner){
+ if(!owner)fail('dev_manager_profile_required');
+ return validateSharedOwner(owner,sourceRoot);
+}
+async function sharedOwner(){
+ let info,value;
+ try{info=await fs.lstat(SHARED_OWNER);value=JSON.parse(await fs.readFile(SHARED_OWNER,'utf8'));}catch{fail('dev_manager_shared_owner_invalid');}
+ if(!info.isFile()||info.isSymbolicLink()||info.size>16384||!equalPath(await fs.realpath(SHARED_OWNER),SHARED_OWNER))fail('dev_manager_shared_owner_invalid');
+ const owner=requireOwnerWorktree(ROOT,value);
+ for(const [directory,entry]of [[owner.sourceRepo,'infra/dev/dev.py'],[owner.managerRepo,'scripts/dev-local-stack.mjs']]){
+  let record,script;try{record=await fs.lstat(directory);script=await fs.lstat(path.join(directory,entry));}catch{fail('dev_manager_shared_repository_invalid');}
+  if(!record.isDirectory()||record.isSymbolicLink()||!script.isFile()||script.isSymbolicLink()||!equalPath(await fs.realpath(directory),directory))fail('dev_manager_shared_repository_invalid');
+ }
+ return owner;
 }
 async function selectTarget(profileFile){
  if(targetSelected)fail('dev_manager_profile_already_selected');
- if(!profileFile){requireOwnerWorktree();targetSelected=true;return;}
+ if(!profileFile){const owner=await sharedOwner();CTP_ROOT=owner.sourceRepo;ctpToolRoot=path.join(CTP_ROOT,'infra','dev');targetSelected=true;return;}
  const file=path.resolve(profileFile);
  if(!equalPath(path.dirname(file),CANDIDATE_PROFILE.dataRoot))fail('dev_manager_profile_file_invalid');
  let info;try{info=await fs.lstat(file);}catch{fail('dev_manager_profile_file_invalid');}

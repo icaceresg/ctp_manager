@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { db } from './db.js';
 import { HttpError, readSessionToken } from './auth.js';
 import { getAdministrationService } from './integration.js';
+import { readImageInfo } from '../shared/image-format.js';
 
 const callback='https://manager.playctp.com/administracion/integraciones?twitch_admin=1';
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
@@ -53,12 +54,23 @@ export async function ownerAction(req) {
   }
   return result;
 }
-export async function uploadAdministrationImage(user,input) {
+export function administrationImagePayload(input) {
   if(!input||Object.keys(input).some(key=>!['bucket','content_type','base64','request_id'].includes(key))
     ||!['game-maps','tournament-images','email-images'].includes(input.bucket)||!['image/png','image/jpeg','image/webp'].includes(input.content_type)
     ||typeof input.base64!=='string'||input.base64.length<16||input.base64.length>2796204||!/^[A-Za-z0-9+/]+={0,2}$/.test(input.base64)
     ||typeof input.request_id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(input.request_id))throw new HttpError(400,'Selecciona una imagen PNG, JPG o WebP de hasta 2 MB.');
-  const result=await getAdministrationService(user,'image',input);
+  if(input.bucket!=='email-images'&&input.content_type!=='image/webp')throw new HttpError(400,'Las imágenes de la web deben convertirse a WebP antes de subirlas.');
+  const bytes=Buffer.from(input.base64,'base64');
+  if(bytes.length>2*1024*1024||bytes.toString('base64')!==input.base64)throw new HttpError(400,'La imagen no es válida.');
+  try{
+    const info=readImageInfo(bytes,input.content_type);
+    if(info.animated||input.bucket!=='email-images'&&(info.width>1600||info.height>1200))throw new Error('dimensions');
+  }catch{throw new HttpError(400,'La imagen no coincide con su formato o dimensiones.');}
+  return input;
+}
+export async function uploadAdministrationImage(user,input) {
+  const payload=administrationImagePayload(input);
+  const result=await getAdministrationService(user,'image',payload);
   let url;try{url=new URL(result.url);}catch{throw new HttpError(502,'No se ha confirmado la imagen.');}
   if(!['https://pre.playctp.com','https://playctp.com'].includes(url.origin)||!url.pathname.startsWith(`/storage/v1/object/public/${input.bucket}/manager/`)||url.username||url.password||url.search||url.hash)throw new HttpError(502,'La imagen no pertenece al almacenamiento de CTP.');
   return {url:url.href,bucket:input.bucket};

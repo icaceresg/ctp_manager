@@ -122,3 +122,11 @@ test('Tickets lists only CTP tickets; match disputes and internal match cases st
   assert.deepEqual(operationsWorkspace(referee,{view:'jornada',q:'ranked-dispute'}).incidents.map(row=>row.id),['ranked-dispute']);
   assert.equal(matchDossier(referee,matches[0].id).incidents.some(row=>row.id===internal.id),true);
 });
+test('administration retains manual club creation proposals for retry without exposing other command kinds',()=>{
+ const now=Date.now(),insert=db.prepare("INSERT INTO operation_commands(id,idempotency_key,action,resource_type,resource_id,actor_id,expected_version,payload,status,created_at,updated_at) VALUES(?,?,?,?,?,?,0,?,'pending',?,?)");
+ insert.run('qa-manual-club','qa-manual-club-key','club.create','club_create','qa-manual-club-target',adminId,JSON.stringify({name:'QA Academy',leader_id:null,administrator_id:'10000000-0000-4000-8000-000000000001'}),now,now);
+ const page=operationsWorkspace(admin,{view:'administration'});
+ assert.equal(page.commands.some(command=>command.id==='qa-manual-club'),true);
+ assert.equal(page.commands.some(command=>command.action==='match.resolve'),false);
+ assert.throws(()=>operationsWorkspace(referee,{view:'administration'}),{status:403});
+});

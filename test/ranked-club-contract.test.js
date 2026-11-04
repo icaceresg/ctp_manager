@@ -19,3 +19,8 @@ test('manual club creation permits no entitlement, money, verification or new ac
  assert.deepEqual(manualClubPayload('club.create',payload),payload);
  for(const change of [{verified:true},{pass_active:true},{email:'create@invalid.test'},{points:100},{name:'x'.repeat(25)},{tag:'bad tag'},{leader_id:'arbitrary'},{reason:'short'}])assert.throws(()=>manualClubPayload('club.create',{...payload,...change}));
 });
+test('administrative club creation is independent from player captain and preserves legacy payload',()=>{
+ const admin={name:'QA Academy',tag:'QAA',leader_id:null,administrator_id:id,reason:'Responsable administrativo sin puesto de jugador'};
+ assert.deepEqual(manualClubPayload('club.create',admin),admin);
+ for(const patch of [{leader_id:id},{administrator_id:null},{administrator_id:'bad'},{members:[]},{role:'admin'}])assert.throws(()=>manualClubPayload('club.create',{...admin,...patch}),{status:400});
+});

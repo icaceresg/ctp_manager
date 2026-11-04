@@ -11,6 +11,7 @@ import { dateTime } from '../operations/model.js';
 import AdministrationIntegrations from './AdministrationIntegrations.jsx';
 import UserProfileDialog from './UserProfileDialog.jsx';
 import { managerUserId, operationReturnPath } from '../navigation.js';
+import { prepareWebImage, WEB_IMAGE_SPECS } from '../webImageUpload.js';
 import '../operations/operations.css';
 import '../operations/sanctions.css';
 
@@ -186,11 +187,10 @@ function AdministrationDialog({action,data,onClose,prepare}){
     const file=event.target.files?.[0];if(!file)return;
     setUploading(true);setUploadError('');
     try{
-      if(file.size>2*1024*1024||!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('Usa una imagen PNG, JPG o WebP de hasta 2 MB.');
       const fileKey=`${file.name}:${file.size}:${file.lastModified}`;
       if(imageRequest.current?.key!==fileKey)imageRequest.current={key:fileKey,id:crypto.randomUUID()};
-      const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('No se ha podido leer la imagen.'));reader.readAsDataURL(file);});
-      const result=await api.post('/administration/images',{bucket:'game-maps',content_type:file.type,base64:String(dataUrl).split(',')[1],request_id:imageRequest.current.id});
+      const prepared=await prepareWebImage(file,WEB_IMAGE_SPECS.map);
+      const result=await api.post('/administration/images',{bucket:'game-maps',content_type:prepared.contentType,base64:prepared.base64,request_id:imageRequest.current.id});
       const url=result.url||result.public_url;if(!safeImage(url))throw new Error('CTP no ha confirmado una imagen válida.');setImage(url);
     }
     catch(error){setUploadError(error.message);}finally{setUploading(false);}
@@ -231,7 +231,7 @@ function AdministrationDialog({action,data,onClose,prepare}){
       <Field label="Nombre"><input name="name" required maxLength={120} defaultValue={row?.name||''}/></Field>
       <Field label="Orden"><input name="sort_order" type="number" min="0" max="10000" defaultValue={row?.sort_order??0}/></Field>
       <label className="op-check"><input name="active" type="checkbox" defaultChecked={row?.active!==false}/> Disponible para competición</label>
-      {type.startsWith('admin.map.')&&<><Field label="Imagen del mapa"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} disabled={uploading}/></Field>{uploading&&<p role="status">Subiendo imagen…</p>}{uploadError&&<p className="op-error" role="alert">{uploadError}</p>}{safeImage(image)&&<img alt="Imagen del mapa" src={image} style={{width:'100%',maxHeight:220,objectFit:'contain'}}/>}<Field label="URL de imagen HTTPS (opcional)"><input value={image} onChange={event=>setImage(event.target.value)} type="url" maxLength={2000}/></Field></>}
+      {type.startsWith('admin.map.')&&<><Field label="Imagen del mapa"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif" onChange={upload} disabled={uploading}/></Field>{uploading&&<p role="status">Subiendo imagen…</p>}{uploadError&&<p className="op-error" role="alert">{uploadError}</p>}{safeImage(image)&&<img alt="Imagen del mapa" src={image} style={{width:'100%',maxHeight:220,objectFit:'contain'}}/>}<Field label="URL de imagen HTTPS (opcional)"><input value={image} onChange={event=>setImage(event.target.value)} type="url" maxLength={2000}/></Field></>}
     </>}
     {type==='admin.campaign.create'&&<>
       <div className="tabs" aria-label="Idioma de la campaña">{LOCALES.map(([id,title])=><button key={id} type="button" className={locale===id?'active':''} onClick={()=>setLocale(id)}>{title}{content[id].title&&content[id].body&&<CheckCircle2 size={12}/>}</button>)}</div>

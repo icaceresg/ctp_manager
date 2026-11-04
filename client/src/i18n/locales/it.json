@@ -35,5 +35,18 @@
   "manager.pricing.circuit_pass": "Circuit Pass",
   "manager.pricing.season_pass": "Season Pass",
   "manager.pricing.noTournaments": "Nessun torneo disponibile.",
-  "manager.pricing.noSeasons": "Nessuna season configurata."
+  "manager.pricing.noSeasons": "Nessuna season configurata.",
+  "manager.images.invalid": "Usa una foto PNG, JPG, WebP, GIF, BMP o AVIF che il browser possa aprire.",
+  "manager.images.dimensions": "L’immagine può arrivare a 24 megapixel e 12.000 pixel per lato.",
+  "manager.images.sourceSize": "L’immagine originale può pesare fino a 12 MB.",
+  "manager.images.logoPng": "Lo stemma deve essere un file PNG con sfondo trasparente.",
+  "manager.images.static": "Usa un’immagine statica per questo elemento.",
+  "manager.images.prepareError": "Impossibile preparare l’immagine.",
+  "manager.images.logoClear": "Il PNG deve contenere lo stemma e avere uno sfondo trasparente fino al bordo. Lo sfondo non viene rimosso automaticamente.",
+  "manager.images.outputSize": "L’immagine compressa supera 2 MB. Prova un’immagine più piccola.",
+  "manager.images.webpUnsupported": "Il browser non può creare WebP. Aggiornalo o usa un altro browser.",
+  "manager.images.logoHint": "PNG con sfondo trasparente. Fino a 512 px, senza ingrandimento.",
+  "manager.images.coverHint": "Conversione automatica in WebP e ritaglio centrale, fino a 1600 × 600.",
+  "manager.images.photoHint": "Le foto vengono convertite in WebP. GIF: primo fotogramma.",
+  "manager.images.uploadType": "Seleziona uno stemma PNG trasparente o una foto convertita in WebP per il banner. Massimo 2 MB."
 }

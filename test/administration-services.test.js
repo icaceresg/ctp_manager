@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-owner-state-'));
 Object.assign(process.env, { DATA_DIR: directory, DB_PATH: path.join(directory, 'manager.sqlite'), CTP_OPERATIONS_URL: '', CTP_OPERATIONS_TOKEN: '' });
-const { createOwnerStateStore, safeOwnerUrl } = await import('../server/administration-services.js');
+const { createOwnerStateStore, safeOwnerUrl, administrationImagePayload } = await import('../server/administration-services.js');
 const { db } = await import('../server/db.js');
 const database = new DatabaseSync(':memory:');
 let now = 1_000;
@@ -56,4 +56,13 @@ test('owner authorization cannot redirect to an arbitrary site or request unrela
   for (const value of [address.href.replace('id.twitch.tv', 'attacker.test'), address.href.replace('https:', 'http:'), address.href + '&state=' + state, address.href + '#fragment', address.href.replace('id.twitch.tv', 'user:pass@id.twitch.tv')]) {
     assert.equal(safeOwnerUrl(value), null);
   }
+});
+
+test('web image payloads require actual WebP while email images retain their existing formats',()=>{
+ const bytes=Buffer.alloc(30);bytes.write('RIFF');bytes.writeUInt32LE(22,4);bytes.write('WEBPVP8X',8);bytes.writeUInt32LE(10,16);bytes[24]=3;bytes[27]=3;
+ const base={bucket:'game-maps',content_type:'image/webp',base64:bytes.toString('base64'),request_id:'31100000-0000-4000-8000-0000000000aa'};
+ assert.deepEqual(administrationImagePayload(base),base);
+ for(const input of [{...base,content_type:'image/png'},{...base,base64:Buffer.from('not an image').toString('base64')},{...base,content_type:'image/jpeg'}])assert.throws(()=>administrationImagePayload(input),{status:400});
+ const png=Buffer.alloc(33);png.set([137,80,78,71,13,10,26,10]);png.writeUInt32BE(13,8);png.write('IHDR',12);png.writeUInt32BE(2,16);png.writeUInt32BE(2,20);png.set([8,6],24);
+ assert.equal(administrationImagePayload({...base,bucket:'email-images',content_type:'image/png',base64:png.toString('base64')}).content_type,'image/png');
 });

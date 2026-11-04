@@ -35,5 +35,18 @@
   "manager.pricing.circuit_pass": "Circuit Pass",
   "manager.pricing.season_pass": "Season Pass",
   "manager.pricing.noTournaments": "Keine Turniere verfügbar.",
-  "manager.pricing.noSeasons": "Keine Seasons eingerichtet."
+  "manager.pricing.noSeasons": "Keine Seasons eingerichtet.",
+  "manager.images.invalid": "Verwende ein PNG-, JPG-, WebP-, GIF-, BMP- oder AVIF-Foto, das dein Browser öffnen kann.",
+  "manager.images.dimensions": "Bilder dürfen bis zu 24 Megapixel und 12.000 Pixel je Seite haben.",
+  "manager.images.sourceSize": "Das Originalbild darf bis zu 12 MB groß sein.",
+  "manager.images.logoPng": "Das Wappen muss eine PNG-Datei mit transparentem Hintergrund sein.",
+  "manager.images.static": "Verwende für dieses Element ein statisches Bild.",
+  "manager.images.prepareError": "Das Bild konnte nicht vorbereitet werden.",
+  "manager.images.logoClear": "Das PNG muss das Wappen enthalten und bis zum Rand einen transparenten Hintergrund haben. Der Hintergrund wird nicht automatisch entfernt.",
+  "manager.images.outputSize": "Das komprimierte Bild ist größer als 2 MB. Versuche ein kleineres Bild.",
+  "manager.images.webpUnsupported": "Dein Browser kann kein WebP erzeugen. Aktualisiere ihn oder verwende einen anderen Browser.",
+  "manager.images.logoHint": "PNG mit transparentem Hintergrund. Bis zu 512 px, ohne Vergrößerung.",
+  "manager.images.coverHint": "Automatische Umwandlung in WebP und mittiger Zuschnitt, bis zu 1600 × 600.",
+  "manager.images.photoHint": "Fotos werden in WebP umgewandelt. GIF: erstes Bild.",
+  "manager.images.uploadType": "Wähle ein transparentes PNG-Wappen oder ein in WebP umgewandeltes Foto für das Banner. Höchstens 2 MB."
 }

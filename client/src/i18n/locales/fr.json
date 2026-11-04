@@ -35,5 +35,18 @@
   "manager.pricing.circuit_pass": "Circuit Pass",
   "manager.pricing.season_pass": "Season Pass",
   "manager.pricing.noTournaments": "Aucun tournoi disponible.",
-  "manager.pricing.noSeasons": "Aucune season configurée."
+  "manager.pricing.noSeasons": "Aucune season configurée.",
+  "manager.images.invalid": "Utilisez une photo PNG, JPG, WebP, GIF, BMP ou AVIF que votre navigateur peut ouvrir.",
+  "manager.images.dimensions": "L’image peut atteindre 24 mégapixels et 12 000 pixels par côté.",
+  "manager.images.sourceSize": "L’image source peut peser jusqu’à 12 Mo.",
+  "manager.images.logoPng": "L’écusson doit être un fichier PNG avec un fond transparent.",
+  "manager.images.static": "Utilisez une image fixe pour cet élément.",
+  "manager.images.prepareError": "Impossible de préparer l’image.",
+  "manager.images.logoClear": "Le PNG doit contenir l’écusson et avoir un fond transparent jusqu’au bord. Le fond n’est pas supprimé automatiquement.",
+  "manager.images.outputSize": "L’image compressée dépasse 2 Mo. Essayez une image plus petite.",
+  "manager.images.webpUnsupported": "Votre navigateur ne peut pas créer de WebP. Mettez-le à jour ou utilisez un autre navigateur.",
+  "manager.images.logoHint": "PNG avec fond transparent. Jusqu’à 512 px, sans agrandissement.",
+  "manager.images.coverHint": "Conversion automatique en WebP et recadrage centré, jusqu’à 1600 × 600.",
+  "manager.images.photoHint": "Les photos sont converties en WebP. GIF : première image.",
+  "manager.images.uploadType": "Sélectionnez un écusson PNG transparent ou une photo convertie en WebP pour la bannière. Maximum 2 Mo."
 }

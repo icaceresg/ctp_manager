@@ -6,6 +6,8 @@ const apiPort = Number(process.env.PORT) || 3210;
 export default defineConfig({
   root: 'client',
   plugins: [react()],
+  optimizeDeps: { exclude: ['@jsquash/webp'] },
+  worker: { format: 'es' },
   build: {
     outDir: '../dist',
     emptyOutDir: true,

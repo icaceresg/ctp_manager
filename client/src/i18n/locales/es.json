@@ -35,5 +35,18 @@
   "manager.pricing.circuit_pass": "Circuit Pass",
   "manager.pricing.season_pass": "Season Pass",
   "manager.pricing.noTournaments": "No hay torneos disponibles.",
-  "manager.pricing.noSeasons": "No hay seasons configuradas."
+  "manager.pricing.noSeasons": "No hay seasons configuradas.",
+  "manager.images.invalid": "Usa una foto PNG, JPG, WebP, GIF, BMP o AVIF que pueda abrir tu navegador.",
+  "manager.images.dimensions": "La imagen admite hasta 24 megapíxeles y 12.000 píxeles por lado.",
+  "manager.images.sourceSize": "La imagen de origen admite hasta 12 MB.",
+  "manager.images.logoPng": "El escudo debe ser un archivo PNG con fondo transparente.",
+  "manager.images.static": "Usa una imagen estática para este recurso.",
+  "manager.images.prepareError": "No se ha podido preparar la imagen.",
+  "manager.images.logoClear": "El PNG debe contener el escudo y tener fondo transparente hasta el borde. No se elimina el fondo automáticamente.",
+  "manager.images.outputSize": "La imagen comprimida supera 2 MB. Prueba con otra más pequeña.",
+  "manager.images.webpUnsupported": "Tu navegador no puede generar WebP. Actualízalo o utiliza otro navegador.",
+  "manager.images.logoHint": "PNG con fondo transparente. Máximo 512 px, sin ampliar.",
+  "manager.images.coverHint": "Se convierte automáticamente a WebP y se recorta al centro, hasta 1600 × 600.",
+  "manager.images.photoHint": "Las fotos se convierten a WebP. GIF: primera imagen.",
+  "manager.images.uploadType": "Selecciona un PNG transparente para el escudo o una foto convertida a WebP para el banner. Máximo 2 MB."
 }

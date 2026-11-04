@@ -35,5 +35,18 @@
   "manager.pricing.circuit_pass": "Circuit Pass",
   "manager.pricing.season_pass": "Season Pass",
   "manager.pricing.noTournaments": "No tournaments available.",
-  "manager.pricing.noSeasons": "No seasons configured."
+  "manager.pricing.noSeasons": "No seasons configured.",
+  "manager.images.invalid": "Use a PNG, JPG, WebP, GIF, BMP or AVIF photo that your browser can open.",
+  "manager.images.dimensions": "Images support up to 24 megapixels and 12,000 pixels per side.",
+  "manager.images.sourceSize": "The source image supports up to 12 MB.",
+  "manager.images.logoPng": "The crest must be a PNG file with a transparent background.",
+  "manager.images.static": "Use a static image for this asset.",
+  "manager.images.prepareError": "The image could not be prepared.",
+  "manager.images.logoClear": "The PNG must contain the crest and have a transparent background reaching its border. Backgrounds are not removed automatically.",
+  "manager.images.outputSize": "The compressed image exceeds 2 MB. Try a smaller image.",
+  "manager.images.webpUnsupported": "Your browser cannot create WebP. Update it or use another browser.",
+  "manager.images.logoHint": "PNG with a transparent background. Up to 512 px, without enlargement.",
+  "manager.images.coverHint": "Automatically converted to WebP and cropped centrally, up to 1600 × 600.",
+  "manager.images.photoHint": "Photos are converted to WebP. GIF: first frame.",
+  "manager.images.uploadType": "Select a transparent PNG crest or a photo converted to WebP for the banner. Maximum 2 MB."
 }

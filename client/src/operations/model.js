@@ -9,7 +9,8 @@ export const OP_TABS = [
   { id: 'decisiones', title: 'Decisiones', sections: OP_SECTIONS },
   // Tickets keeps its /operaciones/incidencias route so existing links still work.
   { id: 'incidencias', title: 'Tickets', sections: ['arbitraje'] },
-  { id: 'torneos', title: 'Torneos', sections: ['operaciones'] },
+  // Referees can read tournaments; only Coordinación manages them.
+  { id: 'torneos', title: 'Torneos', sections: ['operaciones', 'arbitraje'] },
   { id: 'arbitraje', title: 'Actas y resultados', sections: ['arbitraje'] },
   { id: 'estadisticas', title: 'Estadísticas', sections: ['arbitraje'], menu: false },
   { id: 'sanciones', title: 'Sanciones', sections: ['arbitraje'] },

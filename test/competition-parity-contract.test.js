@@ -47,3 +47,12 @@ test('only a successfully sent deletion returns the currently selected tournamen
  assert.equal(shouldLeaveDeletedTournament(command,'send','tournament-2'),false);
  assert.equal(shouldLeaveDeletedTournament({...command,type:'tournament.update'},'send','tournament-1'),false);
 });
+test('tournaments are listed from the nearest date to the farthest',async()=>{
+ const{tournamentsByProximity}=await import('../server/competition-contract.js');
+ const now=Date.parse('2026-11-04T12:00:00Z'),day=86400000;
+ const row=(id,offset,status='inscripcion_abierta')=>({id,status,start_at:offset===null?null:new Date(now+offset).toISOString()});
+ const items=[row('far-future',90*day),row('no-date',null),row('last-month',-30*day,'finalizado'),row('live',-3*day,'en_curso'),row('tomorrow',day),row('yesterday',-day,'finalizado'),row('next-week',7*day)];
+ assert.deepEqual(tournamentsByProximity(items,now).map(t=>t.id),['live','tomorrow','next-week','far-future','yesterday','last-month','no-date']);
+ assert.deepEqual(tournamentsByProximity([row('b',day),row('a',day)],now).map(t=>t.id),['a','b'],'Same date keeps a stable order');
+ assert.deepEqual(items.map(t=>t.id)[0],'far-future','The input is not reordered in place');
+});

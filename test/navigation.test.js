@@ -155,3 +155,7 @@ test('only a linked official Ranked case can open arbitration for its own lobby'
   assert.equal(to.searchParams.has('decision'), false);
   for (const input of [null, { ...incident, source: 'manager' }, { ...incident, kind: 'support' }, { ...incident, match_id: 'bad' }]) assert.equal(rankedIncidentPath(input, '/operaciones/incidencias'), null);
 });
+test('referees can open Torneos', () => {
+  assert.ok(managerNavigation(value => value === 'arbitraje', false).some(item => item.id === 'torneos'));
+  assert.equal(managerNavigation(value => value === 'casters', false).some(item => item.id === 'torneos'), false);
+});

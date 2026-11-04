@@ -122,6 +122,12 @@ let port, remote, child, mode = 'ok', observed = [], snapshot = {
   competition_cutover_enabled: false,
 };
 let cookie = '', operatorId, clubCandidates = [];
+const day = 86400000, at = offset => new Date(Date.now() + offset).toISOString();
+const tournament = (id, offset, status) => ({ id, name: id, status, start_at: at(offset), manager_version: 1 });
+// 109 tournaments: CTP needs two pages, and the nearest dates are spread across them.
+const tournaments = [tournament('later', 40 * day, 'borrador'), tournament('next', 3 * day, 'inscripcion_abierta'),
+  tournament('live', -5 * day, 'en_curso'), tournament('recent', -2 * day, 'finalizado'),
+  ...Array.from({ length: 105 }, (_, i) => tournament(`old-${i}`, -(10 + i) * day, 'finalizado'))];
 async function api(method, route, body, session = cookie) {
   const response = await fetch(`http://localhost:${port}/api${route}`, { method, headers: { Cookie: session, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const setCookie = response.headers.get('set-cookie');
@@ -165,6 +171,13 @@ before(async () => {
     }
     if (parsed.action === 'ranked_lobby_detail') {const data=parsed.target_id===lobbyId?lobbyFixture():{schema_version:1,found:false,lobby_id:parsed.target_id};if(data.chat)data.chat.can_send=true;data.secret=token;response.end(JSON.stringify({ok:true,data}));return;}
     if (parsed.action === 'club_candidates') { response.end(JSON.stringify({ ok: true, data: clubCandidates })); return; }
+    if (parsed.action === 'competition' && parsed.resource === 'tournaments') {
+      // Same order and cursor as CTP: start date, latest first.
+      const all = [...tournaments].sort((a, b) => b.start_at.localeCompare(a.start_at));
+      const from = parsed.filters.cursor ? all.findIndex(t => `${t.start_at}|${t.id}` === parsed.filters.cursor) + 1 : 0;
+      const page = all.slice(from, from + parsed.filters.limit), last = page.at(-1);
+      response.end(JSON.stringify({ ok: true, data: { items: page, next_cursor: from + page.length < all.length ? `${last.start_at}|${last.id}` : null, games: [{ id: 'game', name: 'Game' }] } })); return;
+    }
     if (parsed.action === 'case_context') { response.end(JSON.stringify({ ok: true, data: { incident_id: parsed.target_id, messages: [{ id: 'message-1', author_name: 'Jugador', text: 'Necesitamos ayuda', created_at: '2026-09-29T10:00:00Z', source: 'ticket', is_staff: false, private_token: token }], next_cursor: null, web_path: '/app/retos/test' } })); return; }
     response.end(JSON.stringify({ ok: true, data: parsed.action === 'snapshot' ? snapshot : { applied: true, command_id: mode === 'wrong_ack' ? 'another-command' : parsed.command_id, type: parsed.type, target_id: parsed.target_id, ...(parsed.type?.startsWith('sanction.') ? { version: 1, source_version: 1 } : {}) } }));
   });
@@ -428,6 +441,35 @@ test('local QA monitor requires an admin and only sends the signed read action w
   mode='outage';const failure=await api('GET','/operations/ranked/monitor');
   assert.equal(failure.status,502);assert.equal(JSON.stringify(failure.data).includes(token),false);
   mode='ok';
+});
+
+test('tournaments list nearest first across CTP pages and referees can read it', async () => {
+  mode = 'ok';
+  let before = observed.length;
+  const first = await api('GET', '/operations/competition?resource=tournaments&limit=4');
+  assert.equal(first.status, 200);
+  assert.deepEqual(first.data.items.map(t => t.id), ['live', 'next', 'later', 'recent']);
+  assert.equal(first.data.next_cursor, '4');
+  const reads = observed.slice(before);
+  assert.deepEqual(reads.map(r => [r.action, r.resource, r.filters.limit, Boolean(r.filters.cursor)]), [['competition', 'tournaments', 100, false], ['competition', 'tournaments', 100, true]]);
+  const second = await api('GET', '/operations/competition?resource=tournaments&limit=2&cursor=4');
+  assert.deepEqual(second.data.items.map(t => t.id), ['old-0', 'old-1']);
+  const end = await api('GET', '/operations/competition?resource=tournaments&limit=10&cursor=100');
+  assert.deepEqual(end.data.items.map(t => t.id), ['old-96', 'old-97', 'old-98', 'old-99', 'old-100', 'old-101', 'old-102', 'old-103', 'old-104']);
+  assert.equal(end.data.next_cursor, null);
+  assert.equal((await api('GET', '/operations/competition?resource=tournaments&cursor=2026-01-01T00:00:00Z|x')).status, 400);
+
+  const role = (await api('POST', '/roles', { name: 'TOURNAMENT REFEREE', staff_kind: 'referee', sections: ['arbitraje'] })).data;
+  assert.equal((await api('POST', '/users', { username: 'tournament-referee', password: 'tournament-test-password', role_ids: [role.id] })).status, 201);
+  const referee = (await api('POST', '/auth/login', { username: 'tournament-referee', password: 'tournament-test-password' }, '')).cookie;
+  const read = await api('GET', '/operations/competition?resource=tournaments&limit=2', undefined, referee);
+  assert.equal(read.status, 200); assert.deepEqual(read.data.items.map(t => t.id), ['live', 'next']);
+  const casterRole = (await api('POST', '/roles', { name: 'TOURNAMENT CASTER', staff_kind: 'caster', sections: ['casters'] })).data;
+  assert.equal((await api('POST', '/users', { username: 'tournament-caster', password: 'tournament-test-password', role_ids: [casterRole.id] })).status, 201);
+  const caster = (await api('POST', '/auth/login', { username: 'tournament-caster', password: 'tournament-test-password' }, '')).cookie;
+  before = observed.length;
+  assert.equal((await api('GET', '/operations/competition?resource=tournaments', undefined, caster)).status, 403);
+  assert.equal(observed.length, before);
 });
 
 test('Ranked statistics send only a fixed period with the operator actor and project the aggregate report', async () => {

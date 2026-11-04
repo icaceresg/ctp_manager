@@ -93,3 +93,16 @@ export function correctionPayload(input={}) {
   }
   return out;
 }
+
+/** In progress first, then upcoming (soonest first), then past (most recent first). Missing dates go last. */
+export function tournamentsByProximity(items, now = Date.now()) {
+  const key = tournament => {
+    const start = Date.parse(tournament.start_at);
+    const dated = Number.isFinite(start);
+    const group = tournament.status === 'en_curso' ? 0 : dated && start >= now ? 1 : 2;
+    return [group, dated ? Math.abs(start - now) : Infinity, String(tournament.id)];
+  };
+  return items.map(item => [key(item), item])
+    .sort(([[groupA, distanceA, idA]], [[groupB, distanceB, idB]]) => groupA - groupB || (distanceA === distanceB ? idA.localeCompare(idB) : distanceA < distanceB ? -1 : 1))
+    .map(([, item]) => item);
+}

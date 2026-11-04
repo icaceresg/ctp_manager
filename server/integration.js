@@ -2,7 +2,7 @@ import { HttpError, describeUser } from './auth.js';
 import { db } from './db.js';
 import { signManagerRequest } from './bridge-signature.js';
 import { MANAGER_PUBLIC_ORIGINS } from './config.js';
-import { COMPETITION_ACTIONS, competitionPayload, correctionPayload } from './competition-contract.js';
+import { COMPETITION_ACTIONS, competitionPayload, correctionPayload, tournamentsByProximity } from './competition-contract.js';
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
 import { rankedMonitorState } from './ranked-monitor-contract.js';
@@ -562,11 +562,33 @@ export async function getIncidentContext(user, id, cursor) {
     web_path: typeof result.web_path === 'string' && /^\/(?!\/)/.test(result.web_path) && !result.web_path.includes('\\') ? result.web_path : null };
 }
 
+// CTP pages tournaments by start date, latest first. Manager reads every page
+// (up to 2,000 tournaments; any older ones are the farthest in the past) so the
+// list can start with the nearest dates, then pages it with its own offset cursor.
+const TOURNAMENT_READ_PAGES = 20;
+async function tournamentsNearestFirst(user, { cursor, limit, ...filters }) {
+  if (cursor !== undefined && !/^\d{1,5}$/.test(cursor)) throw integrationError(400, 'Cursor no válido. Vuelve a cargar la lista.');
+  const offset = Number(cursor || 0);
+  const items = [];
+  let games = null, next = null;
+  for (let page = 0; page < TOURNAMENT_READ_PAGES; page++) {
+    const result = await request({ action: 'competition', actor_id: getOperatorIdentity(user.id), resource: 'tournaments', target_id: null, filters: { ...filters, limit: 100, ...(next ? { cursor: next } : {}) } });
+    if (!Array.isArray(result?.items) || result.items.length > 100 || (result.next_cursor != null && (typeof result.next_cursor !== 'string' || result.next_cursor.length > 512))) throw integrationError(502, 'CTP ha devuelto una página no válida.');
+    items.push(...result.items);
+    games ??= result.games;
+    next = result.next_cursor;
+    if (!next) break;
+  }
+  const sorted = tournamentsByProximity(items);
+  return { items: sorted.slice(offset, offset + limit), next_cursor: offset + limit < sorted.length ? String(offset + limit) : null, games };
+}
+
 /** Read official competition data using the caller's bound staff identity. */
 export async function getCompetitionData(user, query = {}) {
   const resource = query.resource || 'tournaments';
   if (!['tournaments', 'tournament', 'history', 'statistics', 'match', 'referee_queue'].includes(resource)) throw integrationError(400, 'Consulta de competición no válida.');
-  const allowed = ['statistics', 'match', 'referee_queue'].includes(resource) ? ['arbitraje'] : resource === 'history' ? ['operaciones', 'arbitraje'] : ['operaciones'];
+  // Referees also read tournaments; CTP only lets them manage what their scopes allow.
+  const allowed = ['statistics', 'match', 'referee_queue'].includes(resource) ? ['arbitraje'] : ['operaciones', 'arbitraje'];
   if (!user?.is_admin && !allowed.some((section) => user?.sections?.includes(section))) throw integrationError(403, 'No tienes permiso para esta consulta.');
   const filters = {};
   for (const key of ['query', 'status', 'kind', 'tournament_id', 'date_from', 'date_to', 'cursor']) {
@@ -583,7 +605,8 @@ export async function getCompetitionData(user, query = {}) {
   const target_id = query.target_id || null;
   if (target_id !== null && (typeof target_id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,159}$/i.test(target_id))) throw integrationError(400, 'Identificador no válido.');
   if (['tournament', 'statistics', 'match'].includes(resource) && !target_id) throw integrationError(400, 'Selecciona un recurso.');
-  const result = await request({ action: 'competition', actor_id: getOperatorIdentity(user.id), resource, target_id, filters });
+  const result = resource === 'tournaments' ? await tournamentsNearestFirst(user, filters)
+    : await request({ action: 'competition', actor_id: getOperatorIdentity(user.id), resource, target_id, filters });
   const list = (value, max) => Array.isArray(value) && value.length <= max && value.every((row) => row && typeof row === 'object' && !Array.isArray(row));
   if (resource === 'tournament') {
     if (!result.tournament || result.tournament.id !== target_id || !list(result.participants, 256) || !list(result.matches, 2000) || !list(result.games, 1000)) throw integrationError(502, 'CTP ha devuelto un torneo incompleto.');

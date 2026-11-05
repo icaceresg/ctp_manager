@@ -266,3 +266,29 @@
 .op-section-title > select { width:auto; max-width:100%; min-width:180px; }
 @media(max-width:600px) { .op-section-title > select { width:100%; } }
 @media(max-width:600px) { .op-table th:first-child,.op-table td:first-child { min-width:120px; } }
+/* Administración → Clubes → Plantilla */
+.op-roster { display: grid; gap: 18px; }
+.op-roster section { display: grid; gap: 10px; }
+.op-roster h3 { font-size: 14px; margin: 0; }
+.op-roster-leader { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); font-weight: 600; }
+.op-roster-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.op-roster-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.op-roster-confirm { display: grid; gap: 10px; }
+.op-roster-danger { border: 1px solid rgba(239,68,68,.35); border-radius: 8px; padding: 14px; }
+.op-roster-danger p { margin: 0; font-size: 13px; color: var(--text-2); }
+@media (max-width: 640px) { .op-roster .op-form-grid { grid-template-columns: 1fr; } }
+/* Live tournament control (admins and referees). */
+.op-live-bracket { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 6px; }
+.op-live-round { display: grid; align-content: start; gap: 8px; min-width: 200px; }
+.op-live-round h4 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.op-live-match { display: grid; gap: 4px; text-align: left; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, transparent); color: inherit; cursor: pointer; font: inherit; }
+.op-live-match:hover, .op-live-match:focus-visible { border-color: var(--accent); }
+.op-live-match.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.op-live-match small { color: var(--text-2); font-size: 11px; }
+.op-live-slot { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.op-live-slot > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-live-slot.is-winner { font-weight: 700; color: var(--accent); }
+.op-live-editor { border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.op-live-editor h4 { margin: 0; font-size: 13px; }
+.op-live-block { display: grid; gap: 8px; }
+@media (max-width: 640px) { .op-live-round { min-width: 160px; } }

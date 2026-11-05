@@ -3,7 +3,7 @@ import { requireAuth,requireAdmin } from '../auth.js';
 import { queryAdministration,proposeAdministration } from '../administration.js';
 import { integrationServicesStatus,ownerAction,uploadAdministrationImage,staffAlertsAction } from '../administration-services.js';
 import { crmAction } from '../crm.js';
-import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,updateCtpClub,rankedEventService,webPublicationService,siteNoticeService } from '../integration.js';
+import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,updateCtpClub,teamRosterService,rankedEventService,webPublicationService,siteNoticeService } from '../integration.js';
 import { metricsHandler } from '../metrics.js';
 
 export const administrationRouter=Router();
@@ -26,6 +26,9 @@ administrationRouter.post('/administration/integrations/twitch',async(req,res)=>
 administrationRouter.post('/administration/crm',async(req,res)=>res.json(await crmAction(req.user,req.body||{})));
 administrationRouter.get('/administration/users/:id',async(req,res)=>res.json(await getCtpUserProfile(req.user,req.params.id)));
 administrationRouter.patch('/administration/users/:id',async(req,res)=>res.json(await updateCtpUserProfile(req.user,req.params.id,req.body||{})));
+administrationRouter.get('/administration/team-roster/candidates',async(req,res)=>res.json(await teamRosterService(req.user,'candidates',null,{query:req.query.query})));
+administrationRouter.get('/administration/clubs/:id/roster',async(req,res)=>res.json(await teamRosterService(req.user,'get',req.params.id)));
+administrationRouter.post('/administration/clubs/:id/roster',async(req,res)=>res.json(await teamRosterService(req.user,'write',req.params.id,req.body||{})));
 administrationRouter.patch('/administration/clubs/:id',async(req,res)=>res.json(await updateCtpClub(req.user,req.params.id,req.body||{})));
 administrationRouter.post('/administration/users/:id/delete',async(req,res)=>res.json(await deleteCtpUser(req.user,req.params.id,req.body||{})));
 administrationRouter.post('/administration/images',async(req,res)=>res.json(await uploadAdministrationImage(req.user,req.body)));

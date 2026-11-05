@@ -18,6 +18,8 @@ import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffA
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import { CLUB_PROFILE_ERRORS, clubProfilePayload, clubProfileResponse } from './club-profile-contract.js';
+import { teamRosterPayload, teamRosterProblem, teamRosterQuery, teamRosterRead, teamRosterResponse } from './team-roster-contract.js';
+import { tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse } from './tournament-live-contract.js';
 import {
   DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS, USER_DELETE_UNCERTAIN_MESSAGE,
   disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
@@ -114,7 +116,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  if (body.action !== 'admin_service' || !['twitch','crm','users','clubs','tickets','discipline'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  if (body.action !== 'admin_service' || !['twitch','crm','users','clubs','team_roster','tournament_live','tickets','discipline'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
   try {
@@ -137,6 +139,14 @@ async function ownerServiceFailure(body, response) {
     if (body.service === 'discipline') {
       const message = typeof error?.discipline_error === 'string' && Object.hasOwn(DISCIPLINE_ERRORS, error.discipline_error) ? DISCIPLINE_ERRORS[error.discipline_error] : null;
       return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
+    }
+    if (body.service === 'tournament_live') {
+      const message = tournamentLiveProblem(error?.live_error);
+      return message ? integrationError(error.live_error === 'tournament_live_conflict' ? 409 : 422, message) : null;
+    }
+    if (body.service === 'team_roster') {
+      const message = teamRosterProblem(error?.roster_error);
+      return message ? integrationError(error.roster_error === 'team_roster_conflict' ? 409 : 422, message) : null;
     }
     if (body.service === 'clubs') {
       const message = typeof error?.profile_error === 'string' && Object.hasOwn(CLUB_PROFILE_ERRORS, error.profile_error) ? CLUB_PROFILE_ERRORS[error.profile_error] : null;
@@ -753,6 +763,30 @@ export async function updateCtpClub(user, id, body) {
   if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   const payload = clubProfilePayload(id, body);
   return clubProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'clubs', payload }), payload.team_id);
+}
+
+/**
+ * Administrators manage any club's roster: add or move players, remove them,
+ * change roles, transfer the manager role, resolve requests, invite and dissolve.
+ * CTP locks the club, checks the roster revision and audits the staff reason.
+ */
+export async function teamRosterService(user, operation, teamId, body = {}) {
+  if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'manager.teamRoster.error.forbidden');
+  const payload = operation === 'candidates' ? teamRosterQuery(body.query) : operation === 'get' ? teamRosterRead(teamId) : teamRosterPayload(teamId, body);
+  if (!['candidates', 'get'].includes(operation) && !config.writes) throw integrationError(403, 'manager.teamRoster.error.writesDisabled');
+  return teamRosterResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'team_roster', payload }), payload);
+}
+
+/**
+ * Live tournament control: administrators and referees correct results (the
+ * bracket re-advances), entrants, participants, schedule and status. CTP
+ * authorizes each call under the operator's own incident.resolve scope.
+ */
+export async function tournamentLiveService(user, tournamentId, body = null, query = undefined) {
+  if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
+  const payload = query !== undefined ? tournamentLiveQuery(tournamentId, query) : body === null ? tournamentLiveRead(tournamentId) : tournamentLivePayload(tournamentId, body);
+  if (body !== null && !config.writes) throw integrationError(403, 'manager.tournamentLive.error.writesDisabled');
+  return tournamentLiveResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
 }
 
 export async function updateCtpUserProfile(user, id, body) {

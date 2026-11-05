@@ -7,10 +7,12 @@ import { Spinner } from '../components/ui.jsx';
 import { Badge, DataTable, Empty, Field, FormDialog } from '../operations/ui.jsx';
 import { DecisionPanel } from '../operations/DecisionPanel.jsx';
 import { ManualClubCreatePanel } from '../operations/ManualClubCreatePanel.jsx';
+import { translate } from '../i18n/runtime.js';
 import { dateTime } from '../operations/model.js';
 import AdministrationIntegrations from './AdministrationIntegrations.jsx';
 import UserProfileDialog from './UserProfileDialog.jsx';
 import { managerUserId, operationReturnPath } from '../navigation.js';
+import { prepareWebImage, WEB_IMAGE_SPECS } from '../webImageUpload.js';
 import '../operations/operations.css';
 import '../operations/sanctions.css';
 
@@ -40,14 +42,15 @@ export default function AdministrationPage(){
   const page=Math.max(0,Number(params.get('page'))||0);
   const query=params.get('q')||'';
   const gameId=params.get('game')||'';
-  const requestKey=JSON.stringify([resource,page,query,gameId]);
+  const teamId=resource==='entitlements'?(params.get('team')||''):'';
+  const requestKey=JSON.stringify([resource,page,query,gameId,teamId]);
   const {data:loaded,loading,error,reload}=useData(async()=>{
-    const filters=new URLSearchParams({resource,page:String(page),limit:'20',...(query?{query}:{}),...(gameId?{game_id:gameId}:{})});
+    const filters=new URLSearchParams({resource,page:String(page),limit:'20',...(query?{query}:{}),...(gameId?{game_id:gameId}:{}),...(teamId?{team_id:teamId}:{})});
     const [result,operations]=await Promise.all([api.get(`/administration?${filters}`),api.get('/operations/bootstrap?view=administration')]);
     return {...result,operations,request_key:requestKey};
-  },[resource,page,query,gameId]);
+  },[resource,page,query,gameId,teamId]);
   const data=loaded?.request_key===requestKey?loaded:null;
-  useEffect(()=>{setSearch(query);setDialog(null);setRemoving(null);setEditingClub(null);},[section,query,variant]);
+  useEffect(()=>{setSearch(query);setDialog(null);setRemoving(null);setEditingClub(null);},[section,query,variant,me?.id]);
   const change=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set(key,String(value)):next.delete(key);if(key!=='page')next.delete('page');return next;},{replace:true});
   if(!me?.is_admin)return <Navigate to="/operaciones/jornada" replace/>;
   if(!definition)return <Navigate to="/administracion/resumen" replace/>;
@@ -79,10 +82,11 @@ export default function AdministrationPage(){
     {returnTo&&<Link className="btn op-back" to={returnTo}>Volver al caso o a Ranked</Link>}
     {section==='usuarios'&&params.has('edit')&&!editing&&<p className="op-error" role="alert">La referencia de la cuenta no es válida. Selecciona una cuenta desde la lista o vuelve al ticket.</p>}
     <p className="muted">Los cambios oficiales se preparan, se revisan y se envían a CTP. Las decisiones sin confirmación permanecen pendientes.</p>
+    {teamId&&<p className="op-notice">{translate('manager.clubCreate.teamFilter')} <button className="btn" onClick={()=>change('team','')}>{translate('manager.clubCreate.clearFilter')}</button></p>}
     {error&&<div className="op-error" role="alert"><CircleAlert size={18}/><span>{error.message}{data?' Se conserva la última lectura.':''}</span><button className="btn" onClick={reload}>Reintentar</button></div>}
     {loading&&!data?<div className="op-loading"><Spinner/>Cargando administración…</div>:data?<>
       {resource==='summary'?<Summary data={data}/>:<>
-        {section==='clubes'&&<ManualClubCreatePanel data={data.operations} me={me} reload={reload} mutate={async(method,path,body,message)=>{await api[method](`/operations${path}`,body);await reload();toast(message);}}/>}
+        {section==='clubes'&&<><ManualClubCreatePanel key={`create:${me.id}`} data={data.operations} me={me} reload={reload} mutate={async(method,path,body,message)=>{await api[method](`/operations${path}`,body);await reload();toast(message);}}/></>}
         <section className="op-card"><div className="op-section-title"><div><h2>{resource==='modes'?'Modos de juego':resource==='ranked_lobbies'?'Partidas Ranked':definition[1]}</h2><p>{data.total??rows.length} registros · página {page+1}</p></div><div className="op-actions">{section==='mapas'&&<><button className="btn" disabled={resource==='maps'} onClick={()=>change('view','')}>Mapas</button><button className="btn" disabled={resource==='modes'} onClick={()=>change('view','modes')}>Modos</button></>}{section==='ranked'&&<><button className="btn" disabled={resource==='ranked_queues'} onClick={()=>change('view','')}>Colas</button><button className="btn" disabled={resource==='ranked_lobbies'} onClick={()=>change('view','lobbies')}>Partidas</button>{data.sync_target_id&&<button className="btn" onClick={()=>propose('admin.ranked.queue.sync',{id:data.sync_target_id,manager_version:data.sync_version})}>Sincronizar Discord</button>}</>}{createType&&<button className="btn primary" onClick={()=>propose(createType,null)}><Plus size={16}/>{resource==='entitlements'?'Conceder acceso':resource==='maps'?'Nuevo mapa':resource==='modes'?'Nuevo modo':'Nueva campaña'}</button>}</div></div>
           <form className="op-filters" onSubmit={event=>{event.preventDefault();change('q',search);}}><input aria-label="Buscar en administración" placeholder={resource==='users'?'Buscar por nombre o correo…':'Buscar por nombre…'} value={search} onChange={event=>setSearch(event.target.value)} maxLength={120}/><button className="btn" disabled={loading}>Buscar</button>{query&&<button className="btn" type="button" onClick={()=>change('q','')}>Limpiar</button>}{['maps','modes','ranked_queues'].includes(resource)&&data.games?.length>0&&<select aria-label="Filtrar por juego" value={gameId} onChange={event=>change('game',event.target.value)}><option value="">Todos los juegos</option>{data.games.map(game=><option key={game.id} value={game.id}>{game.name}</option>)}</select>}</form>
           <DataTable rows={rows} columns={columns} empty="No hay registros en esta vista" emptyDetail="Prueba otra búsqueda o crea un registro desde las acciones disponibles."/>
@@ -186,11 +190,10 @@ function AdministrationDialog({action,data,onClose,prepare}){
     const file=event.target.files?.[0];if(!file)return;
     setUploading(true);setUploadError('');
     try{
-      if(file.size>2*1024*1024||!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('Usa una imagen PNG, JPG o WebP de hasta 2 MB.');
       const fileKey=`${file.name}:${file.size}:${file.lastModified}`;
       if(imageRequest.current?.key!==fileKey)imageRequest.current={key:fileKey,id:crypto.randomUUID()};
-      const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('No se ha podido leer la imagen.'));reader.readAsDataURL(file);});
-      const result=await api.post('/administration/images',{bucket:'game-maps',content_type:file.type,base64:String(dataUrl).split(',')[1],request_id:imageRequest.current.id});
+      const prepared=await prepareWebImage(file,WEB_IMAGE_SPECS.map);
+      const result=await api.post('/administration/images',{bucket:'game-maps',content_type:prepared.contentType,base64:prepared.base64,request_id:imageRequest.current.id});
       const url=result.url||result.public_url;if(!safeImage(url))throw new Error('CTP no ha confirmado una imagen válida.');setImage(url);
     }
     catch(error){setUploadError(error.message);}finally{setUploading(false);}
@@ -231,7 +234,7 @@ function AdministrationDialog({action,data,onClose,prepare}){
       <Field label="Nombre"><input name="name" required maxLength={120} defaultValue={row?.name||''}/></Field>
       <Field label="Orden"><input name="sort_order" type="number" min="0" max="10000" defaultValue={row?.sort_order??0}/></Field>
       <label className="op-check"><input name="active" type="checkbox" defaultChecked={row?.active!==false}/> Disponible para competición</label>
-      {type.startsWith('admin.map.')&&<><Field label="Imagen del mapa"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} disabled={uploading}/></Field>{uploading&&<p role="status">Subiendo imagen…</p>}{uploadError&&<p className="op-error" role="alert">{uploadError}</p>}{safeImage(image)&&<img alt="Imagen del mapa" src={image} style={{width:'100%',maxHeight:220,objectFit:'contain'}}/>}<Field label="URL de imagen HTTPS (opcional)"><input value={image} onChange={event=>setImage(event.target.value)} type="url" maxLength={2000}/></Field></>}
+      {type.startsWith('admin.map.')&&<><Field label="Imagen del mapa"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif" onChange={upload} disabled={uploading}/></Field>{uploading&&<p role="status">Subiendo imagen…</p>}{uploadError&&<p className="op-error" role="alert">{uploadError}</p>}{safeImage(image)&&<img alt="Imagen del mapa" src={image} style={{width:'100%',maxHeight:220,objectFit:'contain'}}/>}<Field label="URL de imagen HTTPS (opcional)"><input value={image} onChange={event=>setImage(event.target.value)} type="url" maxLength={2000}/></Field></>}
     </>}
     {type==='admin.campaign.create'&&<>
       <div className="tabs" aria-label="Idioma de la campaña">{LOCALES.map(([id,title])=><button key={id} type="button" className={locale===id?'active':''} onClick={()=>setLocale(id)}>{title}{content[id].title&&content[id].body&&<CheckCircle2 size={12}/>}</button>)}</div>

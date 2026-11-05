@@ -48,7 +48,7 @@ test('a lost ACK remains recoverable after the source leaves the pending feed', 
 
 test('fresh Ranked and club proposals remain sendable without optional source metadata', () => {
   for (const type of ['ranked.season.schedule', 'ranked.season.update', 'ranked.season.cancel', 'club.create']) {
-    const command = { type, status: 'pending', attempts: 0, expected_version: type === 'club.create' ? 0 : 3 };
+    const command = { type, status: 'pending', attempts: 0, expected_version: type === 'club.create' ? 0 : 3, ...(type === 'club.create' ? {payload:{leader_id:'10000000-0000-4000-8000-000000000001'}} : {}) };
     for (const metadata of [{}, { source_version_current: null }, { source_version_current: undefined }, { source_available: true, source_version_current: command.expected_version }]) {
       assert.equal(canSendCommand({ ...command, ...metadata }, true, true), true, `${type} valid metadata`);
     }

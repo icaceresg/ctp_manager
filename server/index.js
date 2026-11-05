@@ -6,7 +6,8 @@ import express from 'express';
 import { APP_HOST, APP_ORIGIN, DIST_DIR, PORT, DEPLOYMENT, requestBoundary, isRuletaHost } from './config.js';
 import { ruletaRouter } from './routes/ruleta.js';
 import { db } from './db.js';
-import { HttpError } from './auth.js';
+import { HttpError, AUTH_CONFIG } from './auth.js';
+import { migrationShadowEnabled, migrationShadowBoundary } from './migration-shadow.js';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
 import { apiRouter } from './routes/api.js';
@@ -19,6 +20,7 @@ import { obsRouter } from './routes/obs.js';
 import { administrationRouter } from './routes/administration.js';
 
 const app = express();
+const migrationShadow = migrationShadowEnabled();
 app.disable('x-powered-by');
 
 // Se mantiene la escucha en loopback. En VPS el proxy conserva Host y termina TLS.
@@ -49,6 +51,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(migrationShadowBoundary(migrationShadow, AUTH_CONFIG));
 app.use('/api/administration/images', express.json({limit:'3mb'}));
 app.use('/api/administration/web-publication/upload', express.json({limit:'3mb'}));
 app.use('/api/administration/crm', express.json({limit:'2mb'}));
@@ -112,9 +115,11 @@ if (v4Error && v6Error) {
 }
 
 // Limpieza periódica de sesiones caducadas.
-setInterval(() => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()), 60 * 60 * 1000).unref();
-startOperationsSync();
-startRuletaSync();
+if (!migrationShadow) {
+  setInterval(() => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()), 60 * 60 * 1000).unref();
+  startOperationsSync();
+  startRuletaSync();
+}
 
 console.log(`\n  CTP Manager funcionando en ${APP_ORIGIN}`);
 console.log('  Para cerrar la app, cierra esta ventana.\n');

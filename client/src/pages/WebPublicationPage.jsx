@@ -12,6 +12,7 @@ import SiteNoticeEditor from './SiteNoticeEditor.jsx';
 import PaymentPricingEditor from './PaymentPricingEditor.jsx';
 import { invalidPricingInputs } from './paymentPricingModel.js';
 import { translate } from '../i18n/runtime.js';
+import { prepareWebImage, WEB_IMAGE_SPECS } from '../webImageUpload.js';
 
 const TABS = [
   { id: 'secciones', label: 'Secciones', icon: Globe },
@@ -45,32 +46,11 @@ function Sections({ snapshot, draft, setDraft }) {
 }
 
 const IMAGE_SPECS = {
-  logo: { label: 'Escudo', type: 'image/png', width: 512, height: 512, fit: 'contain', hint: 'PNG cuadrado, se reduce a 512 px.' },
-  cover: { label: 'Banner', type: 'image/jpeg', width: 1600, height: 600, fit: 'cover', hint: 'JPEG 1600 × 600, se recorta al centro.' },
+  logo: { label: 'Escudo', accept: 'image/png', hint: translate('manager.images.logoHint') },
+  cover: { label: 'Banner', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif', hint: translate('manager.images.coverHint') },
 };
 
-/** Convierte cualquier imagen al formato que acepta CTP (PNG para el escudo, JPEG para el banner). */
-async function prepareImage(file, spec) {
-  const bitmap = await createImageBitmap(file);
-  const scale = spec.fit === 'cover' ? Math.max(spec.width / bitmap.width, spec.height / bitmap.height) : Math.min(1, spec.width / bitmap.width, spec.height / bitmap.height);
-  const width = spec.fit === 'cover' ? spec.width : Math.round(bitmap.width * scale), height = spec.fit === 'cover' ? spec.height : Math.round(bitmap.height * scale);
-  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-  const context = canvas.getContext('2d');
-  if (spec.type === 'image/jpeg') { context.fillStyle = '#000'; context.fillRect(0, 0, width, height); }
-  context.drawImage(bitmap, (width - bitmap.width * scale) / 2, (height - bitmap.height * scale) / 2, bitmap.width * scale, bitmap.height * scale);
-  bitmap.close?.();
-  for (const quality of [0.88, 0.78, 0.65]) {
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, spec.type, quality));
-    if (blob && blob.size <= 2 * 1024 * 1024) {
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      return btoa(binary);
-    }
-  }
-  throw new Error('La imagen ocupa demasiado incluso comprimida. Prueba con otra más pequeña.');
-}
-
-function ImageField({ club, kind, draft, setDraft, previews, setPreviews }) {
+export function ImageField({ club, kind, draft, setDraft, previews, setPreviews }) {
   const spec = IMAGE_SPECS[kind], key = kind === 'logo' ? 'logo_path' : 'cover_path';
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const path = effective.club(draft, club, key), changed = !!draft.clubs[club.id] && key in draft.clubs[club.id];
@@ -80,9 +60,9 @@ function ImageField({ club, kind, draft, setDraft, previews, setPreviews }) {
     if (!file) return;
     setBusy(true); setError('');
     try {
-      const base64 = await prepareImage(file, spec);
-      const result = await api.post('/administration/web-publication/upload', { team_id: club.id, kind, content_type: spec.type, base64, request_id: crypto.randomUUID() });
-      setPreviews(p => ({ ...p, [result.path]: result.url || URL.createObjectURL(file) }));
+      const prepared = await prepareWebImage(file, WEB_IMAGE_SPECS[kind]);
+      const result = await api.post('/administration/web-publication/upload', { team_id: club.id, kind, content_type: prepared.contentType, base64: prepared.base64, request_id: crypto.randomUUID() });
+      setPreviews(p => ({ ...p, [result.path]: result.url || URL.createObjectURL(prepared.blob) }));
       setDraft(d => setClub(d, club, { [key]: result.path }));
     } catch (problem) { setError(problem.message); } finally { setBusy(false); }
   }
@@ -90,7 +70,7 @@ function ImageField({ club, kind, draft, setDraft, previews, setPreviews }) {
     <div className="wp-image-frame">{url ? <img src={url} alt={`${spec.label} de ${club.name}`} /> : <span className="muted">{path ? 'Imagen guardada' : `Sin ${spec.label.toLowerCase()}`}</span>}</div>
     <div className="wp-image-actions"><strong>{spec.label}</strong><small>{spec.hint}</small>
       <div className="btn-row"><label className="btn sm"><Upload size={14} aria-hidden /> {busy ? 'Subiendo…' : 'Cambiar'}
-        <input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={busy} onChange={pick} /></label>
+        <input type="file" accept={spec.accept} hidden disabled={busy} onChange={pick} /></label>
       {path && <button type="button" className="btn ghost sm" onClick={() => setDraft(d => setClub(d, club, { [key]: null }))}>Quitar</button>}</div>
       {error && <small className="wp-warn" role="alert">{error}</small>}</div>
   </div>;

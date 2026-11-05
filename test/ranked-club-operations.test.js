@@ -60,3 +60,7 @@ test('manual club proposals are private, deduplicate retries and never fabricate
  assert.equal(operations.bootstrap(noAdmin).commands.some(row=>row.id===prepared.id),false);
  assert.equal(prepared.expected_version,0);assert.equal(prepared.payload.pass_active,undefined);assert.equal(prepared.payload.verified,undefined);
 });
+test('one account cannot prepare clubs through the retired administrative assignment',()=>{
+ const administrator_id=randomUUID();
+ for(const name of ['Principal','Academy','Femenino'])assert.throws(()=>operations.prepareManualClubCommand(admin,{type:'club.create',payload:{name:`QA ${name}`,tag:'QAT',leader_id:null,administrator_id,reason:'Propuesta anterior de gestion multiple retirada'}}),{status:400});
+});

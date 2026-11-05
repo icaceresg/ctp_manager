@@ -5,7 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {validateSecrets,managerEnvironment,validateStackProof,validateRuntime,jsonRequest,recoverRefusedRuntime,validateDevProfile,requireOwnerWorktree,assertOwnSqliteFiles,CANDIDATE_PROFILE,PROJECT,ROOT,API,WEB,MANAGER,DATA} from '../scripts/dev-local-stack.mjs';
+import {validateSecrets,managerEnvironment,validateStackProof,validateRuntime,jsonRequest,recoverRefusedRuntime,validateDevProfile,validateSharedOwner,requireOwnerWorktree,assertOwnSqliteFiles,CANDIDATE_PROFILE,PROJECT,ROOT,API,WEB,MANAGER,DATA} from '../scripts/dev-local-stack.mjs';
 import {ctpAuthConfig} from '../server/ctp-auth.js';
 
 const jwt=role=>`e30.${Buffer.from(JSON.stringify({role,exp:4102444800})).toString('base64url')}.fixture`;
@@ -36,7 +36,7 @@ test('candidate profiles are finite, immutable, loopback-only and tied to their 
   {controlPort:59090},{schemaVersion:2},{unrecognized:true}])assert.throws(()=>validateDevProfile({...CANDIDATE_PROFILE,...patch},CANDIDATE_PROFILE.managerRoot),/dev_manager_profile_invalid/);
  assert.throws(()=>validateDevProfile({...CANDIDATE_PROFILE},'D:/CTP/worktrees/ctp-manager-dev-local-20261026'),/dev_manager_profile_invalid/);
  assert.throws(()=>requireOwnerWorktree(CANDIDATE_PROFILE.managerRoot),/dev_manager_profile_required/);
- assert.doesNotThrow(()=>requireOwnerWorktree('D:/CTP/worktrees/ctp-manager-dev-local-20261026'));
+ assert.doesNotThrow(()=>requireOwnerWorktree('D:/CTP/worktrees/ctp-manager-dev-local-20261026',sharedOwner()));
 });
 
 test('candidate SQLite paths accept only absent or individually owned regular files',async()=>{
@@ -192,4 +192,20 @@ test('launcher HTTP transport always connects to loopback, checks bounded JSON a
   for(const remote of ['https://pre.playctp.com','http://192.168.1.1:58080','http://127.1:58080','http://localhost:58080/'])assert.throws(()=>jsonRequest(remote,'/proof'),/dev_manager_http_target_invalid/);
   assert.throws(()=>jsonRequest(origin,'//remote.invalid/proof'),/dev_manager_http_target_invalid/);
  }finally{for(const s of [server,trap]){s.closeAllConnections();await new Promise(resolve=>s.close(resolve));}}
+});
+
+
+const sharedOwner=()=>({schemaVersion:1,projectId:'ctp-dev-20261026',persistent:true,
+ sourceRepo:'D:/CTP/worktrees/ctp-current-candidate',managerRepo:'D:/CTP/worktrees/ctp-manager-dev-local-20261026',
+ apiPort:58021,databasePort:58022,webPort:58080,managerPort:58090});
+test('shared DEV owner selects source worktrees while preserving fixed project, ports and storage',()=>{
+ const owner=sharedOwner();assert.deepEqual(validateSharedOwner(owner,owner.managerRepo),{sourceRepo:owner.sourceRepo,managerRepo:owner.managerRepo});
+ const switched={...owner,managerRepo:'D:/CTP/worktrees/ctp-manager-next'};
+ assert.doesNotThrow(()=>requireOwnerWorktree(switched.managerRepo,switched));
+ for(const patch of [{sourceRepo:'https://pre.playctp.com'},{sourceRepo:'D:/CTP/other'},{sourceRepo:'D:/CTP/worktrees/../other'},
+  {managerRepo:'D:/CTP/worktrees/manager/subdir'},{sourceRepo:owner.managerRepo},{projectId:'other'},
+  {apiPort:59021},{databasePort:59022},{webPort:59080},{managerPort:59090},{persistent:false}]){
+  assert.throws(()=>validateSharedOwner({...owner,...patch},owner.managerRepo),/^Error: dev_manager_/);
+ }
+ assert.throws(()=>requireOwnerWorktree('D:/CTP/worktrees/different',owner),/profile_required/);
 });

@@ -14,7 +14,7 @@ export function Empty({ title, children }) {
 export function Field({ label: name, children, hint }) {
   return <label className="op-field"><span>{name}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
-export function FormDialog({ title, onClose, submit, children, submitLabel = 'Guardar', help, danger = false }) {
+export function FormDialog({ title, onClose, submit, children, submitLabel = 'Guardar', help, danger = false, cancelLabel = 'Cancelar', closeLabel }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function onSubmit(e) {
@@ -25,11 +25,11 @@ export function FormDialog({ title, onClose, submit, children, submitLabel = 'Gu
     catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
-  return <Modal title={title} onClose={busy ? undefined : onClose}>
+  return <Modal title={title} onClose={busy ? undefined : onClose} closeLabel={closeLabel}>
     <form className="op-form" onSubmit={onSubmit}>
       {help && <p className="op-help">{help}</p>}{children}
       {error && <p className="op-error" role="alert">{error}</p>}
-      <div className="op-form-actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>Cancelar</button><button className={`btn ${danger ? 'danger' : 'primary'}`} disabled={busy}>{busy && <LoaderCircle size={16} className="spin" />}{submitLabel}</button></div>
+      <div className="op-form-actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>{cancelLabel}</button><button className={`btn ${danger ? 'danger' : 'primary'}`} disabled={busy}>{busy && <LoaderCircle size={16} className="spin" />}{submitLabel}</button></div>
     </form>
   </Modal>;
 }

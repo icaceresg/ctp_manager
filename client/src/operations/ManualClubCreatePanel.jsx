@@ -4,54 +4,61 @@ import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Field, FormDialog } from './ui.jsx';
 import { canSendCommand } from './model.js';
+import { translate } from '../i18n/runtime.js';
 
-/** Administración → Clubes: an administrator creates a club in CTP and chooses its manager. */
+const clubCreateError = cause => cause?.status ? cause.message : translate('manager.clubCreate.failed');
+
+/** A registered account may lead one club. Other clubs require another account. */
 export function ManualClubCreatePanel({ data, me, reload, mutate }) {
   const { toast } = useApp();
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   if (!me?.is_admin) return null;
   const supported = data.connection?.supported_actions?.includes('club.create');
-  const commands = (data.commands || []).filter(command => command.type === 'club.create' && ['pending', 'failed', 'rejected', 'sending'].includes(command.status));
+  const pending = (data.commands || []).filter(command => command.type === 'club.create' && ['pending', 'failed', 'rejected', 'sending'].includes(command.status));
+  const retired = pending.filter(command => !command.payload.leader_id || Object.hasOwn(command.payload, 'administrator_id'));
+  const commands = pending.filter(command => !retired.includes(command));
   async function send(command) {
     setBusy(true); setError('');
-    try { await api.post(`/operations/integration/commands/${command.id}/send`, {}); toast('Club creado en CTP.'); await reload(); }
-    catch (cause) { setError(cause.message); } finally { setBusy(false); }
+    try { await api.post(`/operations/integration/commands/${command.id}/send`, {}); toast(translate('manager.clubCreate.created')); await reload(); }
+    catch (cause) { setError(clubCreateError(cause)); } finally { setBusy(false); }
   }
-  // One step for the administrator: prepare the proposal and send it at once.
-  // If CTP does not confirm, the proposal stays below so it can be retried.
   async function create(payload) {
-    const { command } = await api.post('/operations/clubs/create', { type: 'club.create', payload });
+    let command;
+    try { ({command}=await api.post('/operations/clubs/create', { type: 'club.create', payload })); }
+    catch (cause) { throw new Error(clubCreateError(cause)); }
     setError('');
-    try { await api.post(`/operations/integration/commands/${command.id}/send`, {}); toast(`Club ${payload.name} creado en CTP.`); }
-    catch (cause) { setError(`El alta de ${payload.name} no se ha confirmado en CTP: ${cause.message}`); }
+    try { await api.post(`/operations/integration/commands/${command.id}/send`, {}); toast(translate('manager.clubCreate.createdNamed', {name:payload.name})); }
+    catch (cause) { setError(translate('manager.clubCreate.createUnconfirmed', {name:payload.name,detail:clubCreateError(cause)})); }
     await reload();
   }
-  return <section className="op-card"><div className="op-section-title"><div><h2>Crear club</h2><p>Elige quién será el manager: un jugador registrado que no esté en otro club. El acceso al circuito y la verificación se revisan después.</p></div><button className="btn primary" disabled={busy || !supported} onClick={() => setOpen(true)}><Plus size={15} /> Crear club</button></div>
-    {!supported && <p className="muted">El puente CTP todavía no admite altas manuales.</p>}
+  return <section className="op-card"><div className="op-section-title"><div><h2>{translate('manager.clubCreate.createTitle')}</h2><p>{translate('manager.clubCreate.createDescription')}</p></div><button className="btn primary" disabled={busy || !supported} onClick={() => setOpen(true)}><Plus size={15} /> {translate('manager.clubCreate.createTitle')}</button></div>
+    {!supported && <p className="muted">{translate('manager.clubCreate.createUnavailable')}</p>}
     {error && <p className="op-error" role="alert">{error}</p>}
-    {commands.map(command => <div className="op-notice" key={command.id}><strong>Alta pendiente: {command.payload.name} · {command.payload.tag}</strong><p>{command.payload.reason}</p>{command.last_error && <p>{command.last_error}</p>}<div className="op-actions"><button className="btn gold" disabled={busy || !canSendCommand(command, data.connection?.write_enabled, supported)} onClick={() => void send(command)}>Crear en CTP</button>{(command.status === 'pending' && command.attempts === 0 || command.status === 'rejected' && command.attempts === 1 && command.result?.rejected_confirmed) && <button className="btn" disabled={busy} onClick={() => void mutate('post', `/commands/${command.id}/cancel`, { expected_updated_at: command.updated_at }, 'Propuesta descartada.')}>Descartar</button>}</div></div>)}
+    {retired.map(command => <div className="op-notice" key={command.id}><strong>{command.payload.name}</strong><p>{translate('manager.clubCreate.retiredProposal')}</p>{(command.status === 'pending' && command.attempts === 0 || command.status === 'rejected' && command.attempts === 1 && command.result?.rejected_confirmed) && <button className="btn" disabled={busy} onClick={() => void mutate('post', `/commands/${command.id}/cancel`, { expected_updated_at: command.updated_at }, translate('manager.clubCreate.discarded'))}>{translate('manager.clubCreate.discard')}</button>}</div>)}
+    {commands.map(command => <div className="op-notice" key={command.id}><strong>{translate('manager.clubCreate.pendingCreation', {name:command.payload.name,tag:command.payload.tag})}</strong><p>{command.payload.reason}</p>{command.last_error && <p>{command.last_error}</p>}<div className="op-actions"><button className="btn gold" disabled={busy || !canSendCommand(command, data.connection?.write_enabled, supported)} onClick={() => void send(command)}>{translate('manager.clubCreate.createSubmit')}</button>{(command.status === 'pending' && command.attempts === 0 || command.status === 'rejected' && command.attempts === 1 && command.result?.rejected_confirmed) && <button className="btn" disabled={busy} onClick={() => void mutate('post', `/commands/${command.id}/cancel`, { expected_updated_at: command.updated_at }, translate('manager.clubCreate.discarded'))}>{translate('manager.clubCreate.discard')}</button>}</div></div>)}
     {open && <CreateClubForm onClose={() => setOpen(false)} submit={create} />}
   </section>;
 }
-function CreateClubForm({ onClose, submit }) {
+export function CreateClubForm({ onClose, submit }) {
   const [query, setQuery] = useState(''), [manager, setManager] = useState(null), [candidates, setCandidates] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const serial = useRef(0);
   useEffect(() => {
-    const request = ++serial.current; setCandidates([]); setError('');
+    const request = ++serial.current, controller=new AbortController(); setCandidates([]); setError('');
     if (query.trim().length < 3 || manager) { setBusy(false); return; }
     setBusy(true); const timer = setTimeout(() => {
-      void api.get(`/operations/clubs/candidates?query=${encodeURIComponent(query.trim())}`).then(rows => { if (request === serial.current) setCandidates(rows); }).catch(cause => { if (request === serial.current) setError(cause.message); }).finally(() => { if (request === serial.current) setBusy(false); });
+      const path=`/operations/clubs/candidates?query=${encodeURIComponent(query.trim())}`;
+      void api.get(path,{signal:controller.signal}).then(result => { if (request === serial.current) setCandidates(result); }).catch(cause => { if (request === serial.current && cause.name!=='AbortError') setError(clubCreateError(cause)); }).finally(() => { if (request === serial.current) setBusy(false); });
     }, 300);
-    return () => { ++serial.current; clearTimeout(timer); };
+    return () => { ++serial.current; controller.abort(); clearTimeout(timer); };
   }, [query, manager]);
-  return <FormDialog title="Crear club" onClose={onClose} submitLabel="Crear club en CTP" help="El club se crea en CTP al momento con ese manager. No concede acceso al circuito ni verifica el club." submit={async input => {
-    if (!manager) throw new Error('Selecciona quién será el manager del club.');
-    await submit({ name: input.name.trim(), tag: input.tag.trim().toUpperCase(), leader_id: manager.id, reason: input.reason });
-  }}><Field label="Nombre del club"><input name="name" required minLength={3} maxLength={24} /></Field><Field label="Tag" hint="De 2 a 8 letras o números."><input name="tag" required minLength={2} maxLength={8} pattern="[A-Za-z0-9]{2,8}" /></Field>
-    <Field label="Manager del club"><div className="op-actions"><Search size={15} /><input aria-label="Buscar manager del club" value={query} maxLength={40} onChange={event => { setQuery(event.target.value); setManager(null); }} placeholder="Busca su nombre de jugador" /></div></Field>
-    {busy && <p role="status">Buscando jugadores…</p>}{error && <p className="op-error" role="alert">{error}</p>}
-    {manager ? <p className="op-notice">Manager: <strong>{manager.username}</strong></p> : <div className="op-actions">{candidates.map(candidate => <button type="button" className="btn" key={candidate.id} onClick={() => { setManager(candidate); setQuery(candidate.username); }}>{candidate.username}</button>)}</div>}
-    {!busy && !manager && query.trim().length >= 3 && !candidates.length && !error && <p className="muted">No hay jugadores disponibles con ese nombre. El manager debe estar registrado y no pertenecer a otro club.</p>}
-    <Field label="Motivo del alta"><textarea name="reason" required minLength={12} maxLength={500} rows={3} /></Field>
+  return <FormDialog title={translate('manager.clubCreate.createTitle')} onClose={onClose} submitLabel={translate('manager.clubCreate.createSubmit')} cancelLabel={translate('manager.clubCreate.cancel')} closeLabel={translate('manager.clubCreate.close')} help={translate('manager.clubCreate.help')} submit={async input => {
+    if (!manager) throw new Error(translate('manager.clubCreate.selectResponsible'));
+    await submit({ name: input.name.trim(), tag: input.tag.trim().toUpperCase(), leader_id:manager.id, reason:input.reason });
+  }}><Field label={translate('manager.clubCreate.clubName')}><input name="name" required minLength={3} maxLength={24} /></Field><Field label={translate('manager.clubCreate.tag')} hint={translate('manager.clubCreate.tagHint')}><input name="tag" required minLength={2} maxLength={8} pattern="[A-Za-z0-9]{2,8}" /></Field>
+    <Field label={translate('manager.clubCreate.responsible')}><div className="op-actions"><Search size={15} /><input aria-label={translate('manager.clubCreate.searchLabel')} value={query} maxLength={40} onChange={event => { setQuery(event.target.value); setManager(null); }} placeholder={translate('manager.clubCreate.searchPlaceholder')} /></div></Field>
+    {busy && <p role="status">{translate('manager.clubCreate.searching')}</p>}{error && <p className="op-error" role="alert">{error}</p>}
+    {manager ? <p className="op-notice">{translate('manager.clubCreate.selectedResponsible', {name:manager.username})}</p> : <div className="op-actions">{candidates.map(candidate => <button type="button" className="btn" key={candidate.id} onClick={() => { setManager(candidate); setQuery(candidate.username); }}>{candidate.username}</button>)}</div>}
+    {!busy && !manager && query.trim().length >= 3 && !candidates.length && !error && <p className="muted">{translate('manager.clubCreate.noCompetitiveCandidates')}</p>}
+    <Field label={translate('manager.clubCreate.reason')}><textarea name="reason" required minLength={12} maxLength={500} rows={3} /></Field>
   </FormDialog>;
 }

@@ -6,6 +6,8 @@ import { Badge, DataTable, Empty, Field, FormDialog } from './ui.jsx';
 import { dateTime, teamName, label } from './model.js';
 import { DecisionPanel } from './DecisionPanel.jsx';
 import { shouldLeaveDeletedTournament, tournamentPresentationPayload } from './competitionForm.js';
+import TournamentLiveDialog from './TournamentLiveDialog.jsx';
+import { translate } from '../i18n/runtime.js';
 
 const states={borrador:'Borrador',inscripcion_abierta:'Publicado (según ventana de inscripción)',en_curso:'En curso',finalizado:'Finalizado',cancelado:'Cancelado'};
 const localDate=value=>{if(!value)return '';const d=new Date(value);return Number.isFinite(d.getTime())?new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16):'';};
@@ -14,6 +16,9 @@ const matchTitle=match=>`${teamName(match.team_a_name||match.team_a||match.entra
 export function CompetitionPanel({data,reload,mutate,can,me}) {
   // Referees read tournaments; creating, editing and publishing stay with Coordinación.
   const manage=Boolean(me?.is_admin||can?.('operaciones'));
+  // Live corrections (results, bracket, participants) apply at once for admins and referees.
+  const liveControl=Boolean(me?.is_admin||can?.('arbitraje'));
+  const [liveOpen,setLiveOpen]=useState(false);
   const [params,setParams]=useSearchParams();
   const target=params.get('tournament');
   const [result,setResult]=useState(null);
@@ -59,7 +64,7 @@ export function CompetitionPanel({data,reload,mutate,can,me}) {
       ]}/><div className="op-actions"><button className="btn" disabled={busy||!pages.length} onClick={()=>{setCursor(pages[pages.length-1]);setPages(p=>p.slice(0,-1));}}>Anterior</button><span>Página {pages.length+1}</span><button className="btn" disabled={busy||!result.next_cursor} onClick={()=>{setPages(p=>[...p,cursor]);setCursor(result.next_cursor);}}>Siguiente</button></div></>}
       <DecisionPanel data={data} resourceType="tournament" reload={reload} onChanged={afterDecision}/></>}
       {tournament&&<>
-        <section className="op-card"><div className="op-section-title"><Badge value={tournament.status}>{tournamentState(tournament).label}</Badge>{manage&&<div className="op-actions"><button className="btn" disabled={blocked('tournament.update')} onClick={()=>setDialog({type:'tournament.update',row:tournament})}>{structureLocked?'Editar identidad y contacto':'Editar torneo'}</button><button className="btn" disabled={blocked('tournament.status')} onClick={()=>setDialog({type:'tournament.status',row:tournament})}>Cambiar estado</button></div>}</div><dl className="op-settings"><div><dt>Inicio</dt><dd>{dateTime(tournament.start_at)}</dd></div><div><dt>Cierre de inscripción</dt><dd>{dateTime(tournament.registration_close_at)}</dd></div><div><dt>Formato</dt><dd>{tournament.has_group_stage?'Grupos y eliminatorias':'Eliminatorias directas'}</dd></div><div><dt>Plantilla</dt><dd>{tournament.roster_min}–{tournament.roster_max} jugadores</dd></div><div><dt>Participantes</dt><dd>{tournament.min_participants}–{tournament.max_participants}</dd></div><div><dt>Series</dt><dd>Grupos BO{tournament.best_of_groups??'—'} · Playoffs BO{tournament.best_of_playoffs??'—'} · Final BO{tournament.best_of_final??'—'}</dd></div></dl>{tournament.description&&<p>{tournament.description}</p>}<details><summary>Reglamento</summary><p style={{whiteSpace:'pre-wrap'}}>{tournament.rules||'Sin reglamento guardado.'}</p></details></section>
+        <section className="op-card"><div className="op-section-title"><Badge value={tournament.status}>{tournamentState(tournament).label}</Badge>{liveControl&&<button className="btn primary" onClick={()=>setLiveOpen(true)}>{translate('manager.tournamentLive.open')}</button>}{manage&&<div className="op-actions"><button className="btn" disabled={blocked('tournament.update')} onClick={()=>setDialog({type:'tournament.update',row:tournament})}>{structureLocked?'Editar identidad y contacto':'Editar torneo'}</button><button className="btn" disabled={blocked('tournament.status')} onClick={()=>setDialog({type:'tournament.status',row:tournament})}>Cambiar estado</button></div>}</div><dl className="op-settings"><div><dt>Inicio</dt><dd>{dateTime(tournament.start_at)}</dd></div><div><dt>Cierre de inscripción</dt><dd>{dateTime(tournament.registration_close_at)}</dd></div><div><dt>Formato</dt><dd>{tournament.has_group_stage?'Grupos y eliminatorias':'Eliminatorias directas'}</dd></div><div><dt>Plantilla</dt><dd>{tournament.roster_min}–{tournament.roster_max} jugadores</dd></div><div><dt>Participantes</dt><dd>{tournament.min_participants}–{tournament.max_participants}</dd></div><div><dt>Series</dt><dd>Grupos BO{tournament.best_of_groups??'—'} · Playoffs BO{tournament.best_of_playoffs??'—'} · Final BO{tournament.best_of_final??'—'}</dd></div></dl>{tournament.description&&<p>{tournament.description}</p>}<details><summary>Reglamento</summary><p style={{whiteSpace:'pre-wrap'}}>{tournament.rules||'Sin reglamento guardado.'}</p></details></section>
         {manage&&<details className="op-card op-details"><summary>Otras gestiones del torneo</summary><div className="op-actions">{[['tournament.notify','Avisar a participantes'],['tournament.schedule_rounds','Programar todas las rondas'],['tournament.unpublish','Despublicar fase'],['tournament.points','Recalcular puntos'],['tournament.delete','Eliminar torneo']].map(([type,title])=><button key={type} className="btn" disabled={blocked(type)} onClick={()=>setDialog({type,row:tournament})}>{title}</button>)}</div><p className="muted">La eliminación exige el nombre exacto y que todos los resultados estén anulados. Una fase ya disputada no se puede ocultar.</p></details>}
         <DecisionPanel data={data} resourceType="tournament" resourceId={tournament.id} reload={reload} onChanged={afterDecision}/>
         <section className="op-card"><h3>Inscripciones</h3><DataTable rows={result.participants||[]} empty="Todavía no hay inscripciones" columns={[
@@ -77,6 +82,7 @@ export function CompetitionPanel({data,reload,mutate,can,me}) {
           ]}/>{(result.matches||[]).filter(m=>pending('fixture',m.id)).map(m=><DecisionPanel key={m.id} data={data} resourceType="fixture" resourceId={m.id} reload={reload} onChanged={load}/>)}</section>
       </>}
     </>}
+    {liveOpen&&tournament&&<TournamentLiveDialog tournament={tournament} onClose={()=>setLiveOpen(false)} onChanged={load}/>}
     {dialog&&(['tournament.create','tournament.update'].includes(dialog.type)?<TournamentForm type={dialog.type} row={dialog.row} locked={Boolean(structureLocked)} games={result?.games||[]} clubs={data.clubs||[]} onClose={()=>setDialog(null)} prepare={prepare}/>:<TournamentActionDialog action={dialog} onClose={()=>setDialog(null)} prepare={prepare}/>)}
   </>;
 }

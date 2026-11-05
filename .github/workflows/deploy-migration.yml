@@ -1,0 +1,113 @@
+name: Manager isolated new-VPS preparation
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment on the isolated new VPS
+        type: choice
+        options: [pre, prod]
+        required: true
+      source_commit:
+        description: Exact current PRE commit for pre, or MAIN commit for prod
+        type: string
+        required: true
+      dry_run:
+        description: Check restricted SSH only; do not publish
+        type: boolean
+        required: true
+        default: true
+      confirm:
+        description: For staging publication only, type PREPARAR NUEVA VPS
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manager-new-vps-${{ inputs.environment }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  stage:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment == 'prod' && 'Production' || 'Preview' }}
+    env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      PREPARE_CONFIRMATION: ${{ inputs.confirm }}
+    steps:
+      - name: Validate closed migration inputs
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_ENVIRONMENT" == pre || "$TARGET_ENVIRONMENT" == prod ]] || exit 1
+          [[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          [[ "$DRY_RUN" == true || ( "$DRY_RUN" == false && "$PREPARE_CONFIRMATION" == 'PREPARAR NUEVA VPS' ) ]] || {
+            echo '::error::Staging publication requires dry_run=false and PREPARAR NUEVA VPS.'; exit 1;
+          }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+      - name: Bind the package to the actual current source branch
+        run: |
+          set -euo pipefail
+          branch=pre; [[ "$TARGET_ENVIRONMENT" == pre ]] || branch=main
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || exit 1
+          [[ "$(git rev-parse "refs/remotes/origin/$branch")" == "$SOURCE_COMMIT" ]] || {
+            echo '::error::Source changed; refresh and review the exact current branch before staging.'; exit 1;
+          }
+          echo "CHECKED_SOURCE_REF=refs/heads/$branch" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require only isolated migration target settings
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_MIGRATION_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_MIGRATION_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_MIGRATION_KNOWN_HOSTS }}
+        run: |
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$VPS_HOST" && -n "$VPS_KNOWN_HOSTS" ]] || {
+            echo '::error::Missing isolated migration settings; serving-environment settings are never used as fallback.'; exit 1;
+          }
+      - uses: ./.github/actions/manager-checks
+      - name: Prepare production dependency tree
+        run: |
+          set -euo pipefail
+          mkdir -p output/runtime
+          cp package.json package-lock.json output/runtime/
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix output/runtime
+      - name: Package the verified checked-out source
+        run: |
+          GITHUB_REF="$CHECKED_SOURCE_REF" GITHUB_SHA="$SOURCE_COMMIT" node scripts/package-vps.mjs --out output/ctp-manager.tar.gz --deps output/runtime
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: manager-new-vps-${{ inputs.environment }}-${{ inputs.source_commit }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ctp-manager.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+      - name: Check the new VPS through its dedicated identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_MIGRATION_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_MIGRATION_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_MIGRATION_KNOWN_HOSTS }}
+        run: GITHUB_REF="$CHECKED_SOURCE_REF" GITHUB_SHA="$SOURCE_COMMIT" bash scripts/deploy-vps.sh "$TARGET_ENVIRONMENT" check
+      - name: Stage on the new VPS only
+        if: inputs.dry_run == false
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MANAGER_MIGRATION_SSH_KEY }}
+          VPS_HOST: ${{ vars.MANAGER_MIGRATION_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.MANAGER_MIGRATION_KNOWN_HOSTS }}
+        run: |
+          GITHUB_REF="$CHECKED_SOURCE_REF" GITHUB_SHA="$SOURCE_COMMIT" DEPLOY_DRY_RUN=false DEPLOY_CONFIRMATION='PUBLICAR PRODUCCION' bash scripts/deploy-vps.sh "$TARGET_ENVIRONMENT" deploy

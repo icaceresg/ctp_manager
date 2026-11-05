@@ -18,7 +18,6 @@ import { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffA
 import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import { CLUB_PROFILE_ERRORS, clubProfilePayload, clubProfileResponse } from './club-profile-contract.js';
-import { teamAdministratorPayload, teamAdministratorResponse, teamAdministratorProblem } from './team-administrator-contract.js';
 import {
   DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS, USER_DELETE_UNCERTAIN_MESSAGE,
   disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
@@ -115,7 +114,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  if (body.action !== 'admin_service' || !['twitch','crm','users','clubs','tickets','discipline','team_administrators'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  if (body.action !== 'admin_service' || !['twitch','crm','users','clubs','tickets','discipline'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
   try {
@@ -127,13 +126,6 @@ async function ownerServiceFailure(body, response) {
       chunks.push(Buffer.from(part.value));
     }
     const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (body.service === 'team_administrators') {
-      const message = teamAdministratorProblem(error.team_administrators_error);
-      const status = error.team_administrators_error === 'teams.administration.unavailable' ? 502
-        : error.team_administrators_error === 'teams.administration.forbidden' ? 403
-        : response.status === 409 || ['teams.administration.conflict','teams.administration.requestConflict'].includes(error.team_administrators_error) ? 409 : 422;
-      return message ? integrationError(status, message) : null;
-    }
     if (body.service === 'crm') {
       const message = typeof error?.crm_error === 'string' && Object.hasOwn(CRM_ERRORS, error.crm_error) ? CRM_ERRORS[error.crm_error] : null;
       return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
@@ -761,14 +753,6 @@ export async function updateCtpClub(user, id, body) {
   if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
   const payload = clubProfilePayload(id, body);
   return clubProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'clubs', payload }), payload.team_id);
-}
-
-/** Team administration is separate from competitive membership and global staff access. */
-export async function teamAdministratorService(user, action, target, body = {}) {
-  if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'manager.teamAdmins.forbidden');
-  if (['set','convert'].includes(action) && !config.writes) throw integrationError(403, 'manager.teamAdmins.writesDisabled');
-  const payload = teamAdministratorPayload(action, target, body);
-  return teamAdministratorResponse(await request({ action:'admin_service', actor_id:getOperatorIdentity(user.id), service:'team_administrators', payload }), payload);
 }
 
 export async function updateCtpUserProfile(user, id, body) {

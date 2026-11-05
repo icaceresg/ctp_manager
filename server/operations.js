@@ -575,7 +575,7 @@ export function prepareManualClubCommand(user, input) {
   return tx(() => {
     for (const row of db.prepare("SELECT * FROM operation_commands WHERE action='club.create' AND status IN('pending','sending','failed','rejected')").all()) {
       const previous = parse(row.payload, {});
-      if (payload.leader_id && previous.leader_id === payload.leader_id || previous.name === payload.name) {
+      if (previous.leader_id === payload.leader_id || previous.name === payload.name) {
         if (row.payload === json(payload) && row.actor_id === user.id) return { command: commandView(row) };
         throw new HttpError(409, 'Ya hay una propuesta de alta para ese club o líder. Revisa su estado.');
       }

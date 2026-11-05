@@ -1,3 +1,23 @@
+# Retirada de la multigestión
+
+Decisión del 5 de noviembre de 2026: una cuenta gestiona su único club mediante
+la pertenencia habitual al equipo. Para gestionar otro club se utiliza otra
+cuenta. La función de responsables administrativos independientes queda retirada.
+
+El Manager conserva la creación normal con un líder registrado y los controles
+del servidor para impedir que esa cuenta pertenezca a otro equipo. Ya no ofrece
+conversión, asignación de responsables, directorio de varios clubes ni creación
+sin líder competitivo. Las rutas específicas de responsables no existen.
+
+Las propuestas administrativas antiguas siguen en el historial local; no pueden
+reenviarse a CTP y, cuando su estado permite descartarlas, conservan esa acción.
+La retirada no borra jugadores, pases, inscripciones, auditoría ni recibos.
+Los permisos de staff para arbitraje y administración general son independientes
+de la pertenencia a un equipo y se conservan.
+
+El contenido siguiente documenta el diseño histórico retirado, no una capacidad
+disponible para una nueva publicación.
+
 # Responsables administrativos de varios equipos
 
 El responsable administrativo puede gestionar Principal, Academy y Femenino sin ocupar plaza competitiva. Cada equipo conserva sus integrantes, capitán, historial, puntos, pases e inscripciones. Esta asignación no concede acceso global al Manager ni al staff de CTP.

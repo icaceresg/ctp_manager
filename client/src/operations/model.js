@@ -81,6 +81,7 @@ export function rosterRows(roster) {
   return [];
 }
 export function canSendCommand(command, writeEnabled, supported, now = Date.now()) {
+  if ((command.type || command.action) === 'club.create' && (!command.payload?.leader_id || Object.hasOwn(command.payload, 'administrator_id'))) return false;
   if (!writeEnabled || !supported || ['acknowledged', 'sent', 'cancelled', 'rejected'].includes(command.status)) return false;
   if (command.status === 'sending' && now - command.updated_at < 30000) return false;
   // A lost ACK can remove the source from the pending feed. The same command ID

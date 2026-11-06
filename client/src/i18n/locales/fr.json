@@ -885,5 +885,13 @@
   "manager.tournamentScenario.error.order": "Vérifiez l’ordre des phases et du tableau. Chaque match doit commencer après les matchs qui en déterminent les participants.",
   "manager.tournamentScenario.error.conflict": "Le tournoi ou le scénario a changé. Rechargez-le avant d’enregistrer.",
   "manager.tournamentScenario.error.forbidden": "Votre compte ne peut pas enregistrer ce scénario.",
-  "manager.tournamentScenario.error.unavailable": "Le scénario n’a pas pu être chargé ou enregistré."
+  "manager.tournamentScenario.error.unavailable": "Le scénario n’a pas pu être chargé ou enregistré.",
+  "manager.teamRoster.archiveTitle": "Archiver le club",
+  "manager.teamRoster.archiveHelp": "Le club sera masqué et ses joueurs pourront rejoindre une autre équipe. Les points, résultats, inscriptions, pass et paiements sont conservés. CTP pourra le restaurer.",
+  "manager.teamRoster.archive": "Archiver le club",
+  "manager.teamRoster.toast.archived": "Le club {name} a été archivé.",
+  "manager.teamRoster.error.activeCompetition": "Le club a des inscriptions actives ou des défis en attente. Résous-les avant de l’archiver.",
+  "manager.teamRoster.error.inactive": "Le club est archivé et ne peut plus être modifié. Actualise la liste.",
+  "manager.teamRoster.error.restoreConflict": "L’effectif ne peut pas être restauré car un ou plusieurs joueurs appartiennent déjà à une autre équipe.",
+  "manager.teamRoster.error.directDeleteForbidden": "Archive le club pour conserver ses points et son historique."
 }

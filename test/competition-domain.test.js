@@ -34,6 +34,19 @@ test('competition creation validates field allowlist, dates, limits and nullable
   assert.equal(competitionPayload('tournament.create',{...tournament,kind:'fuera_de_circuito',season:null}).season,null);
   assert.throws(()=>competitionPayload('tournament.generate',{phase:'groups',round_minutes:14}),{status:400});
 });
+test('tournament proposals preserve exact round formats, manual scheduling and points credits',()=>{
+  const settings={seeding_mode:'random',best_of_by_round:{groups:1,128:3,16:5,2:9,third:1},allow_roster_edits_after_close:true,
+    points_credit_season:2,points_by_finish:{champion:900,runnerUp:700,third:450,fourth:400,round128:10,groups:0}};
+  assert.deepEqual(competitionPayload('tournament.update',settings),settings);
+  assert.deepEqual(competitionPayload('tournament.generate',{phase:'groups'}),{phase:'groups'});
+  assert.deepEqual(competitionPayload('tournament.update',{draw_visible_at:null}),{draw_visible_at:null});
+  assert.equal(competitionPayload('tournament.update',{draw_visible_at:'2026-11-14T10:45:00+01:00'}).draw_visible_at,'2026-11-14T09:45:00.000Z');
+  assert.throws(()=>competitionPayload('tournament.update',{draw_visible_at:'2026-11-14T09:45:00Z',registration_close_at:'2026-11-14T10:00:00Z'}),{status:400,message:'tournaments.staff.drawVisibilityWindow'});
+  for(const invalid of [{seeding_mode:'roster'},{best_of_by_round:{16:4}},{best_of_by_round:{10:3}},{best_of_by_round:null},{allow_roster_edits_after_close:'true'},
+    {points_credit_season:'2'},{points_by_finish:{champion:-1}},{points_by_finish:{groups:1.5}},{points_by_finish:{unknown:1}}]){
+    assert.throws(()=>competitionPayload('tournament.update',invalid),{status:400});
+  }
+});
 test('tournament preparation requires capabilities and permission, preserves official data and rejects stale versions',()=>{
   operations.rememberCompetitionData('tournament',{tournament,participants:[],matches:[]});
   const input={type:'tournament.status',target_id:tournament.id,expected_version:5,payload:{status:'inscripcion_abierta',reason:'Abrimos la inscripción de la temporada'}};

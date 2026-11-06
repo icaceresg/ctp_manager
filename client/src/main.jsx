@@ -26,7 +26,9 @@ import { OperationsPage } from './operations/OperationsPage.jsx';
 import AdministrationPage from './pages/AdministrationPage.jsx';
 import RankedMonitorPage from './pages/RankedMonitorPage.jsx';
 import RankedLobbyPage from './pages/RankedLobbyPage.jsx';
+import TournamentLiveMatchPage from './operations/TournamentLiveMatchPage.jsx';
 import RankedStatisticsPage from './pages/RankedStatisticsPage.jsx';
+import { RankedSeasonsPage } from './operations/RankedSeasonPanel.jsx';
 import PlayerWorkspacePage from './pages/PlayerWorkspacePage.jsx';
 import WebPublicationPage from './pages/WebPublicationPage.jsx';
 import MetricsPage from './pages/MetricsPage.jsx';
@@ -117,6 +119,7 @@ function App() {
           <Route path="operaciones" element={<Navigate to="/operaciones/jornada" replace />} />
           <Route path="operaciones/:view" element={hasOperations ? <OperationsPage /> : <Navigate to={home} replace />} />
           <Route path="operaciones/partidos/:matchId" element={hasOperations ? <OperationsPage /> : <Navigate to={home} replace />} />
+          <Route path="operaciones/torneos/:tournamentId/partidos/:matchId" element={hasOperations ? <TournamentLiveMatchPage /> : <Navigate to={home} replace />} />
           <Route path="calendario" element={guard('calendario', <CalendarPage />)} />
           <Route path="escaleta" element={guard('escaleta', <RundownPage />)} />
           <Route path="escaleta/:id" element={guard('escaleta', <RundownPage />)} />
@@ -132,6 +135,7 @@ function App() {
           <Route path="jugadores/:userId" element={canManageRanked(me)?<PlayerWorkspacePage/>:<Navigate to={home} replace/>}/>
           <Route path="ranked/monitor" element={canManageRanked(me) ? <RankedMonitorPage /> : <Navigate to={home} replace />} />
           <Route path="ranked/estadisticas" element={canManageRanked(me) ? <RankedStatisticsPage /> : <Navigate to={home} replace />} />
+          <Route path="ranked/temporadas" element={me.is_admin ? <RankedSeasonsPage /> : <Navigate to={home} replace />} />
           <Route path="ranked/partidas/:lobbyId" element={canManageRanked(me) ? <RankedLobbyPage /> : <Navigate to={home} replace />} />
           <Route path="crm" element={me.is_admin ? <Navigate to="/crm/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="crm/:section" element={me.is_admin ? <CrmPage /> : <Navigate to={home} replace />} />

@@ -45,9 +45,9 @@ export function WebLink({ match, origin }) {
   const href = safeWebUrl(origin, match?.web_path);
   return href ? <a href={href} className="btn" target="_blank" rel="noopener noreferrer">Abrir en CTP <ArrowUpRight size={14} /></a> : null;
 }
-export function DataTable({ rows, columns, empty = 'No hay registros en esta vista.', emptyDetail = 'Los datos aparecerán cuando se sincronicen o se registren desde CTP.' }) {
+export function DataTable({ rows, columns, empty = 'No hay registros en esta vista.', emptyDetail = 'Los datos aparecerán cuando se sincronicen o se registren desde CTP.', regionLabel = 'Tabla de datos · desliza para ver todas las columnas' }) {
   if (!rows.length) return <Empty title={empty}>{emptyDetail}</Empty>;
-  return <div className="op-table-wrap" role="region" aria-label="Tabla de datos · desliza para ver todas las columnas" tabIndex={0}><table className="op-table"><thead><tr>{columns.map((c) => <th key={c.key} scope="col">{c.title}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={r.id ?? i}>{columns.map((c) => <td key={c.key}>{c.render ? c.render(r) : r[c.key] ?? '—'}</td>)}</tr>)}</tbody></table></div>;
+  return <div className="op-table-wrap" role="region" aria-label={regionLabel} tabIndex={0}><table className="op-table"><thead><tr>{columns.map((c) => <th key={c.key} scope="col">{c.title}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={r.id ?? i}>{columns.map((c) => <td key={c.key}>{c.render ? c.render(r) : r[c.key] ?? '—'}</td>)}</tr>)}</tbody></table></div>;
 }
 export function StatsTable({ players, objectiveLabel = 'Objetivo' }) {
   return <DataTable rows={players} columns={[

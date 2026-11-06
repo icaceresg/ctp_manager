@@ -5,6 +5,7 @@ import { useApp } from '../context.jsx';
 import { Badge, Empty } from './ui.jsx';
 import { canSendCommand, dateTime, label } from './model.js';
 import { actionLabel } from './actionLabels.js';
+import { competitionErrorMessage } from './competitionForm.js';
 
 export function DecisionPanel({data,resourceType,resourceId,reload,onChanged}) {
   const [params,setParams]=useSearchParams();
@@ -26,7 +27,7 @@ export function DecisionPanel({data,resourceType,resourceId,reload,onChanged}) {
       await reload?.();await onChanged?.(command,action);
       toast(action==='send'?'CTP ha confirmado la decisión.':'Propuesta descartada.');
       if(result.sync_pending)setError('CTP ha confirmado la decisión. La lectura de la nueva revisión está pendiente; sincroniza para actualizar las cifras.');
-    }catch(err){setError(err.message);}finally{setBusy(null);}
+    }catch(err){setError(competitionErrorMessage(err.message));}finally{setBusy(null);}
   }
   if(!commands.length)return resourceId?null:<Empty title="No hay decisiones preparadas">Las propuestas de arbitraje y competición aparecerán aquí antes de su entrega a CTP.</Empty>;
   return <section className="op-card op-decisions"><h3>Decisiones y entrega a CTP</h3><p className="muted">Una propuesta solo cambia el dato oficial cuando CTP confirma su aplicación.</p>
@@ -43,7 +44,7 @@ export function DecisionPanel({data,resourceType,resourceId,reload,onChanged}) {
         <div className="op-case-meta"><span>Autor: {data.staff?.find(s=>s.id===command.actor_id)?.name||`Staff #${command.actor_id||'—'}`}</span><span>{dateTime(command.created_at)}</span><span>Versión oficial {command.expected_version??'—'}</span></div>
         {(payload.decision||payload.status||payload.phase)&&<p className="muted">Decisión: {label(payload.decision||payload.status||payload.phase)}</p>}
         {payload.players&&<p className="muted">{payload.players.length} fila(s) con cifras propuestas para una nueva revisión.</p>}{command.result?.revision_id&&<p className="op-notice">CTP ha creado una nueva revisión. Las cifras de la revisión original se conservan en el historial.</p>}
-        {command.last_error&&<p className="op-error">{command.last_error}</p>}
+        {command.last_error&&<p className="op-error">{competitionErrorMessage(command.last_error)}</p>}
         {pending&&<div className="op-actions">{me.is_admin?<button className="btn primary" disabled={Boolean(busy)||!canSendCommand(command,connection.write_enabled,supported(type))} onClick={()=>act(command,'send')}>{busy===command.id?'Procesando…':'Enviar decisión a CTP'}</button>:<span className="muted">Un administrador autorizado debe enviar esta propuesta.</span>}{canCancel&&<button className="btn" disabled={Boolean(busy)} onClick={()=>act(command,'cancel')}>Descartar propuesta</button>}</div>}
         {pending&&(!connection.write_enabled||!supported(type))&&<p className="op-notice">{!connection.write_enabled?'El envío oficial está desactivado en esta instalación.':'CTP todavía no anuncia esta acción.'}</p>}
         <details className="op-details"><summary>Detalle de la propuesta · {command.id.slice(0,8)}</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(payload,null,2)}</pre><small>{command.attempts} intento(s). Se conserva el mismo identificador en los reintentos.</small></details>

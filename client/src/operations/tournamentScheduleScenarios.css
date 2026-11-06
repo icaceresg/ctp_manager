@@ -1,0 +1,11 @@
+.op-scenario { border-top: 1px solid var(--border); padding-block: 12px; }
+.op-scenario > summary { display: flex; gap: 8px; align-items: center; cursor: pointer; color: var(--accent-text); }
+.op-scenario > summary::before { content: ''; border: solid currentColor; border-width: 0 1px 1px 0; padding: 3px; transform: rotate(-45deg); }
+.op-scenario[open] > summary::before { transform: rotate(45deg); }
+.op-scenario-body { display: grid; gap: 12px; margin-top: 12px; }
+.op-scenario-count { max-width: 14rem; }
+.op-scenario-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); }
+.op-scenario-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.op-scenario-fixtures { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: 10px; }
+.op-scenario-fixture { padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.op-scenario-actions { justify-content: flex-end; }

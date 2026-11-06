@@ -17,7 +17,6 @@ import { HistoryPanel } from './HistoryPanel.jsx';
 import { DecisionPanel } from './DecisionPanel.jsx';
 import { GuardPanel } from './GuardPanel.jsx';
 import { MatchControlPanel, RefereeMatchQueue } from './MatchControlPanel.jsx';
-import { RankedSeasonPanel } from './RankedSeasonPanel.jsx';
 import { matchReturnPath } from '../navigation.js';
 import './operations.css';
 import { workspaceRequest, workspacePageParams, workspaceFirstPageParams } from './workspaceQuery.js';
@@ -99,7 +98,7 @@ export function OperationsPage() {
     {error && <div className="op-error" role="alert"><CircleAlert size={18} /><span>{error}{data ? ' Se conserva la última consulta.' : ''}</span><button className="btn" onClick={()=>params.has('op_page')||params.has('op_match_page')?setParams(workspaceFirstPageParams,{replace:true}):reload()}>{params.has('op_page')||params.has('op_match_page')?'Volver a la primera página':'Reintentar'}</button></div>}
     {loading ? <div className="op-loading"><Spinner size={24} /> Cargando operaciones…</div> : !data ? <Empty title="No se han podido cargar las operaciones">Comprueba la conexión con el Manager y vuelve a intentarlo.</Empty> : matchId ? <MatchDossier key={matchId} id={matchId} {...props} /> : <>
       {view === 'jornada' && <StaffDesk {...props} />}
-      {view === 'torneos' && <><CompetitionPanel {...props} /><RankedSeasonPanel {...props} /></>}
+      {view === 'torneos' && <CompetitionPanel {...props} />}
       {view === 'historico' && <HistoryPanel {...props} />}
       {view === 'decisiones' && <DecisionPanel {...props} />}
       {view === 'incidencias' && <IncidentsPanel {...props} />}

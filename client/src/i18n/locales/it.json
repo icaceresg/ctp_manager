@@ -846,6 +846,8 @@
   "tournaments.staff.drawBeforeClose": "Pubblica il tabellone dopo la chiusura delle iscrizioni.",
   "tournaments.staff.drawVisibilityWindow": "Il tabellone deve diventare visibile tra la chiusura delle iscrizioni e l’inizio del torneo.",
   "tournaments.staff.drawVisibilityLocked": "L’orario di pubblicazione è bloccato perché il tabellone è visibile o il torneo è già iniziato.",
+  "tournaments.staff.directDrawIncomplete": "Completa tutti i posti del primo turno prima di pubblicare il tabellone.",
+  "tournaments.staff.directDrawChanged": "Le iscrizioni o le formazioni sono cambiate. Controlla il tabellone prima di pubblicarlo.",
   "manager.tournamentSettings.draw_visible_at": "Tabellone visibile dalle",
   "manager.tournamentSettings.drawVisibilityHelp": "Ora di Madrid. Scegli un orario tra la chiusura delle iscrizioni e l’inizio. Se lasci il campo vuoto, il tabellone approvato sarà visibile all’inizio del torneo.",
   "manager.tournamentLive.registration.pendingSummary": "Formazioni da completare ({count})",

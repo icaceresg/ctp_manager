@@ -846,6 +846,8 @@
   "tournaments.staff.drawBeforeClose": "Publish the draw after registration closes.",
   "tournaments.staff.drawVisibilityWindow": "The draw must become visible between registration closing and the tournament starting.",
   "tournaments.staff.drawVisibilityLocked": "The release time is locked because the draw is visible or play has begun.",
+  "tournaments.staff.directDrawIncomplete": "Fill all first-round slots before publishing the bracket.",
+  "tournaments.staff.directDrawChanged": "Entries or lineups have changed. Review the bracket before publishing it.",
   "manager.tournamentSettings.draw_visible_at": "Draw visible from",
   "manager.tournamentSettings.drawVisibilityHelp": "Madrid time. Choose a time between registration closing and kickoff. Leave it blank to show the approved draw at the start of the tournament.",
   "manager.tournamentLive.registration.pendingSummary": "Pending lineups ({count})",

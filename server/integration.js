@@ -131,7 +131,8 @@ async function ownerServiceFailure(body, response) {
     }
     const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (drawCommand) {
-      if (response.status !== 422 || !['tournaments.staff.drawBeforeClose','tournaments.staff.drawVisibilityWindow','tournaments.staff.drawVisibilityLocked'].includes(error?.draw_error)) return null;
+      if (response.status !== 422 || !['tournaments.staff.drawBeforeClose','tournaments.staff.drawVisibilityWindow','tournaments.staff.drawVisibilityLocked',
+        'tournaments.staff.directDrawIncomplete','tournaments.staff.directDrawChanged'].includes(error?.draw_error)) return null;
       const problem = integrationError(422, error.draw_error);
       problem.remoteRejected = true;
       return problem;

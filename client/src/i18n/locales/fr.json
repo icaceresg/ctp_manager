@@ -846,6 +846,8 @@
   "tournaments.staff.drawBeforeClose": "Publiez le tableau après la clôture des inscriptions.",
   "tournaments.staff.drawVisibilityWindow": "Le tableau doit devenir visible entre la clôture des inscriptions et le début du tournoi.",
   "tournaments.staff.drawVisibilityLocked": "L’heure de publication est verrouillée car le tableau est visible ou le tournoi a commencé.",
+  "tournaments.staff.directDrawIncomplete": "Complétez toutes les places du premier tour avant de publier le tableau.",
+  "tournaments.staff.directDrawChanged": "Les inscriptions ou les compositions ont changé. Vérifiez le tableau avant de le publier.",
   "manager.tournamentSettings.draw_visible_at": "Tableau visible à partir de",
   "manager.tournamentSettings.drawVisibilityHelp": "Heure de Madrid. Choisissez une heure entre la clôture des inscriptions et le début. Si ce champ est vide, le tableau approuvé sera visible au début du tournoi.",
   "manager.tournamentLive.registration.pendingSummary": "Compositions à compléter ({count})",

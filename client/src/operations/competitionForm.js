@@ -1,7 +1,8 @@
 import { translate } from '../i18n/runtime.js';
 
 const RANDOM_SEED_EVENTS = new Set(['inaugural', 'cup-1', 'cup-4', 'cup-7', 'cup-10']);
-const PUBLICATION_ERRORS = ['tournaments.staff.drawBeforeClose', 'tournaments.staff.drawVisibilityWindow', 'tournaments.staff.drawVisibilityLocked'];
+const PUBLICATION_ERRORS = ['tournaments.staff.drawBeforeClose', 'tournaments.staff.drawVisibilityWindow', 'tournaments.staff.drawVisibilityLocked',
+  'tournaments.staff.directDrawIncomplete', 'tournaments.staff.directDrawChanged'];
 
 export function competitionErrorMessage(message, fallback = message) {
   return PUBLICATION_ERRORS.includes(message) ? translate(message) : fallback;

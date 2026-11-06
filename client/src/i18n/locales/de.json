@@ -846,6 +846,8 @@
   "tournaments.staff.drawBeforeClose": "Veröffentliche den Spielplan nach Anmeldeschluss.",
   "tournaments.staff.drawVisibilityWindow": "Der Spielplan muss zwischen Anmeldeschluss und Turnierbeginn sichtbar werden.",
   "tournaments.staff.drawVisibilityLocked": "Die Veröffentlichungszeit ist gesperrt, weil der Spielplan sichtbar ist oder das Turnier begonnen hat.",
+  "tournaments.staff.directDrawIncomplete": "Besetze alle Plätze der ersten Runde, bevor du den Turnierbaum veröffentlichst.",
+  "tournaments.staff.directDrawChanged": "Die Anmeldungen oder Aufstellungen haben sich geändert. Prüfe den Turnierbaum vor der Veröffentlichung.",
   "manager.tournamentSettings.draw_visible_at": "Spielplan sichtbar ab",
   "manager.tournamentSettings.drawVisibilityHelp": "Madrid-Zeit. Wähle eine Uhrzeit zwischen Anmeldeschluss und Beginn. Bleibt das Feld leer, wird der freigegebene Spielplan zum Turnierbeginn sichtbar.",
   "manager.tournamentLive.registration.pendingSummary": "Ausstehende Aufstellungen ({count})",

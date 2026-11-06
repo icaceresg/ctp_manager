@@ -846,6 +846,8 @@
   "tournaments.staff.drawBeforeClose": "Publica el cuadro cuando cierre la inscripción.",
   "tournaments.staff.drawVisibilityWindow": "El cuadro debe hacerse visible entre el cierre de inscripción y el inicio del torneo.",
   "tournaments.staff.drawVisibilityLocked": "La hora de publicación está bloqueada porque el cuadro ya es visible o el torneo ha comenzado.",
+  "tournaments.staff.directDrawIncomplete": "Completa las plazas de la primera ronda antes de publicar el cuadro.",
+  "tournaments.staff.directDrawChanged": "Han cambiado los inscritos o sus alineaciones. Revisa el cuadro antes de publicarlo.",
   "manager.tournamentSettings.draw_visible_at": "Cuadro visible desde",
   "manager.tournamentSettings.drawVisibilityHelp": "Hora de Madrid. Elige una hora entre el cierre de inscripción y el inicio. Si lo dejas vacío, el cuadro se verá al inicio del torneo, una vez autorizado.",
   "manager.tournamentLive.registration.pendingSummary": "Alineaciones pendientes ({count})",

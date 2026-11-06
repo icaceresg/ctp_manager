@@ -52,18 +52,31 @@ test('responses expose only public roster data', () => {
   for (const value of [roster({ revision: 'x' }), roster({ team: { id: randomUUID(), name: 'A', tag: 'A' } }), roster({ members: [{ user_id: user, username: 'x', role: 'admin', joined_at: '2026-11-01' }] })])
     assert.throws(() => teamRosterResponse(value, { action: 'get', team_id: team }));
   assert.throws(() => teamRosterResponse(roster(), { action: 'add', team_id: team }), /unavailable/);
+  assert.equal(read.profile, null, 'a backend without CTP 372 sends no profile');
+});
+
+test('the editable profile crosses as an explicit DTO with signed previews only', () => {
+  const profile = { description: 'Hola', tagline: 'Lema', primary_color: '#D4A843', secondary_color: '#F5F1E8', logo_path: `${team}/x.png`, cover_path: null,
+    logo_url: 'https://pre.playctp.com/storage/v1/object/sign/club-branding/x.png?token=abc', cover_url: null, program: 'team_pass', manager_version: 4, secret: 'leak' };
+  const read = teamRosterResponse(roster({ profile }), { action: 'get', team_id: team });
+  assert.deepEqual(read.profile, { description: 'Hola', tagline: 'Lema', primary_color: '#D4A843', secondary_color: '#F5F1E8', has_logo: true, has_cover: false,
+    logo_url: profile.logo_url, cover_url: null, program: 'team_pass', manager_version: 4 });
+  assert.equal(teamRosterResponse(roster({ profile: { ...profile, logo_url: 'javascript:alert(1)' } }), { action: 'get', team_id: team }).profile.logo_url, null);
+  for (const bad of [{ ...profile, primary_color: 'red' }, { ...profile, manager_version: 0 }, { ...profile, program: 'gold' }, { ...profile, description: 'd'.repeat(2001) }])
+    assert.throws(() => teamRosterResponse(roster({ profile: bad }), { action: 'get', team_id: team }));
 });
 
 test('only known CTP machine codes become messages, all translated in six languages', () => {
   assert.equal(teamRosterProblem('team_roster_full'), 'manager.teamRoster.error.full');
   assert.equal(teamRosterProblem('team_roster_unknown'), null);
   assert.equal(teamRosterProblem('constructor'), null);
-  const source = ['server/team-roster-contract.js', 'server/integration.js', 'client/src/operations/TeamRosterDialog.jsx', 'client/src/pages/AdministrationPage.jsx']
+  const source = ['server/team-roster-contract.js', 'server/integration.js', 'server/club-profile-contract.js', 'client/src/operations/TeamRosterDialog.jsx', 'client/src/pages/AdministrationPage.jsx']
     .map(file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n');
-  const keys = new Set([...source.matchAll(/'(manager\.teamRoster\.[A-Za-z.]+[A-Za-z])'/g)].map(match => match[1]));
+  const keys = new Set([...source.matchAll(/'(manager\.(?:teamRoster|teamAdmin|clubProfile)\.[A-Za-z.]+[A-Za-z])'/g)].map(match => match[1]));
+  for (const key of ['color', 'conflict', 'description', 'image', 'invalid', 'name', 'noChanges', 'tag', 'tagline']) keys.add(`manager.clubProfile.error.${key}`);
   for (const value of Object.values(TEAM_ROSTER_ERRORS)) keys.add(`manager.teamRoster.error.${value}`);
   for (const role of ['lider', 'jugador', 'suplente']) keys.add(`manager.teamRoster.role.${role}`);
-  assert.ok(keys.size > 60);
+  assert.ok(keys.size > 140);
   for (const lang of ['es', 'en', 'it', 'fr', 'pt', 'de']) {
     const catalogue = JSON.parse(fs.readFileSync(new URL(`../client/src/i18n/locales/${lang}.json`, import.meta.url), 'utf8'));
     for (const key of keys) assert.equal(typeof catalogue[key], 'string', `${lang}: ${key}`);

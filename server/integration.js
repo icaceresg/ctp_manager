@@ -757,10 +757,10 @@ export async function getCtpUserProfile(user, id) {
   return userProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'users', payload }), payload.user_id);
 }
 
-/** Administrators correct a club's name and tag; the editor reads it with the `team` admin query. */
+/** Administrators edit a club's profile (identity, description, page branding) from "Gestionar equipo". */
 export async function updateCtpClub(user, id, body) {
-  if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'Esta sección requiere administración CTP.');
-  if (!config.writes) throw integrationError(403, 'Los cambios oficiales están desactivados.');
+  if (!user?.is_admin || (user.auth_mode === 'ctp' && user.ctp_role !== 'admin')) throw integrationError(403, 'manager.clubProfile.error.forbidden');
+  if (!config.writes) throw integrationError(403, 'manager.clubProfile.error.writesDisabled');
   const payload = clubProfilePayload(id, body);
   return clubProfileResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'clubs', payload }), payload.team_id);
 }

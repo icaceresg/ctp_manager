@@ -885,5 +885,13 @@
   "manager.tournamentScenario.error.order": "Überprüfe die Reihenfolge der Phasen und Partien. Jede Partie muss nach den Partien beginnen, aus denen sich ihre Teilnehmer ergeben.",
   "manager.tournamentScenario.error.conflict": "Das Turnier oder Szenario hat sich geändert. Lade es vor dem Speichern neu.",
   "manager.tournamentScenario.error.forbidden": "Dein Konto darf dieses Szenario nicht speichern.",
-  "manager.tournamentScenario.error.unavailable": "Das Szenario konnte nicht geladen oder gespeichert werden."
+  "manager.tournamentScenario.error.unavailable": "Das Szenario konnte nicht geladen oder gespeichert werden.",
+  "manager.teamRoster.archiveTitle": "Club archivieren",
+  "manager.teamRoster.archiveHelp": "Der Club wird ausgeblendet und seine Spieler können einem anderen Team beitreten. Punkte, Ergebnisse, Anmeldungen, Pässe und Zahlungen bleiben erhalten. CTP kann ihn wiederherstellen.",
+  "manager.teamRoster.archive": "Club archivieren",
+  "manager.teamRoster.toast.archived": "Der Club {name} wurde archiviert.",
+  "manager.teamRoster.error.activeCompetition": "Der Club hat aktive Anmeldungen oder offene Herausforderungen. Kläre diese vor der Archivierung.",
+  "manager.teamRoster.error.inactive": "Der Club ist archiviert und kann nicht geändert werden. Aktualisiere die Liste.",
+  "manager.teamRoster.error.restoreConflict": "Der Kader kann nicht wiederhergestellt werden, da mindestens ein Spieler bereits einem anderen Team angehört.",
+  "manager.teamRoster.error.directDeleteForbidden": "Archiviere den Club, um seine Punkte und seinen Verlauf zu erhalten."
 }

@@ -30,6 +30,8 @@ export const TEAM_ROSTER_ERRORS = Object.freeze({
   team_roster_heir_required: 'heirRequired', team_roster_last_member: 'lastMember', team_roster_use_transfer: 'useTransfer',
   team_roster_already_leader: 'alreadyLeader', team_roster_request_missing: 'requestMissing',
   team_roster_request_pending: 'requestPending', team_roster_confirm_mismatch: 'confirmMismatch',
+  'teams.archive.liveObligations': 'activeCompetition', 'teams.archive.inactive': 'inactive',
+  'teams.archive.restoreConflict': 'restoreConflict', 'teams.archive.directDeleteForbidden': 'directDeleteForbidden',
 });
 export function teamRosterProblem(code) {
   return typeof code === 'string' && Object.hasOwn(TEAM_ROSTER_ERRORS, code) ? `manager.teamRoster.error.${TEAM_ROSTER_ERRORS[code]}` : null;
@@ -116,6 +118,12 @@ export function teamRosterResponse(value, payload) {
     max_members: 6,
     revision: value.revision,
   };
+  //391 explicitly adds this field (including null on active clubs). Do not
+  // invent it for legacy backends: their dissolve action is still irreversible.
+  if (Object.hasOwn(team, 'deleted_at')) {
+    if (team.deleted_at !== null && (!date(team.deleted_at) || !/^\d{4}-\d{2}-\d{2}T/.test(team.deleted_at))) fail(502, 'unavailable');
+    result.team.deleted_at = team.deleted_at;
+  }
   if (payload.action !== 'get') {
     if (value.action !== payload.action || typeof value.applied !== 'boolean') fail(502, 'unavailable');
     result.action = value.action; result.applied = value.applied;

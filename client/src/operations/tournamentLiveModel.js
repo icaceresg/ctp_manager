@@ -19,9 +19,9 @@ export const hasResult = match => Boolean(match?.winner_id) || (match?.result_st
 export const isComplete = match => Boolean(match?.entrant_a && match?.entrant_b);
 export const vetoStarted = match => ['running', 'done'].includes(match?.pick_ban_status);
 /** Entrants and series length only change before any result and before the veto. */
-export const slotsLocked = match => hasResult(match) || vetoStarted(match);
-/** CTP refuses to reschedule a match with a firm result. */
-export const scheduleLocked = match => Boolean(match?.winner_id) || match?.result_status === 'confirmed';
+export const slotsLocked = match => Boolean(match?.started) || hasResult(match) || vetoStarted(match);
+/** Leave the schedule intact once the match has started. */
+export const scheduleLocked = slotsLocked;
 
 /**
  * One visual state per match, ordered by how much it needs staff:
@@ -34,7 +34,7 @@ export function matchState(match) {
   if (match.winner_id || match.result_status === 'confirmed') return 'confirmed';
   if (!isComplete(match)) return 'waiting';
   if (match.pick_ban_status === 'running') return 'veto';
-  if (match.pick_ban_status === 'done') return 'playing';
+  if (match.started || match.pick_ban_status === 'done') return 'playing';
   return 'ready';
 }
 export const needsAttention = match => ['disputed', 'reported'].includes(matchState(match));
@@ -72,7 +72,7 @@ export function playoffRounds(matches = []) {
 }
 
 /** Groups with their matchdays and a simple won/lost table from firm results. */
-export function groupStage(matches = []) {
+export function groupStage(matches = [], standingsOrder = {}) {
   const groups = new Map();
   for (const match of matches.filter(isGroupMatch)) {
     const label = match.group_label || '—';
@@ -96,7 +96,12 @@ export function groupStage(matches = []) {
       b.mapsFor += match.score_b ?? 0; b.mapsAgainst += match.score_a ?? 0;
       if (match.winner_id === match.entrant_a.id) { a.wins++; b.losses++; } else { b.wins++; a.losses++; }
     }
-    const standings = [...table.values()].sort((x, y) => y.wins - x.wins || (y.mapsFor - y.mapsAgainst) - (x.mapsFor - x.mapsAgainst) || String(x.entrant.name).localeCompare(String(y.entrant.name)));
+    const order = Array.isArray(standingsOrder?.[label]) ? standingsOrder[label] : [];
+    const positions = new Map(order.map((id, index) => [id, index]));
+    const standings = [...table.values()].sort((x, y) =>
+      (positions.get(x.entrant.id) ?? Infinity) - (positions.get(y.entrant.id) ?? Infinity)
+      || y.wins - x.wins || (y.mapsFor - y.mapsAgainst) - (x.mapsFor - x.mapsAgainst)
+      || String(x.entrant.name).localeCompare(String(y.entrant.name)));
     return { label, rounds, standings, matches: items };
   });
 }

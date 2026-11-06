@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { TOURNAMENT_LIVE_ERRORS, TOURNAMENT_LIVE_MATCH_WRITES, TOURNAMENT_LIVE_WRITES, tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse } from '../server/tournament-live-contract.js';
+import { TOURNAMENT_LIVE_ERRORS, TOURNAMENT_LIVE_MATCH_WRITES, TOURNAMENT_LIVE_WRITES, tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse, tournamentRegistrationRosterRead } from '../server/tournament-live-contract.js';
 
 const tournament = randomUUID(), match = randomUUID(), participant = randomUUID(), team = randomUUID(), revision = 'b'.repeat(32), reason = 'Resolución arbitral en directo';
 const write = extra => ({ expected_revision: revision, reason, ...extra });
@@ -16,13 +16,17 @@ const live = extra => ({
 });
 
 test('every live correction has a bounded payload', () => {
-  assert.deepEqual(Object.keys(TOURNAMENT_LIVE_WRITES), ['set_result', 'revert_result', 'replace_entrant', 'swap_entrants', 'schedule_match', 'set_best_of',
-    'substitute_participant', 'add_participant', 'remove_participant', 'disqualify', 'set_status']);
+  assert.deepEqual(Object.keys(TOURNAMENT_LIVE_WRITES), ['set_result', 'revert_result', 'replace_entrant', 'swap_entrants', 'swap_group_entrants', 'place_group_entrant', 'schedule_match', 'set_best_of',
+    'substitute_participant', 'add_participant', 'add_team_registration', 'set_registration_roster', 'remove_participant', 'disqualify', 'set_status']);
   assert.deepEqual(tournamentLivePayload(tournament, write({ action: 'set_result', match_id: match, maps_a: 2, maps_b: 1 })),
     { action: 'set_result', tournament_id: tournament, expected_revision: revision, reason, match_id: match, maps_a: 2, maps_b: 1 });
   assert.equal(tournamentLivePayload(tournament, write({ action: 'replace_entrant', match_id: match, side: 'b', participant_id: null })).participant_id, null);
   assert.equal(tournamentLivePayload(tournament, write({ action: 'schedule_match', match_id: match, scheduled_at: '' })).scheduled_at, null);
   assert.equal(tournamentLivePayload(tournament, write({ action: 'schedule_match', match_id: match, scheduled_at: '2026-11-06T20:00:00+01:00' })).scheduled_at, '2026-11-06T19:00:00.000Z');
+  assert.deepEqual(tournamentLivePayload(tournament, write({ action: 'set_registration_roster', team_id: team, member_ids: [participant] })),
+    { action: 'set_registration_roster', tournament_id: tournament, expected_revision: revision, reason, team_id: team, member_ids: [participant] });
+  assert.deepEqual(tournamentLivePayload(tournament, write({ action: 'add_team_registration', team_id: team, member_ids: [] })).member_ids, []);
+  assert.deepEqual(tournamentRegistrationRosterRead(tournament, team), { action: 'registration_roster', tournament_id: tournament, team_id: team });
   assert.deepEqual(tournamentLiveRead(tournament), { action: 'get', tournament_id: tournament });
   assert.deepEqual(tournamentLiveQuery(tournament, '  alpha '), { action: 'candidates', tournament_id: tournament, query: 'alpha' });
 });
@@ -34,6 +38,10 @@ test('malformed corrections never reach CTP', () => {
     write({ action: 'remove_participant', participant_id: null }), write({ action: 'disqualify' }),
     write({ action: 'set_best_of', match_id: match, best_of: 2 }), write({ action: 'set_status', status: 'borrador' }),
     write({ action: 'add_participant', entrant_kind: 'club', entrant_id: team }), write({ action: 'schedule_match', match_id: match, scheduled_at: 'mañana' }),
+    write({ action: 'set_registration_roster', team_id: team, member_ids: [participant, participant.toUpperCase()] }),
+    write({ action: 'set_registration_roster', team_id: team, member_ids: [] }),
+    write({ action: 'swap_group_entrants', participant_id: participant }),
+    write({ action: 'place_group_entrant', participant_id: participant, group_label: ' B ' }),
     write({ action: 'set_result', match_id: match, maps_a: 2, maps_b: 0, points: 3 }), write({ action: 'drop' }),
     { action: 'revert_result', match_id: match, reason }, write({ action: 'revert_result', match_id: match, reason: 'corto' }),
   ]) assert.throws(() => tournamentLivePayload(tournament, body), /manager\.tournamentLive\.error\./);
@@ -44,7 +52,7 @@ test('malformed corrections never reach CTP', () => {
 test('the response DTO keeps public names and drops anything else', () => {
   const read = tournamentLiveResponse(live(), tournamentLiveRead(tournament));
   assert.equal(read.participants[0].email, undefined);
-  assert.equal(read.tournament.roster_max, undefined);
+  assert.equal(read.tournament.roster_max, 6);
   assert.deepEqual(read.matches[0].entrant_a, { kind: 'team', id: team, name: 'Alpha' });
   assert.equal(read.matches[0].pick_ban_status, 'none');
   const payload = tournamentLivePayload(tournament, write({ action: 'set_best_of', match_id: match, best_of: 5 }));
@@ -54,6 +62,8 @@ test('the response DTO keeps public names and drops anything else', () => {
   assert.throws(() => tournamentLiveResponse(live({ tournament: { ...live().tournament, id: randomUUID() } }), tournamentLiveRead(tournament)));
   const candidates = tournamentLiveResponse({ items: [{ kind: 'team', id: team, name: 'Alpha', registered: true, email: 'x' }] }, tournamentLiveQuery(tournament, 'alp'));
   assert.deepEqual(candidates, { items: [{ kind: 'team', id: team, name: 'Alpha', registered: true }] });
+  const lineup = tournamentLiveResponse({ members: [{ id: participant, name: 'Captain', selected: true, available: true, activision_id: 'redacted' }] }, tournamentRegistrationRosterRead(tournament, team));
+  assert.deepEqual(lineup, { members: [{ id: participant, name: 'Captain', selected: true, available: true }] });
 });
 
 test('only fixed CTP codes become translated problems, in every catalogue', () => {
@@ -69,7 +79,7 @@ test('only fixed CTP codes become translated problems, in every catalogue', () =
 
 test('referees reach the live routes; the integration relays only live_error codes', () => {
   const routes = fs.readFileSync(new URL('../server/routes/integration.js', import.meta.url), 'utf8');
-  for (const path of ["'/operations/tournaments/:id/live'", "'/operations/tournaments/:id/live/candidates'"]) assert.match(routes, new RegExp(`${path.replace(/[/:]/g, m => '\\' + m)},requireAuth,allow\\('arbitraje'\\)`));
+  for (const path of ["'/operations/tournaments/:id/live'", "'/operations/tournaments/:id/live/candidates'", "'/operations/tournaments/:id/live/registration-roster/:teamId'"]) assert.match(routes, new RegExp(`${path.replace(/[/:]/g, m => '\\' + m)},requireAuth,allow\\('arbitraje'\\)`));
   const integration = fs.readFileSync(new URL('../server/integration.js', import.meta.url), 'utf8');
   assert.match(integration, /body\.service === 'tournament_live'[\s\S]*tournamentLiveProblem\(error\?\.live_error\)/);
   assert.match(integration, /tournamentLiveService[\s\S]*canReferee\(user\)[\s\S]*config\.writes/);

@@ -5,7 +5,7 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'ctp-parity-contract-'));
 process.env.DATA_DIR=temporary;process.env.DB_PATH=path.join(temporary,'contract.db');process.env.CTP_AUTH_MODE='local';
 const{competitionPayload,COMPETITION_ACTIONS}=await import('../server/competition-contract.js');
 const{db}=await import('../server/db.js');
-const{tournamentPresentationPayload,shouldLeaveDeletedTournament}=await import('../client/src/operations/competitionForm.js');
+const{effectiveTournamentSeedMode,tournamentPresentationPayload,shouldLeaveDeletedTournament}=await import('../client/src/operations/competitionForm.js');
 after(()=>{db.close();assert.ok(path.resolve(temporary).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(temporary,{recursive:true,force:true,maxRetries:5});});
 const reason='Revisión independiente de competición';
 test('all competition and referee commands have typed payloads and strip injected fields',()=>{
@@ -55,4 +55,10 @@ test('tournaments are listed from the nearest date to the farthest',async()=>{
  assert.deepEqual(tournamentsByProximity(items,now).map(t=>t.id),['live','tomorrow','next-week','far-future','yesterday','last-month','no-date']);
  assert.deepEqual(tournamentsByProximity([row('b',day),row('a',day)],now).map(t=>t.id),['a','b'],'Same date keeps a stable order');
  assert.deepEqual(items.map(t=>t.id)[0],'far-future','The input is not reordered in place');
+});
+test('a tournament seeding override wins over the circuit default',()=>{
+ assert.equal(effectiveTournamentSeedMode({circuit_code:'inaugural',seeding_mode:null}),'random');
+ assert.equal(effectiveTournamentSeedMode({circuit_code:'cup-7',seeding_mode:'season_points'}),'season_points');
+ assert.equal(effectiveTournamentSeedMode({circuit_code:'cup-8'}),'season_points');
+ assert.equal(effectiveTournamentSeedMode({circuit_code:'cup-8',seeding_mode:'random'}),'random');
 });

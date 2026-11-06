@@ -19,7 +19,8 @@ import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import { CLUB_PROFILE_ERRORS, clubProfilePayload, clubProfileResponse } from './club-profile-contract.js';
 import { teamRosterPayload, teamRosterProblem, teamRosterQuery, teamRosterRead, teamRosterResponse } from './team-roster-contract.js';
-import { tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse } from './tournament-live-contract.js';
+import { tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse, tournamentRegistrationRosterRead } from './tournament-live-contract.js';
+import { tournamentScenarioError, tournamentScenarioPayload, tournamentScenarioResponse } from './tournament-scenario-contract.js';
 import {
   DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS, USER_DELETE_UNCERTAIN_MESSAGE,
   disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
@@ -116,7 +117,8 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  if (body.action !== 'admin_service' || !['twitch','crm','users','clubs','team_roster','tournament_live','tickets','discipline'].includes(body.service) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
+  const drawCommand = body.action === 'command' && ['tournament.create','tournament.update','tournament.publish'].includes(body.type);
+  if ((!drawCommand && (body.action !== 'admin_service' || !['twitch','crm','users','clubs','team_roster','tournament_live','tournament_scenarios','tickets','discipline'].includes(body.service))) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
   try {
@@ -128,6 +130,12 @@ async function ownerServiceFailure(body, response) {
       chunks.push(Buffer.from(part.value));
     }
     const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (drawCommand) {
+      if (response.status !== 422 || !['tournaments.staff.drawBeforeClose','tournaments.staff.drawVisibilityWindow','tournaments.staff.drawVisibilityLocked'].includes(error?.draw_error)) return null;
+      const problem = integrationError(422, error.draw_error);
+      problem.remoteRejected = true;
+      return problem;
+    }
     if (body.service === 'crm') {
       const message = typeof error?.crm_error === 'string' && Object.hasOwn(CRM_ERRORS, error.crm_error) ? CRM_ERRORS[error.crm_error] : null;
       return message ? integrationError(response.status === 409 ? 409 : 422, message) : null;
@@ -144,6 +152,7 @@ async function ownerServiceFailure(body, response) {
       const message = tournamentLiveProblem(error?.live_error);
       return message ? integrationError(error.live_error === 'tournament_live_conflict' ? 409 : 422, message) : null;
     }
+    if (body.service === 'tournament_scenarios') return tournamentScenarioError(error?.scenario_error, response.status);
     if (body.service === 'team_roster') {
       const message = teamRosterProblem(error?.roster_error);
       return message ? integrationError(error.roster_error === 'team_roster_conflict' ? 409 : 422, message) : null;
@@ -782,10 +791,16 @@ export async function teamRosterService(user, operation, teamId, body = {}) {
  * bracket re-advances), entrants, participants, schedule and status. CTP
  * authorizes each call under the operator's own incident.resolve scope.
  */
-export async function tournamentLiveService(user, tournamentId, body = null, query = undefined) {
+export async function tournamentLiveService(user, tournamentId, body = null, query = undefined, eligibleTeamsOnly = false) {
   if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
-  const payload = query !== undefined ? tournamentLiveQuery(tournamentId, query) : body === null ? tournamentLiveRead(tournamentId) : tournamentLivePayload(tournamentId, body);
+  const payload = query !== undefined ? tournamentLiveQuery(tournamentId, query, eligibleTeamsOnly) : body === null ? tournamentLiveRead(tournamentId) : tournamentLivePayload(tournamentId, body);
   if (body !== null && !config.writes) throw integrationError(403, 'manager.tournamentLive.error.writesDisabled');
+  return tournamentLiveResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
+}
+
+export async function tournamentRegistrationRoster(user, tournamentId, teamId) {
+  if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
+  const payload = tournamentRegistrationRosterRead(tournamentId, teamId);
   return tournamentLiveResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
 }
 
@@ -793,6 +808,16 @@ export async function tournamentLiveService(user, tournamentId, body = null, que
  * Referee match page: one match with its pick & ban and chat. Staff write in
  * the chat as themselves and prepare, open, reset or correct the veto directly.
  */
+export async function tournamentScenarioService(user, tournamentId, count, body = null) {
+  if (!user?.is_admin && (body !== null || !user?.sections?.some(section => ['operaciones','arbitraje'].includes(section)))) {
+    throw tournamentScenarioError('forbidden', 403);
+  }
+  if (body !== null && !config.writes) throw tournamentScenarioError('forbidden', 403);
+  const payload = tournamentScenarioPayload(tournamentId, count, body);
+  const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_scenarios', payload });
+  return tournamentScenarioResponse(result, payload);
+}
+
 export async function tournamentLiveMatchService(user, tournamentId, matchId, body = null) {
   if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
   const payload = body === null ? tournamentLiveMatchRead(tournamentId, matchId) : tournamentLiveMatchPayload(tournamentId, matchId, body);

@@ -1,0 +1,42 @@
+.op-competition-back, .op-competition-facts, .op-competition-facts > span, .op-competition-draw-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.op-competition-back { margin-bottom: 6px; }
+.op-competition-facts { flex-wrap: wrap; gap: 10px 20px; color: var(--muted); font-size: 13px; }
+.op-competition-draw { overflow: hidden; }
+.op-competition-info {
+  display: inline-flex;
+  border: 0;
+  padding: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: help;
+}
+.op-competition-info:hover, .op-competition-info:focus-visible { color: var(--text); }
+.op-competition-rules { white-space: pre-wrap; overflow-wrap: anywhere; }
+.op-competition-info { position: relative; }
+.op-competition-tip {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+  width: min(260px, 50vw);
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 400;
+}
+.op-competition-info:hover .op-competition-tip, .op-competition-info:focus .op-competition-tip { display: block; }
+.op-competition-format, .op-competition-format-help { display: grid; gap: 9px; }
+.op-competition-format-summary { display: flex; flex-wrap: wrap; gap: 7px 14px; font-size: 13px; }
+.op-competition-format-summary > span { padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; }
+.op-competition-scenarios { display: flex; gap: 12px 20px; flex-wrap: wrap; margin: 0; }
+.op-competition-scenarios > div { display: grid; gap: 3px; }
+.op-competition-scenarios dt { color: var(--muted); }
+.op-competition-scenarios dd { margin: 0; }

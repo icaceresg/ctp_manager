@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Clock3, MessageSquare, Pencil, RefreshCw, Send, ShieldAlert, Swords, Trophy, Undo2 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
-import { chatCheck, currentStep, playoffRounds, stepChoices, systemNotice, vetoActions, vetoBlocked, vetoSlots, vetoTooEarly } from './tournamentLiveModel.js';
+import { chatCheck, currentStep, playoffRounds, scheduleLocked, stepChoices, systemNotice, vetoActions, vetoBlocked, vetoSlots, vetoTooEarly } from './tournamentLiveModel.js';
 import { ReasonConfirm, StateBadge, clock, clockSeconds, entrantName, matchRoundLabel, statusLabel, t, tournamentLiveError, when } from './tournamentLiveUi.jsx';
 import { ResultForm, RevertForm, ScheduleForm } from './TournamentLiveMatchPanel.jsx';
 import './operations.css';
@@ -113,7 +113,7 @@ export default function TournamentLiveMatchPage() {
           <p className="op-live-meta">{t('match.bestOf', { count: match.best_of })} · {match.scheduled_at ? when(match.scheduled_at) : t('match.unscheduled')}</p>
         </section>
         <VetoBoard detail={detail} busy={busy} act={matchAction} />
-        <MatchCorrections match={liveMatch} matches={live?.matches || []} rounds={rounds} busy={busy} act={liveAction} />
+        <MatchCorrections match={liveMatch} matches={live?.matches || []} rounds={rounds} status={live?.tournament.status} busy={busy} act={liveAction} />
       </div>
       <MatchChat messages={detail.messages} busy={busy} send={body => matchAction({ action: 'chat_send', body })} />
     </div>
@@ -192,12 +192,12 @@ function StepEditor({ step, choices, busy, onSubmit }) {
   </div>;
 }
 
-function MatchCorrections({ match, matches, rounds, busy, act }) {
+function MatchCorrections({ match, matches, rounds, status, busy, act }) {
   const [open, setOpen] = useState(null);
   if (!match) return null;
   const actions = [
     ['result', Trophy, match.winner_id ? t('actions.result.rectify') : t('actions.result.title'), !match.entrant_a || !match.entrant_b ? t('actions.blocked.incomplete') : ''],
-    ['schedule', Clock3, t('actions.schedule.title'), match.winner_id || match.result_status === 'confirmed' ? t('actions.blocked.played') : ''],
+    ['schedule', Clock3, t('actions.schedule.title'), ['cancelado', 'finalizado'].includes(status) ? t('error.closed') : scheduleLocked(match) ? t('error.matchStarted') : ''],
     ['revert', Undo2, t('actions.revert.title'), !match.winner_id ? t('actions.blocked.unplayed') : ''],
   ];
   const done = async body => { const problem = await act(body); if (!problem) setOpen(null); return problem; };

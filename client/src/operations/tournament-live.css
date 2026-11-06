@@ -1,6 +1,7 @@
 /* Live tournament control (admins and referees). */
 .modal.op-live-modal { max-width: min(1480px, 100%); }
 .op-live { display: grid; gap: 14px; padding: 16px 20px 22px; min-width: 0; }
+.op-live.is-inline { padding: 0; }
 .op-live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .op-live-status { border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .op-live-status::after { content: ' ▾'; color: var(--muted); }
@@ -55,8 +56,8 @@
 .is-regular.is-compact .op-live-col.is-link .op-live-cell::after { width: 14px; }
 .is-regular.is-compact .op-live-col.is-fed .op-live-cell > .op-live-card::before { left: -15px; width: 14px; }
 
-.op-live-card { position: relative; display: grid; gap: 3px; text-align: left; padding: 7px 9px; border: 1px solid var(--border-strong); border-left-width: 3px; border-radius: 8px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; transition: border-color .12s, opacity .12s; }
-.op-live-card:hover, .op-live-card:focus-visible { border-color: var(--accent); }
+.op-live-card { position: relative; display: grid; gap: 3px; min-width: 0; text-align: left; padding: 7px 9px; border: 1px solid var(--border-strong); border-left-width: 3px; border-radius: 8px; background: var(--surface); color: inherit; font: inherit; transition: border-color .12s, opacity .12s; }
+.op-live-card:hover, .op-live-card:focus-within { border-color: var(--accent); }
 .op-live-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .op-live-card.is-alert { border-left-color: var(--danger); }
 .op-live-card.is-dim { opacity: .32; }
@@ -65,8 +66,21 @@
 .op-live-side.is-winner { font-weight: 700; color: var(--accent-text); }
 .op-live-side.is-empty { color: var(--muted); font-style: italic; }
 .op-live-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-live-slot-button { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: left; cursor: grab; }
+.op-live-slot-button svg { flex: none; color: var(--muted); }
+.op-live-slot-button:hover, .op-live-slot-button.is-origin { border-color: var(--accent); background: var(--accent-soft); }
+.op-live-slot-button.is-target { border-color: var(--accent); border-style: dashed; cursor: pointer; }
+.op-live-slot-button:active { cursor: grabbing; }
+.op-live-info { display: inline-flex; color: var(--muted); }
+.op-live-swap { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface-2); }
+.op-live-swap > header, .op-live-swap[role='status'] { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .op-live-foot { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 2px; }
 .op-live-foot small { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.op-live-time, .op-live-open-match { display: inline-flex; align-items: center; gap: 4px; min-width: 0; border: 0; border-radius: 4px; background: none; color: var(--text-2); }
+button.op-live-time, .op-live-open-match { padding: 3px 4px; cursor: pointer; }
+button.op-live-time:hover, .op-live-open-match:hover { background: var(--accent-soft); color: var(--accent-text); }
+.op-live-time svg, .op-live-open-match svg { flex: none; }
+.op-live-time, .op-live-time small { overflow: hidden; text-overflow: ellipsis; }
 .op-live-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .op-live-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .op-live-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; display: inline-block; }
@@ -86,10 +100,13 @@
 .op-live-group > header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .op-live-group > header strong { font: 700 14px/1.2 var(--font-display); text-transform: uppercase; letter-spacing: .05em; }
 .op-live-group > header small { color: var(--muted); font-size: 11px; }
+.op-live-group summary { padding: 4px 0; color: var(--text-2); cursor: pointer; font-size: 12px; font-weight: 600; }
 .op-live-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .op-live-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 3px 4px; border-bottom: 1px solid var(--border); }
 .op-live-table td { padding: 4px; border-bottom: 1px solid var(--border); }
 .op-live-matchday { display: grid; gap: 6px; }
+.op-live-matchday-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.op-live-matchday-head small { color: var(--muted); font-size: 11px; }
 .op-live-matchday h4 { margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); }
 
 /* Bracket with the match panel beside it. */

@@ -1,0 +1,21 @@
+.op-live-person.op-registration-person {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name icon" "badges icon";
+  gap: 6px 10px;
+}
+.op-registration-badges { grid-area: badges; display: flex; flex-wrap: wrap; gap: 5px; }
+.op-registration-badges .op-live-tag { text-transform: none; letter-spacing: normal; }
+.op-registration-badges .op-registration-good { color: #86efac; border-color: #407655; }
+.op-registration-badges .op-registration-warning { color: #fcd34d; border-color: #8a6924; }
+.op-registration-pending-summary { display: flex; align-items: center; gap: 8px; }
+.op-registration-names { display: flex; flex-wrap: wrap; gap: 4px 18px; padding-inline-start: 15px; margin: 0; }
+.op-registration-editor { display: grid; gap: 10px; }
+.op-registration-editor > button { justify-self: end; }
+.op-registration-options { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
+.op-registration-options .op-check { margin: 0; }
+.op-registration-info { position: relative; display: inline-flex; color: var(--muted); }
+.op-registration-info > span { display: none; position: absolute; inset: auto auto calc(100% + 4px) 0; z-index: 2; width: min(240px, 70vw); padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 12px; line-height: 1.4; font-weight: 400; text-transform: none; }
+.op-registration-info:is(:hover, :focus-visible) > span { display: block; }
+@media (max-width: 470px) {
+  .op-live-people .op-live-people-list { grid-template-columns: minmax(0, 1fr); }
+}

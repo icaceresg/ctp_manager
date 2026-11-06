@@ -93,7 +93,7 @@ export default function AdministrationPage(){
           <DataTable rows={rows} columns={columns} empty="No hay registros en esta vista" emptyDetail="Prueba otra búsqueda o crea un registro desde las acciones disponibles."/>
           <div className="op-actions"><button className="btn" disabled={loading||page===0} onClick={()=>change('page',page-1)}>Anterior</button><span>Página {page+1}</span><button className="btn" disabled={loading||!(data.has_more??data.total>(page+1)*20)} onClick={()=>change('page',page+1)}>Siguiente</button></div>
         </section>
-        {section==='ranked'&&<div className="op-actions"><Link className="btn" to="/ranked/monitor">Supervisar colas y partidas</Link><Link className="btn" to="/operaciones/torneos">Programar season y reinicio de divisiones</Link></div>}
+        {section==='ranked'&&<div className="op-actions"><Link className="btn" to="/ranked/monitor">Supervisar colas y partidas</Link><Link className="btn" to="/ranked/temporadas">{translate('manager.rankedSeasons.tab')}</Link></div>}
         {section==='integraciones'&&<AdministrationIntegrations/>}
       </>}
       {commands.length>0&&<DecisionPanel data={{...data.operations,commands}} reload={reload} onChanged={reload}/>}

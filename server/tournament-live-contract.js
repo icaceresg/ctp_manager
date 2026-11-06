@@ -17,16 +17,27 @@ const id = value => { if (typeof value !== 'string' || !UUID.test(value)) fail()
 const date = value => typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value));
 const optionalDate = value => value == null ? null : date(value) ? value : fail(502, 'unavailable');
 const optionalInt = value => value == null ? null : Number.isInteger(value) && value >= 0 && value <= 99 ? value : fail(502, 'unavailable');
+const ACCESS_TYPES = ['tournament_ticket', 'team_pass', 'circuit_pass', 'season_pass', 'verified_club', 'individual'];
+const rosterLimit = value => Number.isInteger(value) && value >= 1 && value <= 64 ? value : null;
+const registrationAccess = value => {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > ACCESS_TYPES.length || value.some(kind => !ACCESS_TYPES.includes(kind))) fail(502, 'unavailable');
+  return value;
+};
 
 export const TOURNAMENT_LIVE_WRITES = Object.freeze({
   set_result: ['match_id', 'maps_a', 'maps_b'],
   revert_result: ['match_id'],
   replace_entrant: ['match_id', 'side', 'participant_id'],
   swap_entrants: ['match_id', 'side', 'other_match_id', 'other_side'],
+  swap_group_entrants: ['participant_id', 'other_participant_id'],
+  place_group_entrant: ['participant_id', 'group_label'],
   schedule_match: ['match_id', 'scheduled_at'],
   set_best_of: ['match_id', 'best_of'],
   substitute_participant: ['participant_id', 'entrant_id'],
   add_participant: ['entrant_kind', 'entrant_id'],
+  add_team_registration: ['team_id', 'member_ids'],
+  set_registration_roster: ['team_id', 'member_ids'],
   remove_participant: ['participant_id'],
   disqualify: ['participant_id'],
   set_status: ['status'],
@@ -46,15 +57,21 @@ export const TOURNAMENT_LIVE_ERRORS = Object.freeze({
   tournament_live_closed: 'closed', tournament_live_message_invalid: 'messageInvalid', tournament_live_match_started: 'matchStarted',
   tournament_live_veto_not_ready: 'vetoNotReady', tournament_live_veto_too_early: 'vetoTooEarly', tournament_live_step_missing: 'stepMissing',
   tournament_live_step_open: 'stepOpen', tournament_live_step_unchanged: 'stepUnchanged', tournament_live_map_unavailable: 'mapUnavailable',
+  tournament_live_no_access: 'registrationAccess', tournament_live_registration_closed: 'registrationClosed',
+  tournament_live_roster_locked: 'rosterLocked', tournament_live_roster_invalid: 'rosterInvalid',
+  tournament_live_group_full: 'groupFull',
 });
 export function tournamentLiveProblem(code) {
   return typeof code === 'string' && Object.hasOwn(TOURNAMENT_LIVE_ERRORS, code) ? `manager.tournamentLive.error.${TOURNAMENT_LIVE_ERRORS[code]}` : null;
 }
 
 export function tournamentLiveRead(tournamentId) { return { action: 'get', tournament_id: id(tournamentId) }; }
-export function tournamentLiveQuery(tournamentId, query) {
+export function tournamentRegistrationRosterRead(tournamentId, teamId) {
+  return { action: 'registration_roster', tournament_id: id(tournamentId), team_id: id(teamId) };
+}
+export function tournamentLiveQuery(tournamentId, query, eligibleTeamsOnly = false) {
   if (typeof query !== 'string' || !text(query, 40) || query.trim().length < 3) fail(400, 'query');
-  return { action: 'candidates', tournament_id: id(tournamentId), query: query.trim() };
+  return { action: eligibleTeamsOnly ? 'registration_candidates' : 'candidates', tournament_id: id(tournamentId), query: query.trim() };
 }
 
 /** Only known fields for the chosen action cross the bridge; CTP re-validates every rule. */
@@ -65,7 +82,16 @@ export function tournamentLivePayload(tournamentId, body = {}) {
   if (typeof body.expected_revision !== 'string' || !REVISION.test(body.expected_revision)) fail(409, 'conflict');
   if (!text(body.reason, 500) || body.reason.trim().length < 12) fail(400, 'reason');
   const payload = { action: body.action, tournament_id: id(tournamentId), expected_revision: body.expected_revision, reason: body.reason.trim() };
-  for (const field of ['match_id', 'other_match_id', 'entrant_id']) if (fields.includes(field)) payload[field] = id(body[field]);
+  for (const field of ['match_id', 'other_match_id', 'entrant_id', 'other_participant_id', 'team_id']) if (fields.includes(field)) payload[field] = id(body[field]);
+  if (fields.includes('member_ids')) {
+    if (!Array.isArray(body.member_ids) || body.member_ids.length > 64 || (body.action === 'set_registration_roster' && body.member_ids.length === 0)) fail(400, 'rosterInvalid');
+    payload.member_ids = body.member_ids.map(id);
+    if (new Set(payload.member_ids).size !== payload.member_ids.length) fail(400, 'rosterInvalid');
+  }
+  if (fields.includes('group_label')) {
+    if (!text(body.group_label, 20) || !body.group_label || body.group_label.trim() !== body.group_label) fail();
+    payload.group_label = body.group_label;
+  }
   for (const field of ['side', 'other_side']) if (fields.includes(field)) {
     if (!['a', 'b'].includes(body[field])) fail();
     payload[field] = body[field];
@@ -93,9 +119,28 @@ function entrant(value) {
   if (!object(value) || !['team', 'user'].includes(value.kind) || typeof value.id !== 'string' || !UUID.test(value.id) || (value.name != null && !text(value.name))) fail(502, 'unavailable');
   return { kind: value.kind, id: value.id.toLowerCase(), name: value.name ?? null };
 }
+
+function eligibleTeam(row) {
+  if (!object(row)) fail(502, 'unavailable');
+  const base = entrant({ ...row, kind: 'team' });
+  const access = registrationAccess(row.access);
+  if (!base?.name || !access?.length || access.includes('individual')) fail(502, 'unavailable');
+  return { id: base.id, name: base.name, access };
+}
 /** Explicit DTO: public names, bracket structure, results and schedule. */
 export function tournamentLiveResponse(value, payload) {
   if (!object(value)) fail(502, 'unavailable');
+  if (payload.action === 'registration_roster') {
+    if (!Array.isArray(value.members) || value.members.length > 256) fail(502, 'unavailable');
+    return { members: value.members.map(row => {
+      if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !text(row.name) || typeof row.available !== 'boolean') fail(502, 'unavailable');
+      return { id: row.id.toLowerCase(), name: row.name, selected: row.selected === true, available: row.available };
+    }) };
+  }
+  if (payload.action === 'registration_candidates') {
+    if (!Array.isArray(value.eligible_teams) || value.eligible_teams.length > 30) fail(502, 'unavailable');
+    return { eligible_teams: value.eligible_teams.map(eligibleTeam) };
+  }
   if (payload.action === 'candidates') {
     if (!Array.isArray(value.items) || value.items.length > 20) fail(502, 'unavailable');
     return { items: value.items.map(row => {
@@ -108,20 +153,31 @@ export function tournamentLiveResponse(value, payload) {
   if (!object(t) || t.id !== payload.tournament_id || !text(t.name) || !STATUSES.includes(t.status)
     || typeof value.revision !== 'string' || !REVISION.test(value.revision)
     || !Array.isArray(value.participants) || value.participants.length > 512 || !Array.isArray(value.matches) || value.matches.length > 1024) fail(502, 'unavailable');
+  const eligibleTeams = value.eligible_teams ?? [];
+  if (!Array.isArray(eligibleTeams) || eligibleTeams.length > 512) fail(502, 'unavailable');
+  const groupOrder = value.group_order ?? {};
+  if (!object(groupOrder) || Object.entries(groupOrder).length > 64 || Object.entries(groupOrder).some(([group, ids]) =>
+    !text(group, 20) || !Array.isArray(ids) || ids.length > 256 || ids.some(id => typeof id !== 'string' || !UUID.test(id)))) fail(502, 'unavailable');
   const result = {
     tournament: {
       id: t.id, name: t.name, status: t.status,
       participant_type: ['individual', 'equipo', 'ambos'].includes(t.participant_type) ? t.participant_type : null,
       max_participants: Number.isInteger(t.max_participants) && t.max_participants > 0 && t.max_participants <= 1024 ? t.max_participants : null,
       start_at: optionalDate(t.start_at), groups_published_at: optionalDate(t.groups_published_at), bracket_published_at: optionalDate(t.bracket_published_at),
+      roster_min: rosterLimit(t.roster_min), roster_max: rosterLimit(t.roster_max),
+      allow_roster_edits_after_close: t.allow_roster_edits_after_close === true,
+      can_add_registration: t.can_add_registration === true,
     },
     participants: value.participants.map(row => {
       if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !['team', 'user'].includes(row.entrant_kind)
         || typeof row.entrant_id !== 'string' || !UUID.test(row.entrant_id) || (row.name != null && !text(row.name))
-        || !Array.isArray(row.roster) || row.roster.length > 30 || row.roster.some(name => !text(name))) fail(502, 'unavailable');
+        || !Array.isArray(row.roster) || row.roster.length > 64 || row.roster.some(name => !text(name))) fail(502, 'unavailable');
       return { id: row.id.toLowerCase(), entrant_kind: row.entrant_kind, entrant_id: row.entrant_id.toLowerCase(), name: row.name ?? null,
-        seed: Number.isInteger(row.seed) ? row.seed : null, roster: row.roster };
+        seed: Number.isInteger(row.seed) ? row.seed : null, roster: row.roster, access: registrationAccess(row.access),
+        roster_ready: typeof row.roster_ready === 'boolean' ? row.roster_ready : null, can_edit_roster: row.can_edit_roster === true };
     }),
+    eligible_teams: eligibleTeams.map(eligibleTeam),
+    group_order: Object.fromEntries(Object.entries(groupOrder).map(([group, ids]) => [group, ids.map(id => id.toLowerCase())])),
     matches: value.matches.map(row => {
       if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !Number.isInteger(row.round) || !Number.isInteger(row.position)
         || !['grupos', 'eliminacion'].includes(row.phase) || (row.group_label != null && !text(row.group_label, 20))
@@ -133,7 +189,7 @@ export function tournamentLiveResponse(value, payload) {
         entrant_a: entrant(row.entrant_a), entrant_b: entrant(row.entrant_b),
         winner_id: row.winner_id ? row.winner_id.toLowerCase() : null, score_a: optionalInt(row.score_a), score_b: optionalInt(row.score_b),
         result_status: row.result_status, pick_ban_status: VETO.includes(row.pick_ban_status) ? row.pick_ban_status : 'none',
-        scheduled_at: optionalDate(row.scheduled_at),
+        scheduled_at: optionalDate(row.scheduled_at), started: row.started === true,
       };
     }),
     revision: value.revision,

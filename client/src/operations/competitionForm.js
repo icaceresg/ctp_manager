@@ -1,3 +1,16 @@
+import { translate } from '../i18n/runtime.js';
+
+const RANDOM_SEED_EVENTS = new Set(['inaugural', 'cup-1', 'cup-4', 'cup-7', 'cup-10']);
+const PUBLICATION_ERRORS = ['tournaments.staff.drawBeforeClose', 'tournaments.staff.drawVisibilityWindow', 'tournaments.staff.drawVisibilityLocked'];
+
+export function competitionErrorMessage(message, fallback = message) {
+  return PUBLICATION_ERRORS.includes(message) ? translate(message) : fallback;
+}
+
+export function effectiveTournamentSeedMode(tournament) {
+  return tournament?.seeding_mode ?? (RANDOM_SEED_EVENTS.has(tournament?.circuit_code) ? 'random' : 'season_points');
+}
+
 export const TOURNAMENT_PRESENTATION_FIELDS = ['name','description','rules','banner','image_url','host_club_id','description_i18n','rules_pdf_url','stream_url','contact_info'];
 
 /** A live tournament edit can never forward structure/calendar inputs. */

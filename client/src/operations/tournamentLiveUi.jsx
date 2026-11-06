@@ -23,15 +23,17 @@ const format = (value, options) => {
   if (!value) return '';
   try { return new Intl.DateTimeFormat(getIntlLocale(), options).format(new Date(value)); } catch { return ''; }
 };
-export const when = value => format(value, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-export const clock = value => format(value, { hour: '2-digit', minute: '2-digit' });
+export const when = value => format(value, { timeZone: 'Europe/Madrid', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+export const clock = value => format(value, { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });
 export const clockSeconds = value => format(value, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 /** Title of a playoff round or schedule row from the model's `name`. */
 export function roundTitle(row) {
   if (!row) return '';
   if (row.name === 'matchday') return t('round.matchday', { round: row.round });
-  if (row.name === 'ofN') return t('round.ofN', { size: row.size });
+  if (row.name === 'ofN') {
+    return [16, 32, 64, 128].includes(row.size) ? t(`round.of${row.size}`) : t('round.ofN', { size: row.size });
+  }
   return t(`round.${row.name}`);
 }
 /** Label for a single match: group and matchday, or playoff round. */
@@ -51,13 +53,13 @@ export function StateBadge({ match }) {
  * offers ready-made sentences, counts what is missing and says why the button
  * is disabled. `onSubmit(reason, extra)` resolves to an error string or null.
  */
-export function ReasonConfirm({ presets = [], submitLabel, danger = false, blockedReason = '', onSubmit, busy, secondary }) {
-  const [reason, setReason] = useState(''), [error, setError] = useState(''), [working, setWorking] = useState(false);
+export function ReasonConfirm({ presets = [], defaultReason = '', submitLabel, danger = false, blockedReason = '', onSubmit, busy, secondary }) {
+  const [reason, setReason] = useState(defaultReason), [error, setError] = useState(''), [working, setWorking] = useState(false);
   const check = reasonCheck(reason);
   const locked = busy || working;
   const why = blockedReason || (!check.ready ? (check.tooLong ? t('reason.tooLong', { max: REASON_MAX }) : t('reason.missing', { count: check.missing })) : '');
-  async function submit(handler) {
-    if (locked || why) return;
+  async function submit(handler, blocked = why) {
+    if (locked || blocked) return;
     setWorking(true); setError('');
     const problem = await handler(reason.trim());
     setWorking(false);
@@ -75,9 +77,9 @@ export function ReasonConfirm({ presets = [], submitLabel, danger = false, block
     </p>
     {error && <p className="op-error" role="alert">{error}</p>}
     <div className="op-actions">
-      <button type="button" className={`btn ${danger ? 'danger' : 'primary'}`} disabled={locked || Boolean(why)} onClick={() => void submit(onSubmit)}>
+      <button type="button" className={`btn ${danger ? 'danger' : 'primary'}`} disabled={locked || Boolean(why)} onClick={() => void submit(onSubmit, blockedReason)}>
         {working ? t('applying') : submitLabel}</button>
-      {secondary && <button type="button" className="btn" disabled={locked || Boolean(why) || secondary.disabled} onClick={() => void submit(secondary.onSubmit)}>{secondary.label}</button>}
+      {secondary && <button type="button" className="btn" disabled={locked || !check.ready || secondary.disabled} onClick={() => void submit(secondary.onSubmit, !check.ready || secondary.disabled)}>{secondary.label}</button>}
     </div>
     {blockedReason && !locked && <p className="op-live-why">{blockedReason}</p>}
   </div>;

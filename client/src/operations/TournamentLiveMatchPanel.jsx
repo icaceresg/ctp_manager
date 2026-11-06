@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, CalendarClock, ChevronDown, Layers, Repeat, Trophy, Undo2, X } from 'lucide-react';
-import { BEST_OF, dependentMatches, isComplete, needsAttention, nextMatches, playoffRounds, scheduleLocked, slotsLocked, toLocalInput, addMinutes, fromLocalInput, validScores, winsNeeded } from './tournamentLiveModel.js';
+import { BEST_OF, dependentMatches, isComplete, needsAttention, nextMatches, playoffRounds, scheduleLocked, slotsLocked, validScores, winsNeeded } from './tournamentLiveModel.js';
+import { competitionDateInput, competitionDateToIso } from './competitionTime.js';
+import { translate } from '../i18n/runtime.js';
 import { ReasonConfirm, StateBadge, entrantName, matchRoundLabel, t, when } from './tournamentLiveUi.jsx';
 
 /**
@@ -9,23 +11,25 @@ import { ReasonConfirm, StateBadge, entrantName, matchRoundLabel, t, when } from
  * explains what happens, shows why it is unavailable and asks for its reason
  * next to its own confirm button.
  */
-export default function TournamentLiveMatchPanel({ tournamentId, match, matches, participants, run, busy, onClose }) {
-  const [open, setOpen] = useState(match.result_status === 'disputed' || match.result_status === 'pending' ? 'result' : null);
+export default function TournamentLiveMatchPanel({ tournamentId, match, matches, participants, run, busy, onClose, onParticipants, initialAction, canOpenMatch = true, canAssignOpening, status }) {
+  const [open, setOpen] = useState(initialAction ?? (match.result_status === 'disputed' || match.result_status === 'pending' ? 'result' : null));
   const { rounds } = playoffRounds(matches);
   const label = matchRoundLabel(match, rounds);
   const complete = isComplete(match);
-  const actions = [
+  const closed = ['cancelado', 'finalizado'].includes(status);
+  const placement = canAssignOpening && match.phase !== 'grupos' && match.round === 1 && !match.is_third_place && !complete;
+  const actions = run ? [
     { id: 'result', icon: Trophy, title: match.winner_id ? t('actions.result.rectify') : t('actions.result.title'), help: t('actions.result.help'),
       blocked: !complete ? t('actions.blocked.incomplete') : '' },
     { id: 'schedule', icon: CalendarClock, title: t('actions.schedule.title'), help: t('actions.schedule.help'),
-      blocked: scheduleLocked(match) ? t('actions.blocked.played') : '' },
+      blocked: closed ? t('error.closed') : scheduleLocked(match) ? t('error.matchStarted') : '' },
     { id: 'series', icon: Layers, title: t('actions.series.title'), help: t('actions.series.help', { count: match.best_of }),
-      blocked: slotsLocked(match) ? t('actions.blocked.started') : '' },
+      blocked: closed ? t('error.closed') : slotsLocked(match) ? t('error.matchStarted') : '' },
     { id: 'revert', icon: Undo2, title: t('actions.revert.title'), help: t('actions.revert.help'),
       blocked: !match.winner_id ? t('actions.blocked.unplayed') : '' },
-    { id: 'slots', icon: Repeat, title: t('actions.slots.title'), help: t('actions.slots.help'), advanced: true,
-      blocked: slotsLocked(match) ? t('actions.blocked.started') : '' },
-  ];
+    ...(placement ? [{ id: 'slots', icon: Repeat, title: t('bracket.assignSlot'),
+      blocked: closed ? t('error.closed') : slotsLocked(match) ? t('error.matchStarted') : '' }] : []),
+  ] : [];
   // A finished action closes so the panel shows the new state of the match.
   const act = async body => {
     const problem = await run({ ...body, match_id: match.id });
@@ -44,26 +48,25 @@ export default function TournamentLiveMatchPanel({ tournamentId, match, matches,
     </div>
     <p className="op-live-meta">{t('match.bestOf', { count: match.best_of })} · {match.scheduled_at ? when(match.scheduled_at) : t('match.unscheduled')} · {t(`veto.${['running', 'done', 'ready'].includes(match.pick_ban_status) ? match.pick_ban_status : 'none'}`)}</p>
 
-    <Link className="btn primary op-live-open" to={`/operaciones/torneos/${encodeURIComponent(tournamentId)}/partidos/${encodeURIComponent(match.id)}`} target="_blank" rel="noopener noreferrer">
-      {t('panel.openPage')} <ArrowUpRight size={15} /></Link>
-    <p className="op-live-hint">{t('panel.openPageHelp')}</p>
+    {canOpenMatch && <Link className="btn op-live-open" to={`/operaciones/torneos/${encodeURIComponent(tournamentId)}/partidos/${encodeURIComponent(match.id)}`} target="_blank" rel="noopener noreferrer">
+      {t('panel.openPage')} <ArrowUpRight size={15} /></Link>}
     {needsAttention(match) && <p className="op-notice">{t(match.result_status === 'disputed' ? 'panel.disputed' : 'panel.reported')}</p>}
 
-    <h3 className="op-live-panel-title">{t('panel.actions')}</h3>
+    {actions.length > 0 && <h3 className="op-live-panel-title">{t('panel.actions')}</h3>}
     <ul className="op-live-actions">
       {actions.map(action => {
         const Icon = action.icon, expanded = open === action.id;
         return <li key={action.id} className={`${expanded ? 'is-open' : ''}${action.blocked ? ' is-blocked' : ''}`}>
           <button type="button" className="op-live-action" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : action.id)}>
-            <Icon size={17} /><span><strong>{action.title}{action.advanced && <em>{t('actions.advanced')}</em>}</strong><small>{action.blocked || action.help}</small></span><ChevronDown size={16} />
+            <Icon size={17} /><span><strong>{action.title}</strong></span><ChevronDown size={16} />
           </button>
-          {expanded && <div className="op-live-action-body">
+          {expanded && <div className="op-live-action-body" title={action.help}>
             {action.blocked ? <p className="op-live-why">{action.blocked}</p> : <>
               {action.id === 'result' && <ResultForm match={match} matches={matches} rounds={rounds} busy={busy} act={act} />}
               {action.id === 'schedule' && <ScheduleForm match={match} busy={busy} act={act} />}
               {action.id === 'series' && <SeriesForm match={match} busy={busy} act={act} />}
               {action.id === 'revert' && <RevertForm match={match} matches={matches} rounds={rounds} busy={busy} act={act} />}
-              {action.id === 'slots' && <SlotsForm match={match} matches={matches} rounds={rounds} participants={participants} busy={busy} act={act} />}
+              {action.id === 'slots' && <SlotsForm match={match} matches={matches} participants={participants} busy={busy} act={act} onParticipants={onParticipants} />}
             </>}
           </div>}
         </li>;
@@ -116,20 +119,22 @@ export function RevertForm({ match, matches, rounds, busy, act }) {
 }
 
 export function ScheduleForm({ match, busy, act }) {
-  const [value, setValue] = useState(toLocalInput(match.scheduled_at));
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const unchanged = fromLocalInput(value) === (match.scheduled_at ? new Date(match.scheduled_at).toISOString() : null);
+  const [original] = useState(match.scheduled_at);
+  const [value, setValue] = useState(competitionDateInput(match.scheduled_at));
+  const refreshed = original !== match.scheduled_at;
+  let iso = null;
+  if (value) {
+    try { iso = competitionDateToIso(value, original); } catch { /* Show the date error beside the save action. */ }
+  }
+  const unchanged = iso && match.scheduled_at && Date.parse(iso) === Date.parse(match.scheduled_at);
   return <>
-    <label className="op-field"><span>{t('schedule.label')}</span>
-      <input type="datetime-local" value={value} disabled={busy} onChange={event => setValue(event.target.value)} />
-      <small>{t('schedule.hint', { zone })}</small></label>
-    {value && <div className="op-live-chips">{[-15, 15, 30, 60].map(minutes => <button type="button" key={minutes} className="op-live-chip" disabled={busy} onClick={() => setValue(addMinutes(value, minutes))}>
-      {t(minutes < 0 ? 'schedule.earlier' : 'schedule.later', { minutes: Math.abs(minutes) })}</button>)}</div>}
-    <p className="op-live-hint">{t('schedule.notify')}</p>
-    <ReasonConfirm busy={busy} presets={['schedule.agreed', 'schedule.delay', 'schedule.plan']}
-      blockedReason={!value ? t('schedule.choose') : unchanged ? t('schedule.same') : ''} submitLabel={t('schedule.save')}
-      onSubmit={reason => act({ action: 'schedule_match', scheduled_at: fromLocalInput(value), reason })}
-      secondary={match.scheduled_at ? { label: t('schedule.clear'), onSubmit: reason => act({ action: 'schedule_match', scheduled_at: null, reason }) } : undefined} />
+    <label className="op-field"><span>{t('schedule.madrid')}</span>
+      <input type="datetime-local" defaultValue={value} disabled={busy} onInput={event => setValue(event.currentTarget.value)} /></label>
+    <ReasonConfirm busy={busy} defaultReason={t('presets.schedule.plan')}
+      blockedReason={refreshed ? t('error.conflict') : !value ? t('schedule.choose') : !iso ? translate('manager.tournament.invalidDate') : unchanged ? t('schedule.same') : ''}
+      submitLabel={t('schedule.save')}
+      onSubmit={reason => act({ action: 'schedule_match', scheduled_at: iso, reason })}
+      secondary={match.scheduled_at ? { label: t('schedule.clear'), disabled: refreshed, onSubmit: reason => act({ action: 'schedule_match', scheduled_at: null, reason }) } : undefined} />
   </>;
 }
 
@@ -146,33 +151,21 @@ function SeriesForm({ match, busy, act }) {
   </>;
 }
 
-function SlotsForm({ match, matches, rounds, participants, busy, act }) {
-  const [side, setSide] = useState('a'), [mode, setMode] = useState('replace'), [target, setTarget] = useState('');
-  const current = side === 'a' ? match.entrant_a : match.entrant_b;
-  const swapOptions = matches.filter(other => !slotsLocked(other)).flatMap(other => ['a', 'b']
-    .filter(otherSide => !(other.id === match.id && otherSide === side))
-    .map(otherSide => ({ value: `${other.id}:${otherSide}`, label: t('slots.slot', { round: matchRoundLabel(other, rounds), position: other.position, name: entrantName(otherSide === 'a' ? other.entrant_a : other.entrant_b) }) })));
-  const body = () => {
-    if (mode === 'replace') return { action: 'replace_entrant', side, participant_id: target === 'empty' ? null : target };
-    const [other_match_id, other_side] = target.split(':');
-    return { action: 'swap_entrants', side, other_match_id, other_side };
-  };
+function SlotsForm({ match, matches, participants, busy, act, onParticipants }) {
+  const [target, setTarget] = useState('');
+  const side = match.entrant_a ? 'b' : 'a';
+  const positioned = new Set(matches.filter(item => item.phase !== 'grupos').flatMap(item => [item.entrant_a, item.entrant_b])
+    .filter(Boolean).map(entrant => `${entrant.kind}:${entrant.id}`));
+  const available = participants.filter(person => !positioned.has(`${person.entrant_kind}:${person.entrant_id}`)
+    && (person.entrant_kind === 'user' || person.access?.length));
+  const selected = available.some(person => person.id === target);
   return <>
-    <div className="op-live-segment" role="radiogroup" aria-label={t('slots.side')}>
-      {['a', 'b'].map(value => <button type="button" role="radio" key={value} aria-checked={side === value} className={side === value ? 'is-active' : ''} onClick={() => { setSide(value); setTarget(''); }}>
-        {entrantName(value === 'a' ? match.entrant_a : match.entrant_b)}</button>)}
-    </div>
-    <div className="op-live-segment" role="radiogroup" aria-label={t('slots.mode')}>
-      {['replace', 'swap'].map(value => <button type="button" role="radio" key={value} aria-checked={mode === value} className={mode === value ? 'is-active' : ''} onClick={() => { setMode(value); setTarget(''); }}>{t(`slots.modes.${value}`)}</button>)}
-    </div>
-    <p className="op-live-hint">{t(mode === 'replace' ? 'slots.replaceHelp' : 'slots.swapHelp', { name: entrantName(current) })}</p>
-    <select aria-label={t(mode === 'replace' ? 'slots.choose' : 'slots.target')} value={target} disabled={busy} onChange={event => setTarget(event.target.value)}>
-      <option value="">{t(mode === 'replace' ? 'slots.choose' : 'slots.target')}</option>
-      {mode === 'replace' ? <><option value="empty">{t('slots.empty')}</option>
-        {participants.map(participant => <option key={participant.id} value={participant.id}>{participant.name || t('unknownEntrant')}</option>)}</>
-        : swapOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+    <select aria-label={t('slots.choose')} value={selected ? target : ''} disabled={busy} onChange={event => setTarget(event.target.value)}>
+      <option value="">{t('slots.choose')}</option>
+      {available.map(participant => <option key={participant.id} value={participant.id}>{participant.name || t('unknownEntrant')}</option>)}
     </select>
-    <ReasonConfirm busy={busy} presets={['slots.seeding', 'slots.withdrawal']} blockedReason={!target ? t('slots.pick') : ''}
-      submitLabel={t(mode === 'replace' ? 'slots.replace' : 'slots.swap')} onSubmit={reason => act({ ...body(), reason })} />
+    {onParticipants && <button type="button" className="op-text-button" onClick={onParticipants}>{t('tabs.participants')}</button>}
+    <ReasonConfirm busy={busy} defaultReason={t('presets.slots.drawAdjustment')} blockedReason={!selected ? t('slots.pick') : ''}
+      submitLabel={t('bracket.applySwap')} onSubmit={reason => act({ action: 'replace_entrant', side, participant_id: target, reason })} />
   </>;
 }

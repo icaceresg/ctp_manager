@@ -9,7 +9,7 @@ import { HttpError } from '../auth.js';
 import {getPlayerWorkspace} from '../integration.js';
 import { getCaseData,getOfficialIncident,getTicketThread,ticketAction,getDisciplineOverview,getDisciplineUsers,getDisciplineHistory,writeDiscipline } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
-import { tournamentLiveService } from '../integration.js';
+import { tournamentLiveMatchService, tournamentLiveService } from '../integration.js';
 
 export const integrationRouter = Router();
 const requireRanked=(req,res,next)=>canManageRanked(req.user)?next():res.status(403).json({error:'La supervisión de Ranked requiere ser administrador o árbitro de CTP.'});
@@ -30,6 +30,8 @@ integrationRouter.get('/operations/incidents/:id',requireAuth,allow('arbitraje')
 integrationRouter.get('/operations/tournaments/:id/live',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await tournamentLiveService(req.user,req.params.id)));
 integrationRouter.get('/operations/tournaments/:id/live/candidates',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await tournamentLiveService(req.user,req.params.id,null,typeof req.query.query==='string'?req.query.query:'')));
 integrationRouter.post('/operations/tournaments/:id/live',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await tournamentLiveService(req.user,req.params.id,req.body||{})));
+integrationRouter.get('/operations/tournaments/:id/live/matches/:matchId',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await tournamentLiveMatchService(req.user,req.params.id,req.params.matchId)));
+integrationRouter.post('/operations/tournaments/:id/live/matches/:matchId',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await tournamentLiveMatchService(req.user,req.params.id,req.params.matchId,req.body||{})));
 integrationRouter.post('/operations/cases/commands',requireAuth,allow('arbitraje'),(req,res)=>res.json(prepareCaseCommand(req.user,req.body||{})));
 integrationRouter.use('/operations/integration', requireAuth);
 integrationRouter.get('/operations/integration', allow('operaciones', 'arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones'), (req, res) => res.json(integrationStatus()));

@@ -19,7 +19,7 @@ import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import { CLUB_PROFILE_ERRORS, clubProfilePayload, clubProfileResponse } from './club-profile-contract.js';
 import { teamRosterPayload, teamRosterProblem, teamRosterQuery, teamRosterRead, teamRosterResponse } from './team-roster-contract.js';
-import { tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse } from './tournament-live-contract.js';
+import { tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse } from './tournament-live-contract.js';
 import {
   DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS, USER_DELETE_UNCERTAIN_MESSAGE,
   disciplineOverviewQuery, disciplineUsersQuery, disciplineHistoryQuery,
@@ -787,6 +787,17 @@ export async function tournamentLiveService(user, tournamentId, body = null, que
   const payload = query !== undefined ? tournamentLiveQuery(tournamentId, query) : body === null ? tournamentLiveRead(tournamentId) : tournamentLivePayload(tournamentId, body);
   if (body !== null && !config.writes) throw integrationError(403, 'manager.tournamentLive.error.writesDisabled');
   return tournamentLiveResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
+}
+
+/**
+ * Referee match page: one match with its pick & ban and chat. Staff write in
+ * the chat as themselves and prepare, open, reset or correct the veto directly.
+ */
+export async function tournamentLiveMatchService(user, tournamentId, matchId, body = null) {
+  if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
+  const payload = body === null ? tournamentLiveMatchRead(tournamentId, matchId) : tournamentLiveMatchPayload(tournamentId, matchId, body);
+  if (body !== null && !config.writes) throw integrationError(403, 'manager.tournamentLive.error.writesDisabled');
+  return tournamentLiveMatchResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
 }
 
 export async function updateCtpUserProfile(user, id, body) {

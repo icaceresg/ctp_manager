@@ -1,131 +1,321 @@
-import { tournamentState } from './tournamentState.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ArrowUpRight, CalendarDays, Info, Network, RefreshCw, Settings2, Users } from 'lucide-react';
 import { api } from '../api.js';
+import { useApp } from '../context.jsx';
+import { getIntlLocale, translate } from '../i18n/runtime.js';
 import { Badge, DataTable, Empty, Field, FormDialog } from './ui.jsx';
-import { dateTime, teamName, label } from './model.js';
 import { DecisionPanel } from './DecisionPanel.jsx';
-import { shouldLeaveDeletedTournament, tournamentPresentationPayload } from './competitionForm.js';
-import TournamentLiveDialog from './TournamentLiveDialog.jsx';
-import { translate } from '../i18n/runtime.js';
+import { competitionErrorMessage, effectiveTournamentSeedMode, shouldLeaveDeletedTournament } from './competitionForm.js';
+import { competitionDateTime } from './competitionTime.js';
+import { tournamentState } from './tournamentState.js';
+import TournamentForm from './TournamentForm.jsx';
+import TournamentFormatPreview from './TournamentFormatPreview.jsx';
+import TournamentScheduleScenarios from './TournamentScheduleScenarios.jsx';
+import TournamentRegistrations from './TournamentRegistrations.jsx';
+import { TournamentLivePanel } from './TournamentLiveDialog.jsx';
+import './competition.css';
 
-const states={borrador:'Borrador',inscripcion_abierta:'Publicado (según ventana de inscripción)',en_curso:'En curso',finalizado:'Finalizado',cancelado:'Cancelado'};
-const localDate=value=>{if(!value)return '';const d=new Date(value);return Number.isFinite(d.getTime())?new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16):'';};
-const participantName=participant=>participant.name||participant.entrant?.name||participant.team?.name||participant.username||participant.entrant_id||'Participante';
-const matchTitle=match=>`${teamName(match.team_a_name||match.team_a||match.entrant_a||match.entrant_a_name||match.entrant_a_id)} · ${teamName(match.team_b_name||match.team_b||match.entrant_b||match.entrant_b_name||match.entrant_b_id)}`;
-export function CompetitionPanel({data,reload,mutate,can,me}) {
-  // Referees read tournaments; creating, editing and publishing stay with Coordinación.
-  const manage=Boolean(me?.is_admin||can?.('operaciones'));
-  // Live corrections (results, bracket, participants) apply at once for admins and referees.
-  const liveControl=Boolean(me?.is_admin||can?.('arbitraje'));
-  const [liveOpen,setLiveOpen]=useState(false);
-  const [params,setParams]=useSearchParams();
-  const target=params.get('tournament');
-  const [result,setResult]=useState(null);
-  const [error,setError]=useState('');
-  const [busy,setBusy]=useState(false);
-  const [query,setQuery]=useState('');
-  const [filter,setFilter]=useState({query:'',status:''});
-  const [status,setStatus]=useState('');
-  const [cursor,setCursor]=useState(null);
-  const [pages,setPages]=useState([]);
-  const [dialog,setDialog]=useState(null);
-  const requestId=useRef(0);
-  const configured=data.connection?.configured;
-  const supports=type=>data.connection?.supported_actions?.includes(type);
-  const load=useCallback(async()=>{
-    if(!configured)return;
-    const request=++requestId.current;
-    setBusy(true);setError('');
-    try{
-      const search=new URLSearchParams({resource:target?'tournament':'tournaments',...(target?{target_id:target}:{...filter,...(cursor?{cursor}:{}),limit:'40'})});
-      const next=await api.get(`/operations/competition?${search}`);if(request===requestId.current)setResult(next);
-    }catch(err){if(request===requestId.current){setError(err.message);if([401,403].includes(err.status))setResult(null);}}
-    finally{if(request===requestId.current)setBusy(false);}
-  },[configured,target,filter,cursor]);
-  useEffect(()=>{setResult(null);load();return()=>{requestId.current++;};},[load]);
-  const tournament=result?.tournament;
-  const pending=(kind,id)=>data.commands?.some(c=>c.resource_type===kind&&c.resource_id===id&&!['acknowledged','cancelled'].includes(c.status));
-  const structureLocked=tournament&&(!['borrador','inscripcion_abierta'].includes(tournament.status)||tournament.groups_published_at||tournament.bracket_published_at||result.matches?.length);
-  const blocked=type=>!supports(type)||Boolean(tournament&&pending('tournament',tournament.id));
-  const afterDecision=async(command,action)=>{if(shouldLeaveDeletedTournament(command,action,target)){setParams({});setCursor(null);setPages([]);setResult(null);return;}await load();};
-  const prepare=async(type,row,payload)=>{
-    await mutate('post','/competition/commands',{type,target_id:row?.id,expected_version:row?.manager_version??0,payload},'Propuesta preparada. Un administrador debe enviarla a CTP.');
+const t = (key, values) => translate(`manager.tournament.${key}`, values);
+const statusLabel = status => translate(`manager.tournamentLive.status.values.${status}`);
+const states = ['borrador', 'inscripcion_abierta', 'en_curso', 'finalizado', 'cancelado'];
+const tabs = [['bracket', Network], ['teams', Users], ['settings', Settings2]];
+const quickActions = ['tournament.update', 'tournament.generate', 'tournament.publish'];
+const actions = {
+  'tournament.status': 'status',
+  'tournament.notify': 'notify',
+  'tournament.unpublish': 'unpublish',
+  'tournament.points': 'points',
+  'tournament.delete': 'delete',
+};
+const isPending = command => !['acknowledged', 'cancelled'].includes(command.status);
+const officialState = (tournament, now = Date.now()) => {
+  const { key } = tournamentState(tournament, now);
+  if (key === 'en_curso' && now < Date.parse(tournament.start_at)) return t('state.published');
+  return ['hidden', 'open', 'published'].includes(key) ? t(`state.${key}`) : states.includes(key) ? statusLabel(key) : '—';
+};
+
+export function CompetitionPanel({ data, reload, can, me }) {
+  const { toast } = useApp();
+  const manage = Boolean(me?.is_admin || can?.('operaciones'));
+  const liveControl = Boolean(me?.is_admin || can?.('arbitraje'));
+  const [params, setParams] = useSearchParams();
+  const target = params.get('tournament');
+  const tab = tabs.some(([key]) => key === params.get('tab')) ? params.get('tab') : 'bracket';
+  const [read, setRead] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [filter, setFilter] = useState({ query: '', status: '' });
+  const [cursor, setCursor] = useState(null);
+  const [pages, setPages] = useState([]);
+  const [dialog, setDialog] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [now, setNow] = useState(Date.now);
+  const requestId = useRef(0);
+  const configured = data.connection?.configured;
+  const supports = type => data.connection?.supported_actions?.includes(type);
+  const search = new URLSearchParams({
+    resource: target ? 'tournament' : 'tournaments',
+    ...(target ? { target_id: target } : { ...filter, ...(cursor ? { cursor } : {}), limit: '40' }),
+  }).toString();
+  const result = read?.search === search ? read.value : null;
+
+  const load = useCallback(async () => {
+    if (!configured) return;
+    const request = ++requestId.current;
+    setBusy(true);
+    setError('');
+    try {
+      const next = await api.get(`/operations/competition?${search}`);
+      if (request === requestId.current) setRead({ search, value: next });
+    } catch (cause) {
+      if (request === requestId.current) {
+        setError(t('loadError'));
+        if ([401, 403].includes(cause.status)) setRead(null);
+      }
+    } finally {
+      if (request === requestId.current) setBusy(false);
+    }
+  }, [configured, search]);
+  useEffect(() => {
+    void load();
+    return () => { ++requestId.current; };
+  }, [load]);
+
+  const tournament = result?.tournament;
+  useEffect(() => setNow(Date.now()), [target]);
+  useEffect(() => {
+    if (!tournament) return;
+    const boundaries = [tournament.registration_close_at, tournament.groups_published_at, tournament.bracket_published_at, tournament.start_at];
+    const next = Math.min(...boundaries.map(Date.parse).filter(time => time > now));
+    if (!Number.isFinite(next)) return;
+    const delay = Math.max(0, Math.min(next - Date.now(), 86_400_000));
+    const timer = setTimeout(() => setNow(Date.now()), delay + 20);
+    return () => clearTimeout(timer);
+  }, [tournament, now]);
+  const matches = result?.matches ?? [];
+  const participants = result?.participants ?? [];
+  const pendingTournament = (data.commands || []).filter(command =>
+    command.resource_type === 'tournament' && command.resource_id === tournament?.id && isPending(command));
+  const structureLocked = Boolean(tournament && (
+    !['borrador', 'inscripcion_abierta'].includes(tournament.status) ||
+    tournament.groups_published_at || tournament.bracket_published_at || matches.length
+  ));
+  const blocked = type => busy || !supports(type) || pendingTournament.length > 0;
+  const switchTab = key => setParams(previous => {
+    const next = new URLSearchParams(previous);
+    if (key === 'bracket') next.delete('tab');
+    else next.set('tab', key);
+    return next;
+  });
+  const showList = () => {
+    setParams({});
+    setCursor(null);
+    setPages([]);
   };
-  return <><div className="op-section-title"><div><h2>{tournament?.name||'Torneos'}</h2><p>La publicación y la apertura de inscripción se gestionan en Publicación web. Este listado muestra el mismo estado y la misma ventana de inscripción de CTP.</p></div><div className="op-actions">{target&&<button className="btn" onClick={()=>{setParams({});setCursor(null);setPages([]);}}>Todos los torneos</button>}<button className="btn" disabled={busy||!configured} onClick={load}>Actualizar</button>{!target&&manage&&<button className="btn primary" disabled={!supports('tournament.create')||!result?.games?.length} onClick={()=>setDialog({type:'tournament.create'})}>Crear torneo</button>}</div></div>
-    {!configured?<Empty title="CTP pendiente de conectar">La gestión de torneos necesita un operador vinculado y las capacidades del backend CTP.</Empty>:<>
-      {error&&<p className="op-error" role="alert">{error}{result?' Se conserva la última consulta; puede estar desactualizada.':''}</p>}
-      {busy&&<p role="status">Consultando competición…</p>}
-      {!target&&<><form className="op-filters" onSubmit={event=>{event.preventDefault();setCursor(null);setPages([]);setFilter({query,status});}}><input aria-label="Buscar torneo" placeholder="Buscar torneo…" value={query} maxLength={120} onChange={e=>setQuery(e.target.value)}/><select aria-label="Estado del torneo" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Todos los estados</option>{Object.entries(states).map(([value,name])=><option key={value} value={value}>{name}</option>)}</select><button className="btn" disabled={busy}>Buscar</button></form>{result&&<><DataTable rows={result.items||[]} empty="No hay torneos con estos filtros" columns={[
-        {key:'name',title:'Torneo',render:t=><button className="op-text-button" onClick={()=>setParams({tournament:t.id})}>{t.name}</button>},
-        {key:'status',title:'Estado',render:t=><Badge value={t.status}>{tournamentState(t).label}</Badge>},
-        {key:'start_at',title:'Inicio',render:t=>dateTime(t.start_at)},
-        {key:'participants',title:'Plazas',render:t=>`${t.participant_count??t.participants_count??'—'} / ${t.max_participants??'—'}`},
-      ]}/><div className="op-actions"><button className="btn" disabled={busy||!pages.length} onClick={()=>{setCursor(pages[pages.length-1]);setPages(p=>p.slice(0,-1));}}>Anterior</button><span>Página {pages.length+1}</span><button className="btn" disabled={busy||!result.next_cursor} onClick={()=>{setPages(p=>[...p,cursor]);setCursor(result.next_cursor);}}>Siguiente</button></div></>}
-      <DecisionPanel data={data} resourceType="tournament" reload={reload} onChanged={afterDecision}/></>}
-      {tournament&&<>
-        <section className="op-card"><div className="op-section-title"><Badge value={tournament.status}>{tournamentState(tournament).label}</Badge>{liveControl&&<button className="btn primary" onClick={()=>setLiveOpen(true)}>{translate('manager.tournamentLive.open')}</button>}{manage&&<div className="op-actions"><button className="btn" disabled={blocked('tournament.update')} onClick={()=>setDialog({type:'tournament.update',row:tournament})}>{structureLocked?'Editar identidad y contacto':'Editar torneo'}</button><button className="btn" disabled={blocked('tournament.status')} onClick={()=>setDialog({type:'tournament.status',row:tournament})}>Cambiar estado</button></div>}</div><dl className="op-settings"><div><dt>Inicio</dt><dd>{dateTime(tournament.start_at)}</dd></div><div><dt>Cierre de inscripción</dt><dd>{dateTime(tournament.registration_close_at)}</dd></div><div><dt>Formato</dt><dd>{tournament.has_group_stage?'Grupos y eliminatorias':'Eliminatorias directas'}</dd></div><div><dt>Plantilla</dt><dd>{tournament.roster_min}–{tournament.roster_max} jugadores</dd></div><div><dt>Participantes</dt><dd>{tournament.min_participants}–{tournament.max_participants}</dd></div><div><dt>Series</dt><dd>Grupos BO{tournament.best_of_groups??'—'} · Playoffs BO{tournament.best_of_playoffs??'—'} · Final BO{tournament.best_of_final??'—'}</dd></div></dl>{tournament.description&&<p>{tournament.description}</p>}<details><summary>Reglamento</summary><p style={{whiteSpace:'pre-wrap'}}>{tournament.rules||'Sin reglamento guardado.'}</p></details></section>
-        {manage&&<details className="op-card op-details"><summary>Otras gestiones del torneo</summary><div className="op-actions">{[['tournament.notify','Avisar a participantes'],['tournament.schedule_rounds','Programar todas las rondas'],['tournament.unpublish','Despublicar fase'],['tournament.points','Recalcular puntos'],['tournament.delete','Eliminar torneo']].map(([type,title])=><button key={type} className="btn" disabled={blocked(type)} onClick={()=>setDialog({type,row:tournament})}>{title}</button>)}</div><p className="muted">La eliminación exige el nombre exacto y que todos los resultados estén anulados. Una fase ya disputada no se puede ocultar.</p></details>}
-        <DecisionPanel data={data} resourceType="tournament" resourceId={tournament.id} reload={reload} onChanged={afterDecision}/>
-        <section className="op-card"><h3>Inscripciones</h3><DataTable rows={result.participants||[]} empty="Todavía no hay inscripciones" columns={[
-          {key:'name',title:'Participante',render:participantName},{key:'seed',title:'Seed'},{key:'season_points',title:'Puntos de temporada'},
-          {key:'status',title:'Estado',render:p=><Badge value={p.review_status||p.status||p.registration_status||(p.approved===true?'approved':'pending')}/>},
-          {key:'roster',title:'Plantilla',render:p=>(p.roster||[]).length?<ul>{p.roster.map(player=><li key={player.user_id}><strong>{player.username||player.gamertag||player.name||player.user_id}</strong><br/><small>{player.activision_id||'Sin Activision ID'} · {player.identity_ready?'Identidad completa':'Identidad pendiente'}</small></li>)}</ul>:'Sin roster recibido'},
-          ...(manage?[{key:'actions',title:'Revisión',render:p=><div className="op-actions"><button className="btn" disabled={!supports('tournament.registration')||pending('registration',p.id)} onClick={()=>setDialog({type:'tournament.registration',row:p})}>Revisar inscripción</button><button className="btn" disabled={!supports('tournament.withdraw')||structureLocked||pending('registration',p.id)} onClick={()=>setDialog({type:'tournament.withdraw',row:p})}>Retirar plaza</button></div>}]:[]),
-        ]}/>{(result.participants||[]).filter(p=>pending('registration',p.id)).map(p=><DecisionPanel key={p.id} data={data} resourceType="registration" resourceId={p.id} reload={reload} onChanged={load}/>)}</section>
-        <section className="op-card"><div className="op-section-title"><div><h3>Fases y calendario</h3><p>{manage?'Genera la fase, revisa los cruces y prepara su publicación.':'Cruces, horarios y resultados de cada fase.'}</p></div>{manage&&<div className="op-actions"><button className="btn" disabled={blocked('tournament.generate')} onClick={()=>setDialog({type:'tournament.generate',row:tournament})}>Generar fase</button><button className="btn" disabled={blocked('tournament.publish')} onClick={()=>setDialog({type:'tournament.publish',row:tournament})}>Publicar fase</button></div>}</div><p className="muted">Grupos: {tournament.groups_published_at?`publicados ${dateTime(tournament.groups_published_at)}`:'sin publicar'} · Eliminatorias: {tournament.bracket_published_at?`publicadas ${dateTime(tournament.bracket_published_at)}`:'sin publicar'}</p>
-          <DataTable rows={result.matches||[]} empty="No hay cruces generados" columns={[
-            {key:'round',title:'Ronda',render:m=>`${label(m.phase)||'Eliminatoria'} · ${m.round??'—'}`},{key:'match',title:'Encuentro',render:matchTitle},
-            {key:'scheduled_at',title:'Horario',render:m=>dateTime(m.scheduled_at)},
-            {key:'result',title:'Resultado',render:m=>m.score_a!=null&&m.score_b!=null?`${m.score_a} – ${m.score_b}`:'Pendiente'},
-            {key:'actions',title:'Gestión',render:m=><div className="op-actions">{manage&&<button className="btn" disabled={!supports('tournament.schedule')||pending('fixture',m.id)} onClick={()=>setDialog({type:'tournament.schedule',row:m})}>Reprogramar</button>}<Link className="btn" to={`/operaciones/arbitraje?match=${encodeURIComponent(m.id)}`}>Acta y veto</Link></div>},
-          ]}/>{(result.matches||[]).filter(m=>pending('fixture',m.id)).map(m=><DecisionPanel key={m.id} data={data} resourceType="fixture" resourceId={m.id} reload={reload} onChanged={load}/>)}</section>
+  const changed = async () => {
+    await load();
+    setRefreshKey(value => value + 1);
+  };
+  const afterDecision = async (command, action) => {
+    if (shouldLeaveDeletedTournament(command, action, target)) {
+      showList();
+      return;
+    }
+    await changed();
+  };
+  const applyNow = type => me?.is_admin && data.connection?.write_enabled && quickActions.includes(type);
+  const prepare = async (type, row, payload) => {
+    let command;
+    try {
+      ({ command } = await api.post('/operations/competition/commands', {
+        type, target_id: row?.id, expected_version: row?.manager_version ?? 0, payload,
+      }));
+    } catch {
+      throw new Error(t('prepareError'));
+    }
+    if (applyNow(type)) {
+      try {
+        await api.post(`/operations/integration/commands/${encodeURIComponent(command.id)}/send`, {});
+        toast(t('saved'));
+      } catch (cause) {
+        // The queued command retains its idempotency key and can be retried in Decisions.
+        toast(competitionErrorMessage(cause.message, t('pendingSend')), 'error');
+      }
+      await Promise.all([reload(), changed()]);
+    } else {
+      toast(t('proposalReady'));
+      await reload();
+    }
+  };
+  const refresh = () => void changed();
+  const number = value => value == null ? '—' : new Intl.NumberFormat(getIntlLocale()).format(value);
+
+  return <>
+    <div className="op-section-title">
+      <div>{target && <button type="button" className="op-text-button op-competition-back" onClick={showList}><ArrowLeft size={15} /> {t('back')}</button>}
+        <h2>{tournament?.name || t('title')}</h2>
+      </div>
+      <div className="op-actions">
+        <button type="button" className="btn" disabled={busy || !configured} onClick={refresh}><RefreshCw size={15} /> {t('refresh')}</button>
+        {!target && manage && <button type="button" className="btn primary" disabled={blocked('tournament.create') || !result?.games?.length} onClick={() => setDialog({ type: 'tournament.create' })}>{t('create')}</button>}
+      </div>
+    </div>
+    {!configured ? <Empty title={t('connectionPending')}>{t('connectionHelp')}</Empty> : <>
+      {error && <p className="op-error" role="alert">{result ? t('stale') : error}</p>}
+      {busy && !result && <p role="status">{t('loading')}</p>}
+      {!target && <>
+        <form className="op-filters" onSubmit={event => {
+          event.preventDefault();
+          setCursor(null);
+          setPages([]);
+          setFilter({ query, status });
+        }}>
+          <input aria-label={t('searchTournament')} placeholder={t('searchPlaceholder')} value={query} maxLength={120} onChange={event => setQuery(event.target.value)} />
+          <select aria-label={t('state.label')} value={status} onChange={event => setStatus(event.target.value)}>
+            <option value="">{t('state.all')}</option>
+            {states.map(value => <option key={value} value={value}>{value === 'inscripcion_abierta' ? t('state.listed') : statusLabel(value)}</option>)}
+          </select>
+          <button className="btn" disabled={busy}>{t('search')}</button>
+        </form>
+        {result && <>
+          <DataTable rows={result.items || []} empty={t('noTournaments')} emptyDetail="" regionLabel={t('title')} columns={[
+            { key: 'name', title: t('name'), render: row => <Link className="op-text-button" to={`?tournament=${encodeURIComponent(row.id)}`}>{row.name}</Link> },
+            { key: 'status', title: t('state.label'), render: row => <Badge value={row.status}>{officialState(row)}</Badge> },
+            { key: 'start_at', title: t('start'), render: row => competitionDateTime(row.start_at) },
+            { key: 'participants', title: t('slots'), render: row => `${number(row.participant_count ?? row.participants_count)} / ${number(row.max_participants)}` },
+          ]} />
+          {(pages.length > 0 || result.next_cursor) && <div className="op-actions">
+            <button type="button" className="btn" disabled={busy || !pages.length} onClick={() => { setCursor(pages.at(-1)); setPages(value => value.slice(0, -1)); }}>{t('previous')}</button>
+            <span>{t('page', { number: number(pages.length + 1) })}</span>
+            <button type="button" className="btn" disabled={busy || !result.next_cursor} onClick={() => { setPages(value => [...value, cursor]); setCursor(result.next_cursor); }}>{t('next')}</button>
+          </div>}
+        </>}
+        {(data.commands || []).some(command => command.resource_type === 'tournament' && isPending(command)) &&
+          <DecisionPanel data={data} resourceType="tournament" reload={reload} onChanged={afterDecision} />}
+      </>}
+      {tournament && <>
+        <div className="op-competition-facts">
+          <Badge value={tournament.status}>{officialState(tournament, now)}</Badge>
+          <span title={t('madrid')}><CalendarDays size={15} aria-hidden="true" />{t('closesOn', { date: competitionDateTime(tournament.registration_close_at) })}</span>
+          <span title={t('madrid')}>{t('revealsOn', { date: competitionDateTime(tournament.groups_published_at || tournament.bracket_published_at || tournament.draw_visible_at || tournament.start_at) })}</span>
+          <span title={t('madrid')}>{t('startsOn', { date: competitionDateTime(tournament.start_at) })}</span>
+        </div>
+        <nav className="op-dossier-nav" aria-label={t('navigation')}>
+          {tabs.map(([key, Icon]) => <button key={key} type="button" className={tab === key ? 'is-active' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => switchTab(key)}>
+            <Icon size={17} aria-hidden="true" />{t(`tabs.${key}`)}{key === 'teams' && <span>{number(participants.length)}</span>}
+          </button>)}
+        </nav>
+        {pendingTournament.length > 0 && <DecisionPanel data={{ ...data, commands: pendingTournament }} resourceType="tournament" resourceId={tournament.id} reload={reload} onChanged={afterDecision} />}
+        {tab === 'bracket' && <section className="op-card op-competition-draw">
+          <DrawActions tournament={tournament} now={now} matches={matches} preview={result.format_preview} manage={manage} blocked={blocked} onAction={setDialog} />
+          <TournamentFormatPreview preview={result.format_preview} grouped={tournament.has_group_stage} />
+          {manage && <TournamentScheduleScenarios key={tournament.id} tournament={tournament} entrantCount={participants.length}
+            canWrite={Boolean(me?.is_admin && data.connection?.write_enabled)} />}
+          <TournamentLivePanel key={tournament.id} tournament={tournament} fallbackMatches={matches} fallbackGroupOrder={result.group_order} refreshKey={refreshKey}
+            canEdit={liveControl} canWrite={Boolean(data.connection?.write_enabled)} onChanged={load} onParticipants={() => switchTab('teams')} />
+        </section>}
+        {tab === 'teams' && <TournamentRegistrations key={tournament.id} tournament={tournament} participants={participants} eligibleTeams={result.eligible_teams} liveControl={liveControl} canWrite={Boolean(data.connection?.write_enabled)} onChanged={load} />}
+        {tab === 'settings' && <section className="op-card">
+          <div className="op-section-title"><h3>{t('tabs.settings')}</h3>
+            {manage && <button className="btn primary" type="button" disabled={blocked('tournament.update')} onClick={() => setDialog({ type: 'tournament.update', row: tournament })}><Settings2 size={16} />{t('edit')}</button>}
+          </div>
+          <dl className="op-settings">
+            <div><dt>{t('game')}</dt><dd>{result.games?.find(game => game.id === tournament.game_id)?.name || '—'}{tournament.game_mode && ` · ${tournament.game_mode}`}</dd></div>
+            <div><dt>{t('format')}</dt><dd>{t(tournament.has_group_stage ? 'formatGroups' : 'phase.direct')}</dd></div>
+            <div><dt>{t('seed')}</dt><dd>{effectiveTournamentSeedMode(tournament) === 'random' ? t('seedRandom') : tournament.seeding_season ?? tournament.season
+              ? t('seedPointsSeason', { number: number(tournament.seeding_season ?? tournament.season) }) : t('seedPoints')}</dd></div>
+            <div><dt>{t('slots')}</dt><dd>{t('range', { min: number(tournament.min_participants), max: number(tournament.max_participants) })}</dd></div>
+            <div><dt>{t('rosterSize')}</dt><dd>{t('range', { min: number(tournament.roster_min), max: number(tournament.roster_max) })}</dd></div>
+          </dl>
+          {tournament.description && <p>{tournament.description}</p>}
+          {tournament.rules && <details><summary>{t('rules')}</summary><p className="op-competition-rules">{tournament.rules}</p></details>}
+          {me?.is_admin && <div className="op-actions"><Link className="btn" to="/publicacion">{t('webPublication')} <ArrowUpRight size={15} /></Link></div>}
+          {manage && <details className="op-details">
+            <summary>{t('moreActions')}</summary>
+            <div className="op-actions">{Object.entries(actions).filter(([type]) =>
+              (type !== 'tournament.unpublish' || tournament.groups_published_at || tournament.bracket_published_at)).map(([type, key]) =>
+              <button key={type} type="button" className="btn" disabled={blocked(type)} onClick={() => setDialog({ type, row: tournament })}>{t(`action.${key}`)}</button>
+            )}</div>
+          </details>}
+          <Link className="op-text-button" to={`/operaciones/decisiones?${new URLSearchParams({ resource_type: 'tournament', resource_id: tournament.id, include_closed: '1' })}`}>{t('history')} <ArrowUpRight size={14} /></Link>
+        </section>}
+        {tab !== 'settings' && ['registration', 'fixture'].map(kind => (kind === 'registration' ? participants : matches)
+          .filter(row => (data.commands || []).some(command => command.resource_type === kind && command.resource_id === row.id && isPending(command)))
+          .map(row => <DecisionPanel key={row.id} data={data} resourceType={kind} resourceId={row.id} reload={reload} onChanged={load} />))}
       </>}
     </>}
-    {liveOpen&&tournament&&<TournamentLiveDialog tournament={tournament} onClose={()=>setLiveOpen(false)} onChanged={load}/>}
-    {dialog&&(['tournament.create','tournament.update'].includes(dialog.type)?<TournamentForm type={dialog.type} row={dialog.row} locked={Boolean(structureLocked)} games={result?.games||[]} clubs={data.clubs||[]} onClose={()=>setDialog(null)} prepare={prepare}/>:<TournamentActionDialog action={dialog} onClose={()=>setDialog(null)} prepare={prepare}/>)}
+    {dialog && (['tournament.create', 'tournament.update'].includes(dialog.type)
+      ? <TournamentForm type={dialog.type} row={dialog.row} locked={structureLocked} games={result?.games || []} clubs={data.clubs || []} onClose={() => setDialog(null)} prepare={prepare} applyNow={applyNow(dialog.type)} />
+      : <TournamentActionDialog action={dialog} onClose={() => setDialog(null)} prepare={prepare} applyNow={applyNow(dialog.type)} />)}
   </>;
 }
 
-function TournamentForm({type,row,games,clubs,locked,onClose,prepare}) {
-  const isNew=type==='tournament.create';
-  const defaults={name:'',game_id:games[0]?.id||'',game_mode:'',participant_type:'equipo',kind:'personalizado',season:1,max_participants:16,min_participants:2,roster_min:4,roster_max:6,has_group_stage:false,group_count:4,best_of_groups:3,best_of_playoffs:5,best_of_final:7,has_third_place_match:false,...row};
-  defaults.group_count??=4; defaults.best_of_groups??=3; defaults.best_of_playoffs??=5; defaults.best_of_final??=7;
-  const [groups,setGroups]=useState(Boolean(defaults.has_group_stage));
-  const [points,setPoints]=useState(defaults.points_per_position||[]);
-  return <FormDialog title={isNew?'Crear torneo':locked?'Editar identidad y comunicación':'Editar torneo'} onClose={onClose} submitLabel="Preparar propuesta" help={locked?'El torneo ya tiene estructura. Puedes actualizar su identidad, descripciones, reglamento y contacto; formato, inscritos, horarios, plataformas, veto y puntos quedan protegidos.':'CTP comprobará el formato, los permisos y las restricciones de los torneos ya iniciados antes de aplicar el cambio.'} submit={body=>{
-    if(locked)return prepare(type,row,tournamentPresentationPayload(body,defaults.description_i18n));
-    const payload={...body,has_group_stage:groups,has_third_place_match:body.has_third_place_match==='on',start_at:new Date(body.start_at).toISOString(),registration_close_at:new Date(body.registration_close_at).toISOString()};
-    for(const key of ['max_participants','min_participants','roster_min','roster_max','group_count','best_of_groups','best_of_playoffs','best_of_final'])payload[key]=Number(body[key]);
-    payload.season=body.season?Number(body.season):null;
-    payload.registration_open_at=body.registration_open_at?new Date(body.registration_open_at).toISOString():null;
-    payload.host_club_id=body.host_club_id||null;payload.format='eliminacion_simple';
-    payload.platforms=['PC','PlayStation','Xbox','Switch','Movil','Otra'].filter(platform=>body[`platform_${platform}`]==='on');
-    payload.pick_ban_mode_rotation=body.pick_ban_mode_rotation.split(',').map(value=>value.trim()).filter(Boolean);payload.pick_ban_turn_seconds=Number(body.pick_ban_turn_seconds);
-    payload.description_i18n={...(defaults.description_i18n||{}),...Object.fromEntries(['es','en','it','fr','pt','de'].map(locale=>[locale,body['description_'+locale]||'']))};payload.points_per_position=points.map((point,index)=>({position:index+1,label:point.label,points:Number(point.points)}));
-    return prepare(type,row,payload);
-  }}><Field label="Nombre"><input name="name" defaultValue={defaults.name} required minLength={3} maxLength={120}/></Field><fieldset disabled={locked}><div className="op-form-grid"><Field label="Juego"><select name="game_id" defaultValue={defaults.game_id} required>{games.map(game=><option key={game.id} value={game.id}>{game.name}</option>)}</select></Field><Field label="Modalidad"><input name="game_mode" defaultValue={defaults.game_mode} required maxLength={60}/></Field><Field label="Inicio (hora local)"><input name="start_at" type="datetime-local" defaultValue={localDate(defaults.start_at)} required/></Field><Field label="Cierre de inscripción (hora local)"><input name="registration_close_at" type="datetime-local" defaultValue={localDate(defaults.registration_close_at)} required/></Field><Field label="Participación"><select name="participant_type" defaultValue={defaults.participant_type}><option value="equipo">Equipos</option><option value="individual">Individual</option><option value="ambos">Ambos</option></select></Field><Field label="Tipo"><select name="kind" defaultValue={defaults.kind}><option value="cup">CUP</option><option value="major">MAJOR</option><option value="personalizado">Personalizado</option><option value="fuera_de_circuito">Fuera de circuito</option><option value="champ">CHAMP</option><option value="champs">CHAMPS</option></select></Field><Field label="Temporada"><input name="season" type="number" min="1" max="4" defaultValue={defaults.season??''}/></Field>
-    {[['min_participants','Mínimo participantes',2,256],['max_participants','Máximo participantes',2,256],['roster_min','Mínimo jugadores',1,12],['roster_max','Máximo jugadores',1,12],['group_count','Número de grupos',1,64]].map(([key,title,min,max])=><Field key={key} label={title}><input name={key} type="number" min={min} max={max} defaultValue={defaults[key]} required/></Field>)}
-    {[['best_of_groups','Series de grupos'],['best_of_playoffs','Series de playoffs'],['best_of_final','Serie de la final']].map(([key,title])=><Field key={key} label={title}><select name={key} defaultValue={defaults[key]}>{[1,3,5,7,9].map(value=><option key={value} value={value}>BO{value}</option>)}</select></Field>)}</div><label className="op-check"><input type="checkbox" checked={groups} onChange={e=>setGroups(e.target.checked)}/> Fase de grupos antes de eliminatorias</label><label className="op-check"><input name="has_third_place_match" type="checkbox" defaultChecked={Boolean(defaults.has_third_place_match)}/> Partido por el tercer puesto</label></fieldset><Field label="Descripción"><textarea name="description" defaultValue={defaults.description||''} maxLength={5000} rows={3}/></Field><Field label="Reglamento"><textarea name="rules" defaultValue={defaults.rules||''} maxLength={10000} rows={5}/></Field>
-    <details className="op-details"><summary>Identidad, portada y club anfitrión</summary><div className="op-form-grid"><Field label="Club anfitrión"><select name="host_club_id" defaultValue={defaults.host_club_id||''}><option value="">Identidad CTP</option>{clubs.filter(club=>club.verified||club.id===defaults.host_club_id).map(club=><option key={club.id} value={club.id}>{club.name}</option>)}</select></Field><Field label="Portada (URL de imagen)"><input name="image_url" defaultValue={defaults.image_url||''} maxLength={2000} placeholder="https://…"/></Field><Field label="Identificador visual"><input name="banner" defaultValue={defaults.banner||'CTP'} maxLength={64}/></Field>{[['es','Español'],['en','English'],['it','Italiano'],['fr','Français'],['pt','Português'],['de','Deutsch']].map(([locale,name])=><Field key={locale} label={`Descripción · ${name}`}><textarea name={`description_${locale}`} defaultValue={defaults.description_i18n?.[locale]||''} rows={3} maxLength={5000}/></Field>)}</div></details>
-    <details className="op-details"><summary>Inscripción, plataformas y contacto</summary><fieldset disabled={locked}><Field label="Apertura de inscripción (opcional)"><input name="registration_open_at" type="datetime-local" defaultValue={localDate(defaults.registration_open_at)}/></Field><div className="op-actions">{['PC','PlayStation','Xbox','Switch','Movil','Otra'].map(platform=><label key={platform} className="op-check"><input type="checkbox" name={`platform_${platform}`} defaultChecked={(defaults.platforms?.length?defaults.platforms:['PC','PlayStation','Xbox']).includes(platform)}/>{platform}</label>)}</div><Field label="Región"><input name="region" defaultValue={defaults.region||'España'} maxLength={80}/></Field></fieldset><Field label="Reglamento PDF (URL)"><input name="rules_pdf_url" defaultValue={defaults.rules_pdf_url||''} maxLength={2000}/></Field><Field label="Retransmisión (URL)"><input name="stream_url" defaultValue={defaults.stream_url||''} maxLength={2000}/></Field><Field label="Contacto del torneo"><textarea name="contact_info" defaultValue={defaults.contact_info||''} rows={2} maxLength={2000}/></Field></details>
-    <details className="op-details"><summary>Modos de veto y puntos</summary><fieldset disabled={locked}><Field label="Rotación de modos, separados por coma"><input name="pick_ban_mode_rotation" defaultValue={(defaults.pick_ban_mode_rotation||[]).join(', ')} maxLength={550} placeholder="Hardpoint, Search & Destroy, Control"/></Field><Field label="Segundos por turno"><input name="pick_ban_turn_seconds" type="number" min="5" max="300" defaultValue={defaults.pick_ban_turn_seconds||20} required/></Field><p className="muted">Cups y Majors usan la rúbrica del circuito. Esta tabla se utiliza en torneos personalizados.</p>{points.map((point,index)=><div className="op-form-grid" key={index}><Field label={`Etapa ${index+1}`}><input value={point.label} maxLength={120} required onChange={event=>setPoints(current=>current.map((value,i)=>i===index?{...value,label:event.target.value}:value))}/></Field><Field label="Puntos"><input type="number" value={point.points} min="0" max="1000000" required onChange={event=>setPoints(current=>current.map((value,i)=>i===index?{...value,points:event.target.value}:value))}/></Field><button type="button" className="btn" onClick={()=>setPoints(current=>current.filter((_,i)=>i!==index))}>Quitar etapa</button></div>)}<button type="button" className="btn" disabled={points.length>=32} onClick={()=>setPoints(current=>[...current,{position:current.length+1,label:'',points:0}])}>Añadir etapa</button></fieldset></details>
-  </FormDialog>;
+function DrawActions({ tournament, now, matches, preview, manage, blocked, onAction }) {
+  const hasGroups = matches.some(match => match.phase === 'grupos');
+  const hasBracket = matches.some(match => match.phase === 'eliminacion');
+  const groupsFinished = hasGroups && matches.filter(match => match.phase === 'grupos')
+    .every(match => match.result_status === 'confirmed');
+  const phase = tournament.has_group_stage
+    ? (!tournament.groups_published_at || !groupsFinished ? 'groups' : 'playoffs')
+    : 'direct';
+  const hasFixtures = phase === 'groups' ? hasGroups : hasBracket;
+  const published = phase === 'groups' ? tournament.groups_published_at : tournament.bracket_published_at;
+  const label = t(`phase.${phase}`);
+  const releaseScheduled = Date.parse(published) > now;
+  const signupClosed = Date.parse(tournament.registration_close_at) <= now;
+  const closed = ['finalizado', 'cancelado'].includes(tournament.status);
+  const drawType = 'tournament.generate';
+  const publishType = 'tournament.publish';
+  return <div className="op-section-title">
+    <div className="op-competition-draw-title"><h3>{t('tabs.bracket')}</h3>
+      <span className="op-competition-info" tabIndex={0} aria-label={t('drawHelp')}><Info size={17} aria-hidden="true" /><span className="op-competition-tip" aria-hidden="true">{t('drawHelp')}</span></span>
+    </div>
+    <div className="op-actions">
+      {published && <Badge value={releaseScheduled ? 'scheduled' : 'active'}>{releaseScheduled
+        ? t('drawScheduled', { phase: label, date: competitionDateTime(published) })
+        : t('drawPublished', { phase: label })}</Badge>}
+      {!published && manage && !closed && <>
+        <button type="button" className={hasFixtures ? 'btn' : 'btn primary'} disabled={blocked(drawType) || preview?.kind === 'unavailable'} onClick={() => onAction({ type: drawType, row: tournament, phase, redraw: hasFixtures })}>
+          {t(hasFixtures ? 'redraw' : 'draw', { phase: label })}
+        </button>
+        {hasFixtures && <button type="button" className="btn primary" disabled={blocked(publishType) || !signupClosed}
+          onClick={() => onAction({ type: publishType, row: tournament, phase: phase === 'groups' ? 'groups' : 'playoffs' })}>
+          {t(signupClosed ? 'publishDraw' : 'publishAfterClose')}
+        </button>}
+      </>}
+    </div>
+  </div>;
 }
-function TournamentActionDialog({action,onClose,prepare}) {
-  const {type,row}=action;
-  const titles={'tournament.status':'Cambiar estado','tournament.registration':'Revisar inscripción','tournament.generate':'Generar fase','tournament.publish':'Publicar fase','tournament.schedule':'Reprogramar encuentro','tournament.notify':'Avisar a participantes','tournament.schedule_rounds':'Programar todas las rondas','tournament.unpublish':'Despublicar fase','tournament.points':'Recalcular puntos oficiales','tournament.delete':'Eliminar torneo','tournament.withdraw':'Retirar inscripción'};
-  return <FormDialog title={titles[type]} onClose={onClose} submitLabel="Preparar propuesta" help="La propuesta queda pendiente hasta que un administrador la envíe y CTP la confirme." submit={body=>prepare(type,row,{...body,...(body.approve!==undefined?{approve:body.approve==='true'}:{}),...(body.round_minutes?{round_minutes:Number(body.round_minutes)}:{}),...(body.scheduled_at?{scheduled_at:new Date(body.scheduled_at).toISOString()}: {}),...(body.first_match_at?{first_match_at:new Date(body.first_match_at).toISOString(),minutes_per_round:Number(body.minutes_per_round)}:{})})}>
-    {type==='tournament.status'&&<Field label="Estado"><select name="status" defaultValue={row.status}>{Object.entries(states).map(([value,name])=><option key={value} value={value}>{name}</option>)}</select></Field>}
-    {type==='tournament.registration'&&<><p>{participantName(row)}</p><Field label="Decisión"><select name="approve"><option value="true">Aprobar inscripción</option><option value="false">Rechazar inscripción</option></select></Field></>}
-    {type==='tournament.schedule'&&<><p>{matchTitle(row)}</p><Field label="Nuevo horario (hora local)"><input name="scheduled_at" type="datetime-local" defaultValue={localDate(row.scheduled_at)} required/></Field></>}
-    {type==='tournament.notify'&&<Field label="Mensaje para los participantes"><textarea name="text" rows={4} maxLength={2000} required/></Field>}
-    {type==='tournament.schedule_rounds'&&<><Field label="Primera ronda (hora local)"><input name="first_match_at" type="datetime-local" required/></Field><Field label="Minutos entre rondas"><input name="minutes_per_round" type="number" min="15" max="720" defaultValue="60" required/></Field><p>Los grupos se programan antes de las eliminatorias. CTP protege los partidos ya iniciados.</p></>}
-    {type==='tournament.unpublish'&&<Field label="Fase"><select name="phase"><option value="groups">Grupos</option><option value="playoffs">Eliminatorias</option></select></Field>}
-    {type==='tournament.delete'&&<><p className="op-error">Esta propuesta elimina el torneo y sus inscripciones. Antes hay que anular todos los resultados.</p><Field label={`Escribe: ${row.name}`}><input name="confirm_name" required maxLength={120} autoComplete="off"/></Field></>}
-    {type==='tournament.points'&&<p>CTP recalculará los puntos desde el cuadro y los grupos oficiales. Repetir esta operación no suma puntos dos veces.</p>}
-    {type==='tournament.withdraw'&&<p>Se retirará la plaza de {participantName(row)} mediante el flujo oficial de inscripción.</p>}
-    {['tournament.generate','tournament.publish'].includes(type)&&<><Field label="Fase"><select name="phase">{row.has_group_stage&&<option value="groups">Grupos</option>}{type==='tournament.generate'&&!row.has_group_stage&&<option value="direct">Eliminatorias directas</option>}<option value="playoffs">Playoffs</option></select></Field>{type==='tournament.generate'&&<Field label="Duración prevista por ronda (minutos)"><input name="round_minutes" type="number" min="15" max="720" defaultValue="60" required/></Field>}{type==='tournament.publish'&&<p className="op-notice">La publicación hará visibles los cruces de la fase. Revisa equipos, horarios y clasificación antes de enviar.</p>}</>}
-    {['tournament.status','tournament.registration','tournament.schedule','tournament.notify','tournament.schedule_rounds','tournament.unpublish','tournament.points','tournament.delete','tournament.withdraw'].includes(type)&&<Field label="Motivo"><textarea name="reason" minLength={12} maxLength={500} rows={3} required/></Field>}
+
+function TournamentActionDialog({ action, onClose, prepare, applyNow }) {
+  const { type, row, phase, redraw } = action;
+  const key = actions[type];
+  const generate = type === 'tournament.generate';
+  const publish = type === 'tournament.publish';
+  const revealAt = row?.draw_visible_at || row?.start_at;
+  return <FormDialog title={generate ? t(redraw ? 'redraw' : 'draw', { phase: t(`phase.${phase}`) }) : publish ? t('publishDraw') : t(`action.${key}`)}
+    onClose={onClose} submitLabel={applyNow ? t('apply') : t('prepare')}
+    cancelLabel={translate('manager.tournamentLive.confirm.cancel')} closeLabel={translate('manager.tournamentLive.close')}
+    help={!applyNow ? t('proposalHelp') : undefined}
+    danger={type === 'tournament.delete'}
+    submit={body => prepare(type, row, phase ? { phase } : body)}>
+    {type === 'tournament.status' && <Field label={t('state.label')}><select name="status" defaultValue={row.status}>{states.map(value => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></Field>}
+    {type === 'tournament.notify' && <Field label={t('message')}><textarea name="text" rows={4} maxLength={2000} required /></Field>}
+    {type === 'tournament.unpublish' && <Field label={t('phase.label')}><select name="phase">
+      {row.groups_published_at && <option value="groups">{t('phase.groups')}</option>}
+      {row.bracket_published_at && <option value="playoffs">{t('phase.playoffs')}</option>}
+    </select></Field>}
+    {type === 'tournament.delete' && <>
+      <p className="op-error">{t('deleteHelp')}</p>
+      <Field label={t('confirmName', { name: row.name })}><input name="confirm_name" required maxLength={120} autoComplete="off" /></Field>
+    </>}
+    {type === 'tournament.points' && <p>{t('pointsHelp')}</p>}
+    {generate && <p>{t(redraw ? 'redrawHelp' : 'generateHelp')}</p>}
+    {publish && <p>{Date.parse(revealAt) > Date.now()
+      ? t('publishHelpScheduled', { date: competitionDateTime(revealAt) }) : t('publishHelpNow')}</p>}
+    {key && <Field label={translate('manager.tournamentLive.reason.label')}><textarea name="reason" minLength={12} maxLength={500} rows={3} required /></Field>}
   </FormDialog>;
 }

@@ -37,7 +37,6 @@ export default function AdministrationPage(){
   const returnTo=params.get('returnTo')?operationReturnPath(params.get('returnTo')):null;
   const setEditing=id=>setParams(previous=>{const next=new URLSearchParams(previous);id?next.set('edit',id):next.delete('edit');return next;});
   const [removing,setRemoving]=useState(null);
-  const [editingClub,setEditingClub]=useState(null);
   const [rosterClub,setRosterClub]=useState(null);
   const variant=params.get('view');
   const resource=section==='mapas'&&variant==='modes'?'modes':section==='ranked'&&variant==='lobbies'?'ranked_lobbies':definition?.[2]||'summary';
@@ -52,7 +51,7 @@ export default function AdministrationPage(){
     return {...result,operations,request_key:requestKey};
   },[resource,page,query,gameId,teamId]);
   const data=loaded?.request_key===requestKey?loaded:null;
-  useEffect(()=>{setSearch(query);setDialog(null);setRemoving(null);setEditingClub(null);setRosterClub(null);},[section,query,variant,me?.id]);
+  useEffect(()=>{setSearch(query);setDialog(null);setRemoving(null);setRosterClub(null);},[section,query,variant,me?.id]);
   const change=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set(key,String(value)):next.delete(key);if(key!=='page')next.delete('page');return next;},{replace:true});
   if(!me?.is_admin)return <Navigate to="/operaciones/jornada" replace/>;
   if(!definition)return <Navigate to="/administracion/resumen" replace/>;
@@ -66,7 +65,7 @@ export default function AdministrationPage(){
   const actionButton=(title,type,row,extra={})=><button type="button" className="btn" disabled={loading||Boolean(error)||!Number.isInteger(row.manager_version)||(type==='admin.ranked.queue.open'&&!(row.map_count>0))} title={type==='admin.ranked.queue.open'&&!(row.map_count>0)?'Añade al menos un mapa activo de Hardpoint antes de abrir la cola.':undefined} onClick={()=>propose(type,row,extra)}>{title}</button>;
   const columns={
     users:[{key:'username',title:'Cuenta',render:r=><div><strong>{r.username}</strong>{r.email&&<><br/><small>{r.email}</small></>}<br/><small>{[r.gamertag,r.platform||'Sin plataforma'].filter(Boolean).join(' · ')}</small></div>},{key:'role',title:'Rol',render:r=>ROLE[r.role]||r.role},{key:'points',title:'Puntos'},{key:'record',title:'V / D',render:r=>`${r.wins??0} / ${r.losses??0}`},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><button type="button" className="btn" onClick={()=>setEditing(r.id)}>Editar datos</button>{r.role==='admin'?<Badge value="active">Administrador CTP</Badge>:<Link className="btn" to={`/usuarios?q=${encodeURIComponent(r.username)}`}>Asignar función de staff</Link>}{r.role==='player'&&<button type="button" className="btn" aria-label={`Eliminar la cuenta ${r.username}`} onClick={()=>setRemoving(r)}><Trash2 size={15}/> Eliminar</button>}</div>}],
-    teams:[{key:'name',title:'Club',render:r=><div style={{display:'flex',alignItems:'center',gap:10}}>{safeImage(r.logo)&&<img alt="" src={r.logo} width="36" height="36" style={{objectFit:'contain'}}/>}<div><strong>{r.name}</strong><br/><small>{r.tag}</small></div></div>},{key:'leader',title:'Responsable',render:r=>r.leader_name||r.leader_username||'Sin identificar'},{key:'points',title:'Puntos'},{key:'verified',title:'Verificación',render:r=><Badge value={r.verified||r.is_verified?'approved':'pending'}/>},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><button type="button" className="btn" aria-label={`Editar el club ${r.name}`} onClick={()=>setEditingClub(r)}>Editar</button><button type="button" className="btn" aria-label={translate('manager.teamRoster.openFor',{name:r.name})} onClick={()=>setRosterClub(r)}>{translate('manager.teamRoster.open')}</button><Link className="btn" to={`/operaciones/clubes?club=${encodeURIComponent(r.id)}`}>Identidad y revisión</Link><button className="btn" onClick={()=>propose('admin.entitlement.grant',null,{team:r})}>Conceder acceso</button></div>}],
+    teams:[{key:'name',title:'Club',render:r=><div style={{display:'flex',alignItems:'center',gap:10}}>{safeImage(r.logo)&&<img alt="" src={r.logo} width="36" height="36" style={{objectFit:'contain'}}/>}<div><strong>{r.name}</strong><br/><small>{r.tag}</small></div></div>},{key:'leader',title:'Responsable',render:r=>r.leader_name||r.leader_username||'Sin identificar'},{key:'points',title:'Puntos'},{key:'verified',title:'Verificación',render:r=><Badge value={r.verified||r.is_verified?'approved':'pending'}/>},{key:'actions',title:'Gestión',render:r=><div className="op-actions"><button type="button" className="btn primary" aria-label={translate('manager.teamAdmin.openFor',{name:r.name})} onClick={()=>setRosterClub(r)}>{translate('manager.teamAdmin.open')}</button><Link className="btn" to={`/operaciones/clubes?club=${encodeURIComponent(r.id)}`}>Identidad y revisión</Link><button className="btn" onClick={()=>propose('admin.entitlement.grant',null,{team:r})}>Conceder acceso</button></div>}],
     entitlements:[{key:'team',title:'Club',render:r=>r.team_name||r.club_name||r.team_id},{key:'kind',title:'Acceso',render:r=>ACCESS[r.kind]||r.kind},{key:'season',title:'Season',render:r=>r.season||r.season_label||'Circuito'},{key:'status',title:'Estado',render:r=><Badge value={r.revoked_at||r.status==='revoked'?'revoked':'active'}/>},{key:'created_at',title:'Concedido',render:r=>dateTime(r.created_at)},{key:'actions',title:'Acciones',render:r=>!r.revoked_at&&r.status!=='revoked'&&actionButton('Retirar acceso','admin.entitlement.revoke',r)}],
     modes:[{key:'name',title:'Modo',render:r=><strong>{r.name}</strong>},{key:'game',title:'Juego',render:r=>gameName(data,r.game_id)},{key:'status',title:'Estado',render:r=><Badge value={r.active?'active':'paused'}/>},{key:'sort_order',title:'Orden'},{key:'actions',title:'Acciones',render:r=><div className="op-actions">{actionButton('Editar','admin.mode.update',r)}<button className="btn" aria-label={`Subir ${r.name}`} onClick={()=>propose('admin.mode.update',r,{move:-1})}><ArrowUp size={15}/></button><button className="btn" aria-label={`Bajar ${r.name}`} onClick={()=>propose('admin.mode.update',r,{move:1})}><ArrowDown size={15}/></button>{actionButton('Eliminar','admin.mode.delete',r)}</div>}],
     maps:[{key:'name',title:'Mapa',render:r=><div style={{display:'flex',alignItems:'center',gap:12}}>{safeImage(r.image_url)&&<img alt="" src={r.image_url} width="96" height="54" style={{objectFit:'cover',borderRadius:4}}/>}<strong>{r.name}</strong></div>},{key:'mode',title:'Modo'},{key:'game',title:'Juego',render:r=>gameName(data,r.game_id)},{key:'status',title:'Estado',render:r=><Badge value={r.active?'active':'paused'}/>},{key:'actions',title:'Acciones',render:r=><div className="op-actions">{actionButton('Editar','admin.map.update',r)}{actionButton('Eliminar','admin.map.delete',r)}</div>}],
@@ -94,7 +93,7 @@ export default function AdministrationPage(){
           <DataTable rows={rows} columns={columns} empty="No hay registros en esta vista" emptyDetail="Prueba otra búsqueda o crea un registro desde las acciones disponibles."/>
           <div className="op-actions"><button className="btn" disabled={loading||page===0} onClick={()=>change('page',page-1)}>Anterior</button><span>Página {page+1}</span><button className="btn" disabled={loading||!(data.has_more??data.total>(page+1)*20)} onClick={()=>change('page',page+1)}>Siguiente</button></div>
         </section>
-        {section==='ranked'&&<div className="op-actions"><Link className="btn" to="/ranked/monitor">Supervisar colas y partidas</Link><Link className="btn" to="/operaciones/torneos">Programar season y reinicio de divisiones</Link></div>}
+        {section==='ranked'&&<div className="op-actions"><Link className="btn" to="/ranked/monitor">Supervisar colas y partidas</Link><Link className="btn" to="/ranked/temporadas">{translate('manager.rankedSeasons.tab')}</Link></div>}
         {section==='integraciones'&&<AdministrationIntegrations/>}
       </>}
       {commands.length>0&&<DecisionPanel data={{...data.operations,commands}} reload={reload} onChanged={reload}/>}
@@ -103,7 +102,6 @@ export default function AdministrationPage(){
     {removing&&<DeleteUserDialog key={removing.id} user={removing} onClose={()=>setRemoving(null)} onDeleted={result=>{toast(result.mode==='deleted'?`Cuenta de ${removing.username} eliminada por completo.`:`Cuenta de ${removing.username} cerrada y anonimizada. Sus partidas se conservan como «Cuenta eliminada».`);setRemoving(null);reload();}}/>}
     {editing&&<UserProfileDialog key={editing} id={editing} onClose={()=>setEditing(null)} onSaved={()=>{toast('Datos de la cuenta actualizados en CTP.');reload();}}/>}
     {rosterClub&&<TeamRosterDialog key={rosterClub.id} club={rosterClub} onClose={()=>setRosterClub(null)} onChanged={reload}/>}
-    {editingClub&&<ClubEditDialog key={editingClub.id} club={editingClub} onClose={()=>setEditingClub(null)} onSaved={result=>{toast(result.changed?.length?`Club ${result.name} actualizado en CTP.`:'El club ya tenía esos datos.');reload();}}/>}
   </div>;
 }
 
@@ -135,33 +133,6 @@ function DeleteUserDialog({user,onClose,onDeleted}){
       <Field label={`Escribe «${profile.username}» para confirmar`}><input value={typed} onChange={event=>setTyped(event.target.value)} autoComplete="off" spellCheck={false} maxLength={100}/></Field>
       <label className="op-check"><input type="checkbox" name="confirm"/> Entiendo que esta acción es definitiva.</label>
     </>}
-  </FormDialog>;
-}
-
-const TEAM_ROLE={lider:'Manager',jugador:'Jugador',suplente:'Suplente'};
-/** Direct, versioned correction of a club's name and tag; CTP validates and audits the change. */
-function ClubEditDialog({club,onClose,onSaved}){
-  const {data,loading,error,reload}=useData(()=>api.get(`/administration?${new URLSearchParams({resource:'team',target_id:club.id})}`),[club.id]);
-  const current=data?.items?.find(item=>item.id===club.id);
-  if(!current)return <FormDialog title="Editar club" onClose={onClose} submitLabel="Guardar cambios" submit={()=>{throw new Error(error?'Vuelve a cargar el club.':'Espera a que se cargue el club.');}}>
-    {loading?<p role="status"><Spinner/> Cargando club…</p>:<p className="op-error" role="alert">{error?.message||'El club ya no existe en CTP.'}<button className="btn" type="button" onClick={reload}>Reintentar</button></p>}
-  </FormDialog>;
-  const members=Array.isArray(current.members)?current.members:[];
-  const managers=members.filter(member=>member.role==='lider').map(member=>member.username);
-  return <FormDialog title="Editar club" onClose={onClose} submitLabel="Guardar cambios" help="Los cambios se aplican en CTP al guardar y quedan registrados en la auditoría." submit={async body=>{
-    const changes={};
-    const name=String(body.name||'').trim(),tag=String(body.tag||'').trim().toUpperCase();
-    if(name!==current.name)changes.name=name;
-    if(tag!==current.tag)changes.tag=tag;
-    if(!Object.keys(changes).length)throw new Error('No hay cambios que guardar.');
-    onSaved(await api.patch(`/administration/clubs/${current.id}`,{expected_version:current.manager_version,changes}));
-  }}>
-    <p><strong>{current.name}</strong> · Manager: {managers.join(', ')||'sin manager'} · {current.member_count??members.length} miembros · alta {dateTime(current.created_at)}</p>
-    <div className="op-form-grid">
-      <Field label="Nombre del club" hint="Entre 3 y 24 caracteres. No puede repetir el de otro club."><input name="name" required minLength={3} maxLength={24} defaultValue={current.name}/></Field>
-      <Field label="Tag" hint="De 2 a 8 letras o números."><input name="tag" required minLength={2} maxLength={8} pattern="[A-Za-z0-9]{2,8}" defaultValue={current.tag} style={{textTransform:'uppercase'}}/></Field>
-    </div>
-    {members.length>0&&<details><summary>Miembros ({members.length})</summary><ul>{members.map(member=><li key={member.user_id}>{member.username} · {TEAM_ROLE[member.role]||member.role}</li>)}</ul></details>}
   </FormDialog>;
 }
 

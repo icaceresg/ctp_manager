@@ -69,6 +69,20 @@ function person(row, key = 'user_id') {
   if (!object(row) || typeof row[key] !== 'string' || !UUID.test(row[key]) || !text(row.username) || !row.username) fail(502, 'unavailable');
   return { [key]: row[key].toLowerCase(), username: row.username, avatar: text(row.avatar, 2048) ? row.avatar : null };
 }
+const COLOR = /^#[0-9A-F]{6}$/;
+const PROGRAMS = ['team_pass', 'semi_team_pass', 'circuit_pass'];
+const preview = value => { try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && value.length <= 4096 ? value : null; } catch { return null; } };
+/** Editable profile (CTP 372). Older backends send none: the workspace then shows identity only. */
+function clubProfile(value) {
+  if (value == null) return null;
+  if (!object(value) || typeof value.description !== 'string' || value.description.length > 2000 || !text(value.tagline, 80)
+    || !COLOR.test(value.primary_color) || !COLOR.test(value.secondary_color) || !Number.isSafeInteger(value.manager_version) || value.manager_version < 1
+    || value.program != null && !PROGRAMS.includes(value.program)) fail(502, 'unavailable');
+  return { description: value.description, tagline: value.tagline, primary_color: value.primary_color, secondary_color: value.secondary_color,
+    has_logo: typeof value.logo_path === 'string', has_cover: typeof value.cover_path === 'string',
+    logo_url: typeof value.logo_url === 'string' ? preview(value.logo_url) : null, cover_url: typeof value.cover_url === 'string' ? preview(value.cover_url) : null,
+    program: value.program ?? null, manager_version: value.manager_version };
+}
 /** Explicit DTO: public usernames, roles and dates. No contact or payment data reaches the browser. */
 export function teamRosterResponse(value, payload) {
   if (!object(value)) fail(502, 'unavailable');
@@ -90,6 +104,7 @@ export function teamRosterResponse(value, payload) {
     || !Array.isArray(value.members) || value.members.length > 100 || !Array.isArray(value.requests) || value.requests.length > 200) fail(502, 'unavailable');
   const result = {
     team: { id: team.id, name: team.name, tag: team.tag, logo: text(team.logo, 2048) ? team.logo : null, created_at: date(team.created_at) ? team.created_at : null },
+    profile: clubProfile(value.profile),
     members: value.members.map(row => {
       if (!ROLES.includes(row?.role) || !date(row.joined_at)) fail(502, 'unavailable');
       return { ...person(row), role: row.role, joined_at: row.joined_at };

@@ -81,12 +81,13 @@ test('stale versions, taken names, bad input and non-admins never change the clu
   const adminCookie=await signIn('admin@example.invalid'),refCookie=await signIn('referee@example.invalid');
   const before={...club};
   const stale=await api('PATCH',route,{expected_version:1,changes:{name:'Otro'}},adminCookie);
-  assert.equal(stale.status,409); assert.match(stale.data.error,/ha cambiado/);
+  assert.equal(stale.status,409); assert.equal(stale.data.error,'manager.clubProfile.error.conflict');
   const taken=await api('PATCH',route,{expected_version:club.manager_version,changes:{name:'Beta'}},adminCookie);
-  assert.equal(taken.status,422); assert.match(taken.data.error,/otro club con ese nombre/);
+  assert.equal(taken.status,422); assert.equal(taken.data.error,'manager.clubProfile.error.nameTaken');
   const count=observed.length;
   for (const body of [{expected_version:club.manager_version,changes:{name:'ab'}},{expected_version:club.manager_version,changes:{tag:'a b'}},
-    {expected_version:club.manager_version,changes:{logo:'x'}},{expected_version:club.manager_version,changes:{}},{changes:{name:'Valid name'}},
+    {expected_version:club.manager_version,changes:{logo:'x'}},{expected_version:club.manager_version,changes:{primary_color:'red'}},
+    {expected_version:club.manager_version,changes:{logo_path:`${referee}/00000000-0000-4000-8000-000000000001.png`}},{expected_version:club.manager_version,changes:{description:'d'.repeat(2001)}},{expected_version:club.manager_version,changes:{}},{changes:{name:'Valid name'}},
     {expected_version:club.manager_version,changes:{name:'Valid name'},leader_id:referee}]) {
     assert.equal((await api('PATCH',route,body,adminCookie)).status,400,JSON.stringify(body));
   }
@@ -95,4 +96,12 @@ test('stale versions, taken names, bad input and non-admins never change the clu
   assert.equal((await api('PATCH',route,{expected_version:club.manager_version,changes:{name:'Hack'}})).status,401);
   assert.equal(observed.length,count);
   assert.deepEqual({name:club.name,tag:club.tag,manager_version:club.manager_version},{name:before.name,tag:before.tag,manager_version:before.manager_version});
+});
+
+test('an administrator saves the description and club page identity with owned image paths',async()=>{
+  const cookie=await signIn('admin@example.invalid');
+  const logo=`${clubId}/30000000-0000-4000-8000-000000000001.png`;
+  const saved=await api('PATCH',route,{expected_version:club.manager_version,changes:{description:'  Club de pruebas\ncon dos líneas ',tagline:' Siempre arriba ',primary_color:'#abcdef',logo_path:logo,cover_path:null}},cookie);
+  assert.equal(saved.status,200);
+  assert.deepEqual(observed.at(-1).payload.changes,{description:'Club de pruebas\ncon dos líneas',tagline:'Siempre arriba',primary_color:'#ABCDEF',logo_path:logo,cover_path:null});
 });

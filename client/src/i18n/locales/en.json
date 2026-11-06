@@ -885,5 +885,13 @@
   "manager.tournamentScenario.error.order": "Check the stage and bracket order. Each match must start after the matches that feed into it.",
   "manager.tournamentScenario.error.conflict": "The tournament or scenario changed. Reload before saving.",
   "manager.tournamentScenario.error.forbidden": "Your account cannot save this scenario.",
-  "manager.tournamentScenario.error.unavailable": "The scenario could not be loaded or saved."
+  "manager.tournamentScenario.error.unavailable": "The scenario could not be loaded or saved.",
+  "manager.teamRoster.archiveTitle": "Archive the club",
+  "manager.teamRoster.archiveHelp": "The club will be hidden and its players can join another team. Points, results, registrations, passes and payments are kept. CTP can restore it.",
+  "manager.teamRoster.archive": "Archive club",
+  "manager.teamRoster.toast.archived": "The club {name} has been archived.",
+  "manager.teamRoster.error.activeCompetition": "The club has active registrations or pending challenges. Resolve them before archiving it.",
+  "manager.teamRoster.error.inactive": "The club is archived and cannot be changed. Refresh the list.",
+  "manager.teamRoster.error.restoreConflict": "The roster cannot be restored because one or more players already belong to another team.",
+  "manager.teamRoster.error.directDeleteForbidden": "Archive the club to preserve its points and history."
 }

@@ -6,6 +6,7 @@ import { Modal } from '../components/ui.jsx';
 import { Field } from './ui.jsx';
 import { getIntlLocale, translate } from '../i18n/runtime.js';
 import { prepareWebImage, WEB_IMAGE_SPECS } from '../webImageUpload.js';
+import { teamCloseCopy, teamIsArchived } from './teamArchiveContract.js';
 
 const KEY_PREFIXES = ['manager.teamRoster.', 'manager.clubProfile.'];
 /** Server errors arrive as translation keys; other failures keep their message. */
@@ -53,7 +54,7 @@ export default function TeamRosterDialog({ club, onClose, onChanged }) {
       setRoster(result);
     }
     rememberedReason = reason;
-    if (result?.dissolved) { toast(translate('manager.teamRoster.toast.dissolved', { name: roster.team.name })); onChanged?.(); onClose(); return; }
+    if (result?.dissolved) { toast(translate(teamCloseCopy(roster.team).toast, { name: roster.team.name })); onChanged?.(); onClose(); return; }
     toast(applied ? success : translate('manager.teamRoster.toast.unchanged'));
     onChanged?.();
   }
@@ -68,7 +69,8 @@ export default function TeamRosterDialog({ club, onClose, onChanged }) {
   const members = roster?.members || [], requests = roster?.requests || [];
   const leaders = members.filter(member => member.role === 'lider');
   const full = members.length >= (roster?.max_members || 6);
-  const disabled = busy || loading || !roster;
+  const disabled = busy || loading || !roster || !!error || teamIsArchived(roster?.team);
+  const closeCopy = teamCloseCopy(roster?.team);
   const ask = action => setPending({ ...action, error: '' });
 
   const actions = {
@@ -123,8 +125,8 @@ export default function TeamRosterDialog({ club, onClose, onChanged }) {
       success: translate(accept ? 'manager.teamRoster.toast.accepted' : 'manager.teamRoster.toast.rejected', { name: request.username }),
     }),
     dissolve: confirmName => ask({
-      title: translate('manager.teamRoster.dissolveTitle'), message: translate('manager.teamRoster.dissolveHelp'), danger: true, warnings: [],
-      steps: () => [{ action: 'dissolve', confirm_name: confirmName }], success: '', confirmLabel: translate('manager.teamRoster.dissolve'),
+      title: translate(closeCopy.title), message: translate(closeCopy.help), danger: true, warnings: [],
+      steps: () => [{ action: 'dissolve', confirm_name: confirmName }], success: '', confirmLabel: translate(closeCopy.action),
     }),
   };
 
@@ -279,16 +281,17 @@ function RequestsPanel({ requests, full, disabled, actions }) {
   </section>;
 }
 
-function DangerPanel({ roster, disabled, onDissolve }) {
+export function DangerPanel({ roster, disabled, onDissolve }) {
   const [typed, setTyped] = useState('');
+  const copy = teamCloseCopy(roster.team);
   return <section className="op-roster-danger" aria-labelledby="roster-dissolve">
-    <h3 id="roster-dissolve"><Trash2 size={15} aria-hidden /> {translate('manager.teamRoster.dissolveTitle')}</h3>
-    <p>{translate('manager.teamRoster.dissolveHelp')}</p>
+    <h3 id="roster-dissolve"><Trash2 size={15} aria-hidden /> {translate(copy.title)}</h3>
+    <p>{translate(copy.help)}</p>
     <Field label={translate('manager.teamRoster.dissolveConfirm', { name: roster.team.name })}>
       <input value={typed} onChange={event => setTyped(event.target.value)} autoComplete="off" spellCheck={false} maxLength={100} disabled={disabled} />
     </Field>
     <div><button type="button" className="btn danger" disabled={disabled || typed.trim() !== roster.team.name} onClick={() => onDissolve(typed.trim())}>
-      <Trash2 size={14} aria-hidden /> {translate('manager.teamRoster.dissolve')}</button></div>
+      <Trash2 size={14} aria-hidden /> {translate(copy.action)}</button></div>
   </section>;
 }
 

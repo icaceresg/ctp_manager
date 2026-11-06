@@ -14,6 +14,7 @@ import UserProfileDialog from './UserProfileDialog.jsx';
 import TeamRosterDialog from '../operations/TeamRosterDialog.jsx';
 import { managerUserId, operationReturnPath } from '../navigation.js';
 import { prepareWebImage, WEB_IMAGE_SPECS } from '../webImageUpload.js';
+import { activeAdministrationClubs } from '../operations/teamArchiveContract.js';
 import '../operations/operations.css';
 import '../operations/sanctions.css';
 
@@ -55,7 +56,7 @@ export default function AdministrationPage(){
   const change=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set(key,String(value)):next.delete(key);if(key!=='page')next.delete('page');return next;},{replace:true});
   if(!me?.is_admin)return <Navigate to="/operaciones/jornada" replace/>;
   if(!definition)return <Navigate to="/administracion/resumen" replace/>;
-  const rows=data?.items||[];
+  const rows=resource==='teams'?activeAdministrationClubs(data?.items||[]):data?.items||[];
   const prepare=async(type,row,payload)=>{
     if(loading||error)throw new Error('Actualiza la consulta antes de preparar una decisión.');
     const result=await api.post('/administration/commands',{type,target_id:createActions.has(type)?crypto.randomUUID():target(row),expected_version:createActions.has(type)?0:row.manager_version,payload});

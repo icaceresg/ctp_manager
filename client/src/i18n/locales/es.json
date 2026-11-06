@@ -885,5 +885,13 @@
   "manager.tournamentScenario.error.order": "Revisa el orden de las fases y los cruces. Cada partido debe empezar después de los partidos que le dan paso.",
   "manager.tournamentScenario.error.conflict": "El torneo o el escenario han cambiado. Vuelve a cargarlo antes de guardar.",
   "manager.tournamentScenario.error.forbidden": "Tu cuenta no puede guardar este escenario.",
-  "manager.tournamentScenario.error.unavailable": "No se ha podido cargar o guardar el escenario."
+  "manager.tournamentScenario.error.unavailable": "No se ha podido cargar o guardar el escenario.",
+  "manager.teamRoster.archiveTitle": "Archivar el club",
+  "manager.teamRoster.archiveHelp": "El club quedará oculto y sus jugadores podrán unirse a otro equipo. Se conservan puntos, resultados, inscripciones, pases y pagos. CTP podrá recuperarlo.",
+  "manager.teamRoster.archive": "Archivar club",
+  "manager.teamRoster.toast.archived": "El club {name} se ha archivado.",
+  "manager.teamRoster.error.activeCompetition": "El club tiene inscripciones activas o retos pendientes. Resuélvelos antes de archivarlo.",
+  "manager.teamRoster.error.inactive": "El club está archivado y no admite cambios. Actualiza la lista.",
+  "manager.teamRoster.error.restoreConflict": "No se puede recuperar la plantilla porque alguno de sus jugadores ya pertenece a otro equipo.",
+  "manager.teamRoster.error.directDeleteForbidden": "Debes archivar el club para conservar sus puntos e historial."
 }

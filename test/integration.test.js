@@ -104,6 +104,18 @@ test('un rechazo HTTP de autorización es definitivo y una caída mantiene la in
   await assert.rejects(unavailable({ action: 'command' }), error => error.remoteRejected !== true);
 });
 
+test('competition rejection receipts must bind the complete signed command before recovery', async () => {
+  const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
+  const body = {action:'command',type:'tournament.update',command_id:'a0000000-0000-4000-8000-000000000001',
+    target_id:'a0000000-0000-4000-8000-000000000002',actor_id:'ctp:qa-owner',expected_version:13,payload:{pick_ban_turn_seconds:8}};
+  const proof={receipt_absent:true,command_id:body.command_id,target_id:body.target_id,type:body.type,actor_id:body.actor_id,expected_version:13};
+  const invoke = receipt => createOperationsTransport(config,async()=>Response.json({ok:false,code:'conflict',rejection_receipt:receipt},{status:409}))(body);
+  await assert.rejects(invoke(proof),error=>error.status===409&&JSON.stringify(error.rejectionReceipt)===JSON.stringify(proof));
+  for(const changed of [{command_id:'other'},{target_id:'other'},{type:'tournament.delete'},{actor_id:'ctp:other'},{expected_version:14},{receipt_absent:false}]){
+    await assert.rejects(invoke({...proof,...changed}),error=>error.status===409&&error.rejectionReceipt===undefined);
+  }
+});
+
 test('read permission revocation reaches the UI as forbidden so earlier private data can be cleared', async () => {
   const config = integrationConfig({ CTP_OPERATIONS_URL: 'https://example.test/bridge', CTP_OPERATIONS_TOKEN: token, CTP_SIGNING_SECRET: signingSecret });
   for (const status of [401,403]) {
@@ -159,6 +171,10 @@ before(async () => {
     response.setHeader('Content-Type', 'application/json');
     if (mode === 'outage') { response.statusCode = 503; response.end(JSON.stringify({ error: token })); return; }
     if (mode === 'rejected') { response.statusCode = 422; response.end(JSON.stringify({ ok: false, code: 'invalid_command' })); return; }
+    if (mode === 'reconciled' && parsed.action === 'command') {
+      response.statusCode=409;response.end(JSON.stringify({ok:false,code:'conflict',rejection_receipt:{receipt_absent:true,
+        command_id:parsed.command_id,target_id:parsed.target_id,type:parsed.type,actor_id:parsed.actor_id,expected_version:parsed.expected_version}}));return;
+    }
     if (mode === 'unauthenticated' || mode === 'forbidden' || mode === 'self_review' && parsed.action === 'command' && parsed.actor_id === operatorId) {
       response.statusCode = mode === 'unauthenticated' ? 401 : 403;
       response.end(JSON.stringify({ ok: false, code: 'forbidden', error: token })); return;
@@ -177,6 +193,9 @@ before(async () => {
       const from = parsed.filters.cursor ? all.findIndex(t => `${t.start_at}|${t.id}` === parsed.filters.cursor) + 1 : 0;
       const page = all.slice(from, from + parsed.filters.limit), last = page.at(-1);
       response.end(JSON.stringify({ ok: true, data: { items: page, next_cursor: from + page.length < all.length ? `${last.start_at}|${last.id}` : null, games: [{ id: 'game', name: 'Game' }] } })); return;
+    }
+    if (parsed.action === 'competition' && parsed.resource === 'tournament' && parsed.target_id === 'a4010000-0000-4000-8000-000000000200') {
+      response.end(JSON.stringify({ok:true,data:{tournament:{id:parsed.target_id,manager_version:14,name:'Synthetic command recovery'},participants:[],matches:[],games:[]}}));return;
     }
     if (parsed.action === 'case_context') { response.end(JSON.stringify({ ok: true, data: { incident_id: parsed.target_id, messages: [{ id: 'message-1', author_name: 'Jugador', text: 'Necesitamos ayuda', created_at: '2026-09-29T10:00:00Z', source: 'ticket', is_staff: false, private_token: token }], next_cursor: null, web_path: '/app/retos/test' } })); return; }
     response.end(JSON.stringify({ ok: true, data: parsed.action === 'snapshot' ? snapshot : { applied: true, command_id: mode === 'wrong_ack' ? 'another-command' : parsed.command_id, type: parsed.type, target_id: parsed.target_id, ...(parsed.type?.startsWith('sanction.') ? { version: 1, source_version: 1 } : {}) } }));
@@ -344,6 +363,28 @@ test('solo un rechazo definitivo en primer intento permite descartar; tras fallo
   assert.equal(ambiguous.status, 'failed'); assert.equal(ambiguous.attempts, 2);
   assert.equal((await api('POST', `/operations/commands/${second.id}/cancel`, { expected_updated_at: ambiguous.updated_at })).status, 409);
   mode = 'ok';
+});
+
+test('a signed official absent receipt recovers a lost request through normal Manager HTTP actions',async()=>{
+  const target='a4010000-0000-4000-8000-000000000200';
+  snapshot.supported_actions['tournament.update']=true;
+  try{
+    await start(true);mode='ok';
+    assert.equal((await api('POST','/operations/integration/sync',{})).status,200);
+    assert.equal((await api('GET',`/operations/competition?resource=tournament&target_id=${target}`)).status,200);
+    const proposal={type:'tournament.update',target_id:target,expected_version:14,payload:{pick_ban_turn_seconds:8}};
+    const queued=await api('POST','/operations/competition/commands',proposal);
+    assert.equal(queued.status,200);const id=queued.data.command.id;
+    mode='outage';assert.equal((await api('POST',`/operations/integration/commands/${id}/send`,{})).status,502);
+    mode='reconciled';assert.equal((await api('POST',`/operations/integration/commands/${id}/send`,{})).status,409);
+    const rejected=(await api('GET','/operations/bootstrap')).data.commands.find(c=>c.id===id);
+    assert.equal(rejected.status,'rejected');assert.equal(rejected.attempts,2);
+    assert.equal(rejected.result.rejection_receipt.command_id,id);
+    assert.equal((await api('POST',`/operations/commands/${id}/cancel`,{expected_updated_at:rejected.updated_at})).status,200);
+    const next=await api('POST','/operations/competition/commands',{...proposal,payload:{pick_ban_turn_seconds:10}});
+    assert.equal(next.status,200);assert.notEqual(next.data.command.id,id);
+    mode='ok';assert.equal((await api('POST',`/operations/integration/commands/${next.data.command.id}/send`,{})).data.confirmed,true);
+  }finally{mode='ok';delete snapshot.supported_actions['tournament.update'];}
 });
 
 test('un primer rechazo de autorización permite descartar y proponer otra revisión con un actor independiente', async () => {

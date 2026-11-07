@@ -117,7 +117,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  const drawCommand = body.action === 'command' && ['tournament.create','tournament.update','tournament.publish','match.resolve','match.revert'].includes(body.type);
+  const drawCommand = body.action === 'command' && COMPETITION_ACTIONS.includes(body.type);
   if ((!drawCommand && (body.action !== 'admin_service' || !['twitch','crm','users','clubs','team_roster','tournament_live','tournament_scenarios','tickets','discipline'].includes(body.service))) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
@@ -131,6 +131,20 @@ async function ownerServiceFailure(body, response) {
     }
     const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (drawCommand) {
+      const proof = error?.rejection_receipt;
+      const rejected = [409,422].includes(response.status) && error?.ok === false
+        && error.code === (response.status === 409 ? 'conflict' : 'invalid_command')
+        && proof?.receipt_absent === true && proof.command_id === body.command_id && proof.target_id === body.target_id
+        && proof.type === body.type && typeof proof.actor_id === 'string' && proof.actor_id === body.actor_id
+        && proof.expected_version === body.expected_version;
+      if (rejected) {
+        const problem = integrationError(response.status, response.status === 409
+          ? 'El estado oficial ha cambiado. Sincroniza y revisa la solicitud.'
+          : 'CTP ha rechazado la solicitud. Revisa el recurso y los datos.');
+        problem.rejectionReceipt = proof;
+        problem.remoteRejected = response.status === 422;
+        return problem;
+      }
       if (response.status !== 422 || !['tournaments.staff.drawBeforeClose','tournaments.staff.drawVisibilityWindow','tournaments.staff.drawVisibilityLocked',
         'tournaments.staff.directDrawIncomplete','tournaments.staff.directDrawChanged','tournament_live_downstream_started',
         'tournament_live_playoffs_started','tournament_live_redraw_required'].includes(error?.draw_error)) return null;
@@ -427,7 +441,8 @@ export async function sendOperationCommand(id) {
     return { ok: true, confirmed: true, command_id: command.id, sync_pending };
   } catch (error) {
     const safe = error instanceof HttpError ? error.message : 'No se ha confirmado el envío a CTP.';
-    failCommand(command.id, { message: safe, definitive_rejection: !command.attempts && (error.remoteRejected === true || ((GUARD_ACTIONS.includes(type) || type === PRO_VIEW_ACTION) && error.status === 409)) });
+    failCommand(command.id, { message: safe, rejection_receipt: error.rejectionReceipt,
+      definitive_rejection: !command.attempts && (error.remoteRejected === true || ((GUARD_ACTIONS.includes(type) || type === PRO_VIEW_ACTION) && error.status === 409)) });
     throw integrationError(error instanceof HttpError ? error.status : 502, safe);
   } finally { sending.delete(command.id); }
 }

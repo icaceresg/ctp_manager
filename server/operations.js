@@ -216,6 +216,14 @@ export function markCommandSending(commandId) {
   if(!row)throw new HttpError(409,'La solicitud ya se está enviando o no admite envío.');
   return commandView(row);
 }
+function rejectionReceiptMatches(receipt, command) {
+  return receipt?.receipt_absent === true && COMPETITION_ACTIONS.includes(command.type || command.action)
+    && receipt.command_id === (command.idempotency_key || command.id)
+    && receipt.target_id === (command.target_id || command.resource_id)
+    && receipt.type === (command.type || command.action) && receipt.expected_version === command.expected_version
+    && typeof receipt.actor_id === 'string'
+    && receipt.actor_id === db.prepare('SELECT external_id FROM operation_operator_identities WHERE user_id=?').get(command.actor_id)?.external_id;
+}
 export function cancelCommand(user,commandId,input) {
   return tx(()=>{
     const command=getCommand(commandId);
@@ -224,8 +232,9 @@ export function cancelCommand(user,commandId,input) {
     if(!user.is_admin&&command.actor_id!==user.id)throw new HttpError(403,'Solo el autor o un administrador puede descartar esta solicitud.');
     if(!Number.isInteger(input.expected_updated_at)||input.expected_updated_at!==command.updated_at)throw new HttpError(409,'La solicitud ha cambiado. Recarga antes de descartarla.');
     const neverSent=command.status==='pending'&&command.attempts===0;
-    const rejectedFirstAttempt=command.status==='rejected'&&command.attempts===1&&command.result?.rejected_confirmed===true;
-    if(!neverSent&&!rejectedFirstAttempt)throw new HttpError(409,'No se puede descartar una solicitud aplicada o con un intento ambiguo.');
+    const rejectedConfirmed=command.status==='rejected'&&command.result?.rejected_confirmed===true
+      &&(command.attempts===1||rejectionReceiptMatches(command.result?.rejection_receipt,command));
+    if(!neverSent&&!rejectedConfirmed)throw new HttpError(409,'No se puede descartar una solicitud aplicada o con un intento ambiguo.');
     const result={cancelled_by:user.id,cancelled_at:now()};
     db.prepare("UPDATE operation_commands SET status='cancelled',result=?,updated_at=? WHERE id=?").run(json(result),now(),command.id);
     const item=record(command.resource_type,command.resource_id,true);
@@ -284,9 +293,10 @@ export function failCommand(commandId,error) {
   const row=db.prepare('SELECT * FROM operation_commands WHERE id=?').get(id(commandId));
   if(!row)throw new HttpError(404,'Solicitud no encontrada.');
   if(['acknowledged','cancelled','rejected'].includes(row.status))throw new HttpError(409,'La operación ya tiene una respuesta definitiva.');
-  const definitive=error?.definitive_rejection===true&&row.status==='sending'&&row.attempts===1;
+  const receipt=rejectionReceiptMatches(error?.rejection_receipt,row)?error.rejection_receipt:null;
+  const definitive=row.status==='sending'&&(receipt!==null||(error?.definitive_rejection===true&&row.attempts===1));
   db.prepare('UPDATE operation_commands SET status=?,attempts=MAX(attempts,1),last_error=?,result=?,updated_at=? WHERE id=?').run(
-    definitive?'rejected':'failed',message,definitive?json({rejected_confirmed:true,rejected_at:now()}):null,now(),row.id,
+    definitive?'rejected':'failed',message,definitive?json({rejected_confirmed:true,rejected_at:now(),...(receipt?{rejection_receipt:receipt}:{})}):null,now(),row.id,
   );
   if(definitive)audit(row.resource_type,row.resource_id,`${row.action}.rejected`,null,{command_id:row.id});
   return commandView(db.prepare('SELECT * FROM operation_commands WHERE id=?').get(row.id));

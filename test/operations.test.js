@@ -383,3 +383,24 @@ test('a rejection after an ambiguous attempt never becomes safe to discard', () 
   assert.equal(second.result,null);
   assert.throws(()=>operations.cancelCommand(referee,second.id,{expected_updated_at:second.updated_at}),{status:409});
 });
+
+test('an exact official absent receipt releases a retried competition command through normal cancellation',()=>{
+  const previous=operations.getIntegrationStatus();
+  operations.setIntegrationStatus({...previous,supported_actions:[...(previous.supported_actions||[]),'tournament.update']});
+  try{
+    const target='a4010000-0000-4000-8000-000000000100';
+    operations.rememberCompetitionData('tournament',{tournament:{id:target,manager_version:14,name:'Synthetic retry'},matches:[],participants:[]});
+    const queued=operations.prepareCompetitionCommand(admin,{type:'tournament.update',target_id:target,expected_version:14,payload:{pick_ban_turn_seconds:8}}).command;
+    const proof={receipt_absent:true,command_id:queued.id,target_id:target,type:queued.type,expected_version:14,actor_id:operations.getOperatorIdentity(admin.id)};
+    operations.markCommandSending(queued.id);operations.failCommand(queued.id,'Connection lost before acknowledgement');
+    operations.markCommandSending(queued.id);
+    const wrong=operations.failCommand(queued.id,{message:'Different actor receipt',rejection_receipt:{...proof,actor_id:'wrong'}});
+    assert.equal(wrong.status,'failed');assert.throws(()=>operations.cancelCommand(admin,wrong.id,{expected_updated_at:wrong.updated_at}),{status:409});
+    operations.markCommandSending(queued.id);
+    const rejected=operations.failCommand(queued.id,{message:'Official receipt confirms no application',rejection_receipt:proof});
+    assert.equal(rejected.status,'rejected');assert.equal(rejected.attempts,3);assert.equal(rejected.result.rejected_confirmed,true);
+    assert.equal(operations.cancelCommand(admin,rejected.id,{expected_updated_at:rejected.updated_at}).status,'cancelled');
+    const next=operations.prepareCompetitionCommand(admin,{type:'tournament.update',target_id:target,expected_version:14,payload:{pick_ban_turn_seconds:10}}).command;
+    assert.notEqual(next.id,queued.id);
+  }finally{operations.setIntegrationStatus(previous);}
+});

@@ -16,11 +16,13 @@ const live = extra => ({
 });
 
 test('every live correction has a bounded payload', () => {
-  assert.deepEqual(Object.keys(TOURNAMENT_LIVE_WRITES), ['set_result', 'revert_result', 'replace_entrant', 'swap_entrants', 'swap_group_entrants', 'place_group_entrant', 'schedule_match', 'set_best_of',
+  assert.deepEqual(Object.keys(TOURNAMENT_LIVE_WRITES), ['set_result', 'revert_result', 'replace_entrant', 'swap_entrants', 'swap_group_entrants', 'replace_group_entrant', 'place_group_entrant', 'schedule_match', 'set_best_of',
     'substitute_participant', 'add_participant', 'add_team_registration', 'set_registration_roster', 'remove_participant', 'disqualify', 'set_status']);
   assert.deepEqual(tournamentLivePayload(tournament, write({ action: 'set_result', match_id: match, maps_a: 2, maps_b: 1 })),
     { action: 'set_result', tournament_id: tournament, expected_revision: revision, reason, match_id: match, maps_a: 2, maps_b: 1 });
   assert.equal(tournamentLivePayload(tournament, write({ action: 'replace_entrant', match_id: match, side: 'b', participant_id: null })).participant_id, null);
+  assert.deepEqual(tournamentLivePayload(tournament, write({ action: 'replace_group_entrant', participant_id: participant, other_participant_id: team })),
+    { action: 'replace_group_entrant', tournament_id: tournament, expected_revision: revision, reason, participant_id: participant, other_participant_id: team });
   assert.equal(tournamentLivePayload(tournament, write({ action: 'schedule_match', match_id: match, scheduled_at: '' })).scheduled_at, null);
   assert.equal(tournamentLivePayload(tournament, write({ action: 'schedule_match', match_id: match, scheduled_at: '2026-11-06T20:00:00+01:00' })).scheduled_at, '2026-11-06T19:00:00.000Z');
   assert.deepEqual(tournamentLivePayload(tournament, write({ action: 'set_registration_roster', team_id: team, member_ids: [participant] })),
@@ -41,6 +43,7 @@ test('malformed corrections never reach CTP', () => {
     write({ action: 'set_registration_roster', team_id: team, member_ids: [participant, participant.toUpperCase()] }),
     write({ action: 'set_registration_roster', team_id: team, member_ids: [] }),
     write({ action: 'swap_group_entrants', participant_id: participant }),
+    write({ action: 'replace_group_entrant', participant_id: participant, other_participant_id: null }),
     write({ action: 'place_group_entrant', participant_id: participant, group_label: ' B ' }),
     write({ action: 'set_result', match_id: match, maps_a: 2, maps_b: 0, points: 3 }), write({ action: 'drop' }),
     { action: 'revert_result', match_id: match, reason }, write({ action: 'revert_result', match_id: match, reason: 'corto' }),
@@ -118,6 +121,9 @@ test('the match DTO keeps the veto, pool and chat but drops ids and unsafe image
   assert.equal(read.match.manager_version, undefined);
   assert.equal(read.tournament.game_id, undefined);
   assert.equal(read.steps[0].match_id, undefined);
+  assert.equal(read.steps[0].automatic_map, false);
+  const auto = matchView({ steps: [{ ...matchView().steps[0], map_slot: 6, action: 'pick', automatic_map: true }] });
+  assert.equal(tournamentLiveMatchResponse(auto, tournamentLiveMatchRead(tournament, match)).steps[0].automatic_map, true);
   assert.equal(read.pool[0].image_url, null);
   assert.equal(read.messages[0].author_id, undefined);
   assert.equal(read.match.pick_ban_status, 'done');

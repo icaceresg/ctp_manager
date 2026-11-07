@@ -4,8 +4,15 @@ const RANDOM_SEED_EVENTS = new Set(['inaugural', 'cup-1', 'cup-4', 'cup-7', 'cup
 const PUBLICATION_ERRORS = ['tournaments.staff.drawBeforeClose', 'tournaments.staff.drawVisibilityWindow', 'tournaments.staff.drawVisibilityLocked',
   'tournaments.staff.directDrawIncomplete', 'tournaments.staff.directDrawChanged'];
 
+const RESULT_ERRORS = {
+  tournament_live_downstream_started: 'manager.tournamentLive.error.downstreamStarted',
+  tournament_live_playoffs_started: 'manager.tournamentLive.error.playoffsStarted',
+  tournament_live_redraw_required: 'manager.tournamentLive.error.redrawRequired',
+};
+
 export function competitionErrorMessage(message, fallback = message) {
-  return PUBLICATION_ERRORS.includes(message) ? translate(message) : fallback;
+  if (PUBLICATION_ERRORS.includes(message)) return translate(message);
+  return Object.hasOwn(RESULT_ERRORS, message) ? translate(RESULT_ERRORS[message]) : fallback;
 }
 
 export function effectiveTournamentSeedMode(tournament) {

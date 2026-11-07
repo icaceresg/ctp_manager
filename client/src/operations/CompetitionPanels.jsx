@@ -210,7 +210,9 @@ export function CompetitionPanel({ data, reload, can, me }) {
         </nav>
         {pendingTournament.length > 0 && <DecisionPanel data={{ ...data, commands: pendingTournament }} resourceType="tournament" resourceId={tournament.id} reload={reload} onChanged={afterDecision} />}
         {tab === 'bracket' && <section className="op-card op-competition-draw">
-          <DrawActions tournament={tournament} now={now} matches={matches} preview={result.format_preview} manage={manage} blocked={blocked} onAction={setDialog} />
+          <DrawActions tournament={tournament} now={now} matches={matches} preview={result.format_preview} redrawRequired={result.playoffs_require_redraw}
+            manage={manage} blocked={blocked} onAction={setDialog} />
+          {result.playoffs_require_redraw && <p className="op-notice" role="status">{t('playoffsRedrawRequired')}</p>}
           <TournamentFormatPreview preview={result.format_preview} grouped={tournament.has_group_stage} />
           {manage && <TournamentScheduleScenarios key={tournament.id} tournament={tournament} entrantCount={participants.length}
             canWrite={Boolean(me?.is_admin && data.connection?.write_enabled)} />}
@@ -253,7 +255,7 @@ export function CompetitionPanel({ data, reload, can, me }) {
   </>;
 }
 
-function DrawActions({ tournament, now, matches, preview, manage, blocked, onAction }) {
+function DrawActions({ tournament, now, matches, preview, redrawRequired, manage, blocked, onAction }) {
   const hasGroups = matches.some(match => match.phase === 'grupos');
   const hasBracket = matches.some(match => match.phase === 'eliminacion');
   const groupsFinished = hasGroups && matches.filter(match => match.phase === 'grupos')
@@ -281,7 +283,7 @@ function DrawActions({ tournament, now, matches, preview, manage, blocked, onAct
         <button type="button" className={hasFixtures ? 'btn' : 'btn primary'} disabled={blocked(drawType) || preview?.kind === 'unavailable'} onClick={() => onAction({ type: drawType, row: tournament, phase, redraw: hasFixtures })}>
           {t(hasFixtures ? 'redraw' : 'draw', { phase: label })}
         </button>
-        {hasFixtures && <button type="button" className="btn primary" disabled={blocked(publishType) || !signupClosed}
+        {hasFixtures && <button type="button" className="btn primary" disabled={blocked(publishType) || !signupClosed || (phase === 'playoffs' && redrawRequired)}
           onClick={() => onAction({ type: publishType, row: tournament, phase: phase === 'groups' ? 'groups' : 'playoffs' })}>
           {t(signupClosed ? 'publishDraw' : 'publishAfterClose')}
         </button>}

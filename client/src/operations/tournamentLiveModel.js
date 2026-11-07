@@ -116,16 +116,11 @@ export function nextMatches(match, matches = []) {
   return { winner, loser, side: (match.position ?? 1) % 2 === 1 ? 'a' : 'b' };
 }
 
-/** Matches whose result depends on this one: they would be undone when it changes. */
-export function dependentMatches(match, matches = []) {
-  const out = [];
-  let current = match;
-  for (let guard = 0; guard < 8 && current; guard++) {
-    const { winner, loser } = nextMatches(current, matches);
-    for (const next of [winner, loser]) if (next && hasResult(next) && !out.includes(next)) out.push(next);
-    current = winner;
-  }
-  return out;
+export function resultChangeLock(match, matches, winner) {
+  if (isGroupMatch(match)) return matches.some(other => !isGroupMatch(other) && slotsLocked(other)) ? 'playoffsStarted' : null;
+  if (winner && winner.id === match.winner_id) return null;
+  const { winner: next, loser } = nextMatches(match, matches);
+  return [next, loser].some(slotsLocked) ? 'downstreamStarted' : null;
 }
 
 export function counts(matches = []) {
@@ -243,9 +238,10 @@ export const currentStep = (steps = []) => [...steps].sort((a, b) => a.step_inde
  * ban or pick, pool maps of that mode not used by another ban/pick.
  */
 export function stepChoices(step, steps = [], pool = []) {
-  if (!step) return [];
+  if (!step || step.automatic_map) return [];
   if (step.action === 'side') return VETO_SIDES.filter(value => value !== step.map_name);
-  const used = new Set(steps.filter(other => other.id !== step.id && other.action !== 'side' && other.mode === step.mode && other.map_name).map(other => other.map_name));
+  const used = new Set(steps.filter(other => other.id !== step.id && other.action !== 'side'
+    && !other.automatic_map && other.mode === step.mode && other.map_name).map(other => other.map_name));
   return pool.filter(map => map.mode === step.mode && map.name !== step.map_name && !used.has(map.name)).map(map => map.name);
 }
 

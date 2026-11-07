@@ -31,6 +31,7 @@ export const TOURNAMENT_LIVE_WRITES = Object.freeze({
   replace_entrant: ['match_id', 'side', 'participant_id'],
   swap_entrants: ['match_id', 'side', 'other_match_id', 'other_side'],
   swap_group_entrants: ['participant_id', 'other_participant_id'],
+  replace_group_entrant: ['participant_id', 'other_participant_id'],
   place_group_entrant: ['participant_id', 'group_label'],
   schedule_match: ['match_id', 'scheduled_at'],
   set_best_of: ['match_id', 'best_of'],
@@ -60,6 +61,8 @@ export const TOURNAMENT_LIVE_ERRORS = Object.freeze({
   tournament_live_no_access: 'registrationAccess', tournament_live_registration_closed: 'registrationClosed',
   tournament_live_roster_locked: 'rosterLocked', tournament_live_roster_invalid: 'rosterInvalid',
   tournament_live_group_full: 'groupFull',
+  tournament_live_downstream_started: 'downstreamStarted', tournament_live_playoffs_started: 'playoffsStarted',
+  tournament_live_redraw_required: 'redrawRequired',
 });
 export function tournamentLiveProblem(code) {
   return typeof code === 'string' && Object.hasOwn(TOURNAMENT_LIVE_ERRORS, code) ? `manager.tournamentLive.error.${TOURNAMENT_LIVE_ERRORS[code]}` : null;
@@ -270,7 +273,8 @@ export function tournamentLiveMatchResponse(value, payload) {
         || !STEP_ACTIONS.includes(row.action) || !SIDES.includes(row.actor_side) || !text(row.mode, 80)
         || (row.map_name != null && !text(row.map_name, 80))) fail(502, 'unavailable');
       return { id: row.id.toLowerCase(), step_index: row.step_index, map_slot: row.map_slot, mode: row.mode, action: row.action, actor_side: row.actor_side,
-        map_name: row.map_name ?? null, auto: row.auto === true, deadline_at: optionalDate(row.deadline_at), decided_at: optionalDate(row.decided_at) };
+        map_name: row.map_name ?? null, auto: row.auto === true, automatic_map: row.automatic_map === true,
+        deadline_at: optionalDate(row.deadline_at), decided_at: optionalDate(row.decided_at) };
     }),
     pool: value.pool.map(row => {
       if (!object(row) || !text(row.mode, 80) || !text(row.name, 80)) fail(502, 'unavailable');

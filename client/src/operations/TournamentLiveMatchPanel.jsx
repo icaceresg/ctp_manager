@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, CalendarClock, ChevronDown, Layers, Repeat, Trophy, Undo2, X } from 'lucide-react';
-import { BEST_OF, dependentMatches, isComplete, needsAttention, nextMatches, playoffRounds, scheduleLocked, slotsLocked, validScores, winsNeeded } from './tournamentLiveModel.js';
+import { BEST_OF, isComplete, needsAttention, nextMatches, playoffRounds, resultChangeLock, scheduleLocked, slotsLocked, validScores, winsNeeded } from './tournamentLiveModel.js';
 import { competitionDateInput, competitionDateToIso } from './competitionTime.js';
 import { translate } from '../i18n/runtime.js';
 import { ReasonConfirm, StateBadge, entrantName, matchRoundLabel, t, when } from './tournamentLiveUi.jsx';
@@ -77,13 +77,12 @@ export default function TournamentLiveMatchPanel({ tournamentId, match, matches,
 
 function Consequences({ match, matches, rounds, winner }) {
   const { winner: next, loser } = nextMatches(match, matches);
-  const undone = dependentMatches(match, matches);
+  const advances = winner && winner.id !== match.winner_id;
   return <ul className="op-live-effects">
     {winner && <li>{t('effects.winner', { name: entrantName(winner) })}</li>}
-    {winner && next && <li>{t('effects.advances', { round: matchRoundLabel(next, rounds), position: next.position })}</li>}
-    {winner && loser && <li>{t('effects.thirdPlace')}</li>}
+    {advances && next && <li>{t('effects.advances', { round: matchRoundLabel(next, rounds), position: next.position })}</li>}
+    {advances && loser && <li>{t('effects.thirdPlace')}</li>}
     {match.phase === 'grupos' && <li>{t('effects.groupTable')}</li>}
-    {undone.length > 0 && <li className="is-warning">{t('effects.undone', { count: undone.length })}</li>}
   </ul>;
 }
 
@@ -93,6 +92,7 @@ export function ResultForm({ match, matches, rounds, busy, act }) {
   const [choice, setChoice] = useState(match.winner_id ? -1 : current);
   const score = options[choice];
   const winner = score ? (score[0] > score[1] ? match.entrant_a : match.entrant_b) : null;
+  const lock = score && resultChangeLock(match, matches, winner);
   return <>
     <p className="op-live-hint">{t('result.pick', { wins: winsNeeded(match.best_of) })}</p>
     <div className="op-live-scores" role="radiogroup" aria-label={t('result.title')}>
@@ -103,17 +103,19 @@ export function ResultForm({ match, matches, rounds, busy, act }) {
     </div>
     {score && <Consequences match={match} matches={matches} rounds={rounds} winner={winner} />}
     <ReasonConfirm busy={busy} presets={['result.reported', 'result.evidence', 'result.typo', 'result.forfeit']}
-      blockedReason={!score ? t('result.choose') : choice === current && match.winner_id ? t('result.same') : ''}
+      blockedReason={!score ? t('result.choose') : choice === current && match.winner_id ? t('result.same') : lock ? t(`error.${lock}`) : ''}
       submitLabel={score ? t(match.winner_id ? 'result.rectifyTo' : 'result.saveAs', { a: score[0], b: score[1] }) : t('result.save')}
       onSubmit={reason => act({ action: 'set_result', maps_a: score[0], maps_b: score[1], reason })} />
   </>;
 }
 
 export function RevertForm({ match, matches, rounds, busy, act }) {
+  const lock = resultChangeLock(match, matches, null);
   return <>
     <Consequences match={match} matches={matches} rounds={rounds} winner={null} />
     <p className="op-live-hint">{t('revert.explain')}</p>
     <ReasonConfirm busy={busy} danger presets={['revert.wrong', 'result.typo']} submitLabel={t('revert.apply')}
+      blockedReason={lock ? t(`error.${lock}`) : ''}
       onSubmit={reason => act({ action: 'revert_result', reason })} />
   </>;
 }

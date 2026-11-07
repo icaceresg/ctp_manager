@@ -164,10 +164,10 @@ function VetoBoard({ detail, busy, act }) {
           const current = turn?.id === step.id, isEditing = editing === step.id;
           const choices = isEditing ? stepChoices(step, steps, pool) : [];
           return <li key={step.id} className={`op-live-step is-${step.action}${current ? ' is-current' : ''}${step.map_name ? ' is-decided' : ''}`}>
-            <span className="op-live-step-who">{p(`veto.step.${step.action}`, { team: side(step.actor_side) })}</span>
+            <span className="op-live-step-who">{step.automatic_map ? p('veto.remainingMap') : p(`veto.step.${step.action}`, { team: side(step.actor_side) })}</span>
             <span className="op-live-step-value">{step.map_name || (current && status === 'running' ? <><Clock3 size={13} /> {step.deadline_at ? p('veto.deadline', { time: clock(step.deadline_at) }) : p('veto.current')}</> : p('veto.pending'))}
-              {step.auto && <em>{p('veto.auto')}</em>}</span>
-            {step.map_name && !blocked && <button type="button" className="btn ghost sm" disabled={busy} aria-expanded={isEditing}
+              {step.auto && !step.automatic_map && <em>{p('veto.auto')}</em>}</span>
+            {step.map_name && !step.automatic_map && !blocked && <button type="button" className="btn ghost sm" disabled={busy} aria-expanded={isEditing}
               onClick={() => setEditing(isEditing ? null : step.id)}><Pencil size={13} /> {p('veto.change')}</button>}
             {isEditing && <StepEditor step={step} choices={choices} busy={busy} onSubmit={(map_name, reason) => done({ action: 'veto_set_step', step_index: step.step_index, map_name, reason })} />}
           </li>;

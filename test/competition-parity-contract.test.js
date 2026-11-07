@@ -6,6 +6,7 @@ process.env.DATA_DIR=temporary;process.env.DB_PATH=path.join(temporary,'contract
 const{competitionPayload,COMPETITION_ACTIONS}=await import('../server/competition-contract.js');
 const{db}=await import('../server/db.js');
 const{effectiveTournamentSeedMode,tournamentPresentationPayload,shouldLeaveDeletedTournament}=await import('../client/src/operations/competitionForm.js');
+const{tournamentScenarioPayload,tournamentScenarioResponse}=await import('../server/tournament-scenario-contract.js');
 after(()=>{db.close();assert.ok(path.resolve(temporary).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(temporary,{recursive:true,force:true,maxRetries:5});});
 const reason='Revisión independiente de competición';
 test('all competition and referee commands have typed payloads and strip injected fields',()=>{
@@ -61,4 +62,22 @@ test('a tournament seeding override wins over the circuit default',()=>{
  assert.equal(effectiveTournamentSeedMode({circuit_code:'cup-7',seeding_mode:'season_points'}),'season_points');
  assert.equal(effectiveTournamentSeedMode({circuit_code:'cup-8'}),'season_points');
  assert.equal(effectiveTournamentSeedMode({circuit_code:'cup-8',seeding_mode:'random'}),'random');
+});
+test('scenario transport distinguishes reusable range slots from existing exact-count slots',()=>{
+ const id='a0000000-0000-4000-8000-000000000001';
+ const at='2027-01-12T10:00:00.000Z';
+ const write={expected_version:0,tournament_version:3,dates:{'g:4:1:1':at}};
+ const range=tournamentScenarioPayload(id,'range-16',write);
+ assert.deepEqual(range,{action:'save',tournament_id:id,range_key:16,...write});
+ assert.deepEqual(tournamentScenarioPayload(id,'17',null),{action:'get',tournament_id:id,entrant_count:17});
+ assert.throws(()=>tournamentScenarioPayload(id,'17',write),{status:400});
+ assert.throws(()=>tournamentScenarioPayload(id,'range-13',null),{status:400});
+ const result=tournamentScenarioResponse({range_key:16,version:1,tournament_version:3,start_at:at,dates:write.dates,
+  available_counts:[17,18],saved_counts:[17],available_ranges:[{key:16,bracket_size:16,counts:[17,18]}],saved_ranges:[16],
+  scenario:{bracket_size:16,groups:[{label:'4',seeds:[1,2,3,4]}],fixtures:[{
+   key:'g:4:1:1',phase:'grupos',round:1,position:1,best_of:3,group_label:'4',seed_a:1,seed_b:4,
+  }]}},range);
+ assert.equal(result.scenario.fixtures[0].key,'g:4:1:1');
+ assert.deepEqual(result.saved_counts,[17]);
+ assert.deepEqual(result.saved_ranges,[16]);
 });

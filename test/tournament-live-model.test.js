@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoFill, counts, dependentMatches, groupStage, matchState, nextMatches, playoffRounds, reasonCheck, rowTimes, scheduleChanges, scheduleRows, scoreValid, toLocalInput, validScores } from '../client/src/operations/tournamentLiveModel.js';
+import { autoFill, counts, groupStage, matchState, nextMatches, playoffRounds, reasonCheck, resultChangeLock, rowTimes, scheduleChanges, scheduleRows, scoreValid, toLocalInput, validScores } from '../client/src/operations/tournamentLiveModel.js';
 
 const team = name => ({ kind: 'team', id: `id-${name}`, name });
 const match = (id, round, position, extra = {}) => ({ id, phase: 'eliminatoria', group_label: null, round, position, is_third_place: false, best_of: 3,
@@ -45,7 +45,7 @@ test('scores, states and attention follow the series and CTP result states', () 
   assert.deepEqual(counts(list), { total: 2, attention: 1, live: 1, confirmed: 0 });
 });
 
-test('winners advance to round+1 at ceil(position/2) and later results depend on them', () => {
+test('winners advance by position and a result cannot change a protected pairing', () => {
   const list = bracket(8);
   const semi = list.find(item => item.id === 'r2p1');
   Object.assign(semi, { winner_id: 'w', result_status: 'confirmed' });
@@ -57,7 +57,12 @@ test('winners advance to round+1 at ceil(position/2) and later results depend on
   assert.equal(nextMatches(first, list).winner.id, 'r2p2');
   assert.equal(nextMatches(list.find(item => item.id === 'r1p2'), list).winner.id, 'r2p1');
   assert.equal(nextMatches(semi, list).loser.id, 'third');
-  assert.deepEqual(dependentMatches(list.find(item => item.id === 'r1p1'), list).map(item => item.id), ['r2p1', 'r3p1']);
+  const source = list.find(item => item.id === 'r1p1');
+  source.winner_id = 'winner';
+  assert.equal(resultChangeLock(source, list, null), 'downstreamStarted');
+  assert.equal(resultChangeLock(source, list, { id: 'winner' }), null);
+  assert.equal(resultChangeLock(source, list, { id: 'other' }), 'downstreamStarted');
+  assert.equal(resultChangeLock({ phase: 'grupos' }, list, { id: 'winner' }), 'playoffsStarted');
 });
 
 test('groups build matchdays and a won/lost table from firm results only', () => {
@@ -114,6 +119,9 @@ test('referee veto board: slots, current turn, valid corrections and blocks', as
   assert.equal(currentStep(steps).id, '5');
   assert.deepEqual(stepChoices(steps[0], steps, pool), ['Vista']);
   assert.deepEqual(stepChoices(steps[3], steps, pool), ['NKA']);
+  const remaining = { ...s('6', 5, 6, 'pick', 'Vista'), automatic_map: true };
+  assert.deepEqual(stepChoices(steps[0], [...steps, remaining], pool), ['Vista']);
+  assert.deepEqual(stepChoices(remaining, [...steps, remaining], pool), []);
   const a = team('A'), b = team('B');
   const ready = match('m', 1, 1, { entrant_a: a, entrant_b: b, pick_ban_status: 'ready' });
   assert.equal(vetoBlocked(ready, 'en_curso'), '');

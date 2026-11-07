@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { CalendarClock, ChevronRight, GripVertical, Info } from 'lucide-react';
+import { ArrowLeftRight, CalendarClock, ChevronRight, GripVertical, Info } from 'lucide-react';
 import { groupStage, isLive, needsAttention, playoffRounds, scheduleLocked, slotsLocked } from './tournamentLiveModel.js';
 import { competitionDateTime } from './competitionTime.js';
 import { ReasonConfirm, StateBadge, entrantName, roundTitle, t } from './tournamentLiveUi.jsx';
@@ -76,8 +76,16 @@ export default function TournamentLiveBracket({ matches, participants, standings
 
   const groupSlot = (group, entrant, content) => {
     const participantId = participantIds.get(`${entrant.kind}:${entrant.id}`);
-    return !playoffStarted && participantId && !group.matches.some(slotsLocked)
-      ? slotControl({ key: participantId, stage: 'groups', group: group.label, entrant, participantId }, content) : content;
+    if (playoffStarted || !participantId || group.matches.some(slotsLocked)) return content;
+    const slot = slotControl({ key: participantId, stage: 'groups', group: group.label, entrant, participantId }, content);
+    if (!assignable) return slot;
+    const label = t('bracket.replaceGroupEntrant', { name: entrantName(entrant) });
+    return <span className="op-live-group-entrant">{slot}
+      <button type="button" className="op-live-open-match" disabled={busy} aria-label={label} title={label}
+        onClick={() => { setSource(null); setPlacement({ label: group.label, outgoing: entrant, participantId, revision }); }}>
+        <ArrowLeftRight size={13} aria-hidden="true" />
+      </button>
+    </span>;
   };
   const playoffSlot = (match, side, entrant, content) => match.round === 1 && !match.is_third_place && !slotsLocked(match)
     ? slotControl({ key: `${match.id}:${side}`, stage: 'playoffs', entrant, matchId: match.id, side }, content) : content;
@@ -110,11 +118,9 @@ export default function TournamentLiveBracket({ matches, participants, standings
           return problem;
         }} />
     </section>}
-    {placement && <PlaceInGroup key={placement.label} placement={placement} participants={unplaced} busy={busy}
+    {placement && <PlaceInGroup key={placement.participantId || placement.label} placement={placement} participants={unplaced} busy={busy}
       blocked={!canPlaceGroups || !canEdit || placement.revision !== revision} run={run}
       onClose={() => setPlacement(null)} onParticipants={onParticipants} />}
-    {shown === 'groups' && assignable && !canExpandFive && !groups.some(group => group.standings.length === 4) &&
-      <p className="op-live-why">{t('error.groupFull')}</p>}
     {shown === 'groups'
       ? <GroupsView groups={groups} filter={filter} selectedId={selectedId} onSelect={onSelect} groupSlot={groupSlot} canEdit={canEdit}
         onPlace={assignable ? label => { setSource(null); setPlacement({ label, revision }); } : undefined} canExpandFive={canExpandFive} busy={busy} />
@@ -126,9 +132,13 @@ export default function TournamentLiveBracket({ matches, participants, standings
 function PlaceInGroup({ placement, participants, busy, blocked, run, onClose, onParticipants }) {
   const [id, setId] = useState('');
   const selected = participants.some(person => person.id === id);
+  const replace = Boolean(placement.outgoing);
+  const name = replace ? entrantName(placement.outgoing) : '';
+  const title = replace ? t('bracket.replaceGroupEntrant', { name }) : t('bracket.placeGroupTitle', { group: placement.label });
   return <section className="op-live-swap">
-    <header><strong>{t('bracket.placeGroupTitle', { group: placement.label })}</strong>
+    <header><strong>{title}</strong>
       <button type="button" className="btn ghost sm" disabled={busy} onClick={onClose}>{t('confirm.cancel')}</button></header>
+    {replace && <p className="op-live-hint">{t('bracket.replaceGroupHelp', { name })}</p>}
     <label className="op-field"><span>{t('bracket.unplaced')}</span>
       <select value={selected ? id : ''} disabled={busy || blocked} onChange={event => setId(event.target.value)}>
         <option value="">{t('slots.choose')}</option>
@@ -137,9 +147,12 @@ function PlaceInGroup({ placement, participants, busy, blocked, run, onClose, on
     </label>
     {onParticipants && <button type="button" className="op-text-button" onClick={onParticipants}>{t('tabs.participants')}</button>}
     <ReasonConfirm busy={busy} defaultReason={t('presets.slots.drawAdjustment')}
-      blockedReason={blocked ? t('error.conflict') : !selected ? t('slots.pick') : ''} submitLabel={t('bracket.placeGroup')}
+      blockedReason={blocked ? t('error.conflict') : !selected ? t('slots.pick') : ''} submitLabel={t(replace ? 'slots.replace' : 'bracket.placeGroup')}
       onSubmit={async reason => {
-        const problem = await run({ action: 'place_group_entrant', participant_id: id, group_label: placement.label, reason, expected_revision: placement.revision });
+        const body = replace
+          ? { action: 'replace_group_entrant', participant_id: placement.participantId, other_participant_id: id }
+          : { action: 'place_group_entrant', participant_id: id, group_label: placement.label };
+        const problem = await run({ ...body, reason, expected_revision: placement.revision });
         if (!problem) onClose();
         return problem;
       }} />

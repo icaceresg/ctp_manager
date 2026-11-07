@@ -104,6 +104,7 @@ button.op-live-time:hover, .op-live-open-match:hover { background: var(--accent-
 .op-live-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .op-live-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 3px 4px; border-bottom: 1px solid var(--border); }
 .op-live-table td { padding: 4px; border-bottom: 1px solid var(--border); }
+.op-live-group-entrant { display: inline-flex; align-items: center; gap: 3px; min-width: 0; max-width: 100%; }
 .op-live-matchday { display: grid; gap: 6px; }
 .op-live-matchday-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
 .op-live-matchday-head small { color: var(--muted); font-size: 11px; }

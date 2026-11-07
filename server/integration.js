@@ -117,7 +117,7 @@ function integrationError(status, message) { return new HttpError(status, messag
 // Only these semantic provider codes may become user-facing copy. Never relay
 // an upstream message, OAuth response or credentials to the browser.
 async function ownerServiceFailure(body, response) {
-  const drawCommand = body.action === 'command' && ['tournament.create','tournament.update','tournament.publish'].includes(body.type);
+  const drawCommand = body.action === 'command' && ['tournament.create','tournament.update','tournament.publish','match.resolve','match.revert'].includes(body.type);
   if ((!drawCommand && (body.action !== 'admin_service' || !['twitch','crm','users','clubs','team_roster','tournament_live','tournament_scenarios','tickets','discipline'].includes(body.service))) || !/^application\/json\b/i.test(response.headers.get('content-type') || '')) return null;
   const reader = response.body?.getReader();
   if (!reader) return null;
@@ -132,7 +132,8 @@ async function ownerServiceFailure(body, response) {
     const error = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (drawCommand) {
       if (response.status !== 422 || !['tournaments.staff.drawBeforeClose','tournaments.staff.drawVisibilityWindow','tournaments.staff.drawVisibilityLocked',
-        'tournaments.staff.directDrawIncomplete','tournaments.staff.directDrawChanged'].includes(error?.draw_error)) return null;
+        'tournaments.staff.directDrawIncomplete','tournaments.staff.directDrawChanged','tournament_live_downstream_started',
+        'tournament_live_playoffs_started','tournament_live_redraw_required'].includes(error?.draw_error)) return null;
       const problem = integrationError(422, error.draw_error);
       problem.remoteRejected = true;
       return problem;

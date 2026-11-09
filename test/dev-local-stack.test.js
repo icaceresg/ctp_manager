@@ -5,8 +5,8 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {validateSecrets,managerEnvironment,validateStackProof,validateRuntime,jsonRequest,recoverRefusedRuntime,validateDevProfile,validateSharedOwner,requireOwnerWorktree,assertOwnSqliteFiles,CANDIDATE_PROFILE,PROJECT,ROOT,API,WEB,MANAGER,DATA} from '../scripts/dev-local-stack.mjs';
-import {ctpAuthConfig} from '../server/ctp-auth.js';
+import {validateSecrets,managerEnvironment,validateStackProof,validateRuntime,jsonRequest,recoverRefusedRuntime,validateDevProfile,validateSharedOwner,requireOwnerWorktree,assertOwnSqliteFiles,CANDIDATE_PROFILE,DEV_CAPTCHA_TEST_PROFILE,PROJECT,ROOT,API,WEB,MANAGER,DATA} from '../scripts/dev-local-stack.mjs';
+import {ctpAuthConfig,publicCtpAuthConfig} from '../server/ctp-auth.js';
 
 const jwt=role=>`e30.${Buffer.from(JSON.stringify({role,exp:4102444800})).toString('base64url')}.fixture`;
 const secrets=()=>({schemaVersion:1,projectId:PROJECT,apiUrl:API,webUrl:WEB,managerUrl:MANAGER,anonKey:jwt('anon'),serviceRoleKey:jwt('service_role'),
@@ -25,6 +25,44 @@ test('DEV launcher rejects foreign project targets and malformed or reused crede
 test('the selected launcher has no PC evidence key or inherited collector configuration',()=>{
  const local=secrets();assert.equal(validateSecrets(local),local);
  assert.equal(managerEnvironment({PC_CHECK_EVIDENCE_KEY:'foreign-app-key'},local).PC_CHECK_EVIDENCE_KEY,undefined);
+});
+
+test('the installed common DEV CAPTCHA test profile enables only the official public test widget',()=>{
+ const local={...secrets(),captchaTestProfile:DEV_CAPTCHA_TEST_PROFILE};
+ assert.equal(validateSecrets(local),local);
+ const env=managerEnvironment({CTP_AUTH_CAPTCHA_REQUIRED:'false',CTP_AUTH_CAPTCHA_SITE_KEY:'foreign-sitekey',
+  CTP_AUTH_URL:'https://playctp.com',PUBLIC_ORIGIN:'https://manager.playctp.com'},local);
+ assert.equal(env.CTP_AUTH_CAPTCHA_REQUIRED,'true');assert.equal(env.CTP_AUTH_CAPTCHA_SITE_KEY,'1x00000000000000000000AA');
+ assert.equal(env.CTP_AUTH_URL,WEB);assert.equal(env.PUBLIC_ORIGIN,'');
+ const publicConfig=publicCtpAuthConfig(ctpAuthConfig(env));
+ assert.deepEqual(publicConfig,{provider:'ctp',captcha:{required:true,siteKey:'1x00000000000000000000AA'}});
+ for(const privateValue of [local.managerEncryptionKey,local.managerHmac,local.managerToken,DEV_CAPTCHA_TEST_PROFILE]){
+  assert.equal(JSON.stringify(publicConfig).includes(privateValue),false);
+ }
+});
+
+test('an absent DEV CAPTCHA profile preserves the previous configuration and ignores inherited CAPTCHA settings',()=>{
+ for(const local of [secrets(),{...secrets(),captchaTestProfile:undefined}]){
+  const env=managerEnvironment({CTP_AUTH_CAPTCHA_REQUIRED:'true',CTP_AUTH_CAPTCHA_SITE_KEY:'foreign-sitekey'},local);
+  assert.equal(env.CTP_AUTH_CAPTCHA_REQUIRED,'false');assert.equal(env.CTP_AUTH_CAPTCHA_SITE_KEY,'');
+  assert.deepEqual(publicCtpAuthConfig(ctpAuthConfig(env)),{provider:'ctp',captcha:{required:false,siteKey:null}});
+ }
+});
+
+test('unknown or malformed DEV CAPTCHA profiles fail closed before Manager starts',()=>{
+ for(const captchaTestProfile of [null,true,'',{},[],DEV_CAPTCHA_TEST_PROFILE+'\n','captcha-test:unknown']){
+  const local={...secrets(),captchaTestProfile};
+  assert.throws(()=>managerEnvironment({},local),/^Error: dev_manager_captcha_profile_invalid$/);
+  assert.throws(()=>validateSecrets(local),/^Error: dev_manager_auth_configuration_invalid$/);
+ }
+});
+
+test('the common CAPTCHA test profile cannot be adopted by another project or origin',()=>{
+ const local={...secrets(),captchaTestProfile:DEV_CAPTCHA_TEST_PROFILE};
+ for(const patch of [{projectId:CANDIDATE_PROFILE.projectId},{apiUrl:CANDIDATE_PROFILE.apiOrigin},
+  {webUrl:'https://pre.playctp.com'},{managerUrl:'https://manager.playctp.com'}]){
+  assert.throws(()=>managerEnvironment({},{...local,...patch}),/^Error: dev_manager_captcha_profile_invalid$/);
+ }
 });
 
 test('candidate profiles are finite, immutable, loopback-only and tied to their source worktree',()=>{

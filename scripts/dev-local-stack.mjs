@@ -18,6 +18,7 @@ export let DATA='D:/CTP/dev/manager';
 export let API='http://127.0.0.1:58021';
 export let WEB='http://localhost:58080';
 export let MANAGER='http://localhost:58090';
+export const DEV_CAPTCHA_TEST_PROFILE='captcha-test:success';
 let webPort='58091',controlPort=0;
 let RUNTIME=path.join(DATA,'runtime.private.json');
 let OWNER=path.join(DATA,'owner.json');
@@ -99,11 +100,16 @@ export function osEnvironment(source){
  return Object.fromEntries(Object.entries(source).filter(([key])=>allowed.has(key.toUpperCase())));
 }
 export function managerEnvironment(source,secrets){
+ const captchaProfile=secrets.captchaTestProfile;
+ if(captchaProfile!==undefined&&(captchaProfile!==DEV_CAPTCHA_TEST_PROFILE
+  ||PROJECT!=='ctp-dev-20261026'||API!=='http://127.0.0.1:58021'||WEB!=='http://localhost:58080'||MANAGER!=='http://localhost:58090'
+  ||secrets.projectId!==PROJECT||secrets.apiUrl!==API||secrets.webUrl!==WEB||secrets.managerUrl!==MANAGER))fail('dev_manager_captcha_profile_invalid');
  return {...osEnvironment(source),PORT:new URL(MANAGER).port,DEV_WEB_PORT:webPort,DATA_DIR:DATA,DB_PATH:path.join(DATA,'manager-dev.sqlite'),
   PUBLIC_ORIGIN:'',RULETA_ORIGIN:'',OPEN_BROWSER:'0',NODE_ENV:'development',
   CTP_AUTH_MODE:'ctp',CTP_DEV_LOCAL_AUTH:'true',CTP_AUTH_URL:WEB,CTP_WEB_ORIGIN:WEB,
   CTP_AUTH_ANON_KEY:secrets.anonKey,CTP_AUTH_TOKEN_KEY:secrets.managerEncryptionKey,
-  CTP_AUTH_CAPTCHA_REQUIRED:'false',CTP_AUTH_CAPTCHA_SITE_KEY:'',
+  // Public Cloudflare test sitekey; native DEV GoTrue keeps its installed test secret.
+  CTP_AUTH_CAPTCHA_REQUIRED:captchaProfile===undefined?'false':'true',CTP_AUTH_CAPTCHA_SITE_KEY:captchaProfile===undefined?'':'1x00000000000000000000AA',
   CTP_OPERATIONS_URL:WEB+'/functions/v1/manager-operations',CTP_OPERATIONS_TOKEN:secrets.managerToken,CTP_SIGNING_SECRET:secrets.managerHmac,
   CTP_ENABLE_WRITES:'true',CTP_ALLOW_LOCAL_WRITES:'true',CTP_SYNC_SECONDS:'0',OBS_ENABLE_CONTROL:'false'};
 }

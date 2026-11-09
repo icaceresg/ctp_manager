@@ -83,6 +83,21 @@ y un servidor Auth sintético en loopback. Comprueban el destino exacto, la cook
 de sesión, los permisos y el bloqueo de redirecciones. Son pruebas de transporte
 y acceso; no sustituyen la verificación del stack Supabase local real.
 
+### CAPTCHA del DEV compartido
+
+El perfil común opcional `captchaTestProfile: "captcha-test:success"` activa el
+widget con la clave pública oficial de pruebas de Turnstile. Sólo se admite para
+`ctp-dev-20261026` y sus orígenes canónicos de loopback. Un perfil desconocido se
+rechaza; si el campo falta, el launcher conserva la configuración anterior.
+No se heredan claves ni opciones CAPTCHA del entorno del equipo o de PRE/PROD.
+
+Este perfil alinea la interfaz con el CAPTCHA de pruebas ya instalado en GoTrue:
+no desactiva CAPTCHA ni modifica GoTrue, sus secretos o la base. Un cambio del
+perfil requiere un reinicio coordinado del Manager mediante el supervisor DEV
+común, conservando los datos y las demás conversaciones. La verificación con
+pruebas oficiales de Turnstile es QA local, no una prueba de un reto humano ni de
+CAPTCHA en producción. Referencia: [pruebas oficiales de Cloudflare](https://developers.cloudflare.com/turnstile/troubleshooting/testing/).
+
 ## Arranque del entorno persistente
 
 Con el stack CTP DEV preparado, migrado y con su proxy web en `58080`:

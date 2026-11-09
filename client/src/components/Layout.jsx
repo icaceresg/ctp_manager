@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Activity, CalendarCheck, CalendarDays, Clapperboard, ListChecks, LogOut, Menu, Plus, ShieldCheck, SquareKanban, Trophy, Gift, UserRound, Users, ChartNoAxesCombined, ChartColumnBig, History, Radio, Settings2, MessageSquare, Gavel, FileText, ClipboardCheck } from 'lucide-react';
-import { managerNavigation, ruletaNavigation, splitManagerNavigation } from '../navigation.js';
+import { managerNavigation, managerNavigationPathMatches, ruletaNavigation, splitManagerNavigation } from '../navigation.js';
 import { QuickNavigation } from './QuickNavigation.jsx';
 import { api } from '../api.js';
 import { useApp, useData } from '../context.jsx';
@@ -13,7 +13,7 @@ export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
 }
 
-const ICONS = { jugadores: UserRound, 'ranked-monitor': Activity, 'ranked-stats': ChartColumnBig, jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, metrics: ChartNoAxesCombined, discord: MessageSquare, sanciones: Gavel, arbitraje: ClipboardCheck, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
+const ICONS = { retrospectivas: History, jugadores: UserRound, 'ranked-monitor': Activity, 'ranked-stats': ChartColumnBig, jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, metrics: ChartNoAxesCombined, discord: MessageSquare, sanciones: Gavel, arbitraje: ClipboardCheck, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
 
 function PendingBadge() {
   const { data: withResources } = useData(() => api.get('/contents?with_resources=1'));
@@ -37,7 +37,7 @@ export function Layout() {
   useEffect(() => {
     window.scrollTo(0, 0);
     document.getElementById('manager-content')?.focus({ preventScroll: true });
-    const title = managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname).find(item => item.to === location.pathname)?.title
+    const title = managerNavigation(can, me.is_admin, canManageStaff(me), canManageRanked(me), window.location.hostname).find(item => managerNavigationPathMatches(item, location.pathname))?.title
       || (location.pathname.startsWith('/jugadores/') ? 'Ficha de jugador' : location.pathname.startsWith('/ranked/partidas/') ? 'Partida Ranked' : location.pathname.startsWith('/operaciones/partidos/') ? 'Ficha de partido' : location.pathname.startsWith('/crm/') ? 'CRM y correos' : location.pathname === '/cuenta' ? 'Mi cuenta' : 'Área de trabajo');
     document.title = `${title} · CTP Manager`;
   }, [location.pathname]);
@@ -66,7 +66,7 @@ export function Layout() {
         <button type="button" className="mobile-nav-toggle" aria-label={menuOpen ? 'Cerrar menú del Manager' : 'Abrir menú del Manager'} aria-controls="manager-main-nav" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><Menu size={20} /></button>
         <nav id="manager-main-nav" className={`nav ${menuOpen ? 'is-open' : ''}`} aria-label="Navegación principal">
           <div className="manager-primary-nav" aria-label="Trabajo principal">{primary.map(navItem)}</div>
-          {groups.map(group=><details key={group.title} className="manager-nav-group" open={group.daily||group.items.some(item=>item.to&&location.pathname===item.to)}>
+          {groups.map(group=><details key={group.title} className="manager-nav-group" open={group.daily||group.items.some(item=>managerNavigationPathMatches(item,location.pathname))}>
             <summary>{group.title}</summary>{group.items.map(navItem)}
           </details>)}
         </nav>

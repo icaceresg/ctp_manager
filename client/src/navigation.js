@@ -21,6 +21,7 @@ export function managerNavigation(can, isAdmin, staffManager = false, rankedStaf
   }));
   if (can('disponibilidad')) items.splice(items.findIndex(item => item.id === 'jornada') + 1, 0, { id: 'disponibilidad', to: '/disponibilidad', title: 'Mi disponibilidad', group: 'Trabajo diario', keywords: 'agenda días horarios' });
   items.push(...editorial.filter(item => can(item.section)).map(item => ({ ...item, id: item.section, group: 'Contenido editorial' })));
+  if (can('retrospectivas')) items.push({ id: 'retrospectivas', to: '/retrospectivas', matchDescendants: true, title: 'Retrospectivas', group: 'Equipo CTP', keywords: 'inaugural evaluación fallos críticas anónimo mejoras conclusiones aprendizaje plan acción responsables' });
   if (isAdmin || rankedStaff) {
     // Ranked opens Competición, ahead of Tickets and the tournament tools.
     const competition = items.findIndex(item => item.group === 'Competición');
@@ -48,6 +49,12 @@ export function navigationSearch(items, query) {
   const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
   const terms = normalize(query.trim()).split(/\s+/).filter(Boolean);
   return items.filter(item => terms.every(term => normalize(`${item.title} ${item.group} ${item.keywords || ''}`).includes(term)));
+}
+
+/** A detail route stays in its declared section without treating similar prefixes as the same tool. */
+export function managerNavigationPathMatches(item, pathname) {
+  return typeof item?.to === 'string' && typeof pathname === 'string'
+    && (pathname === item.to || item.matchDescendants === true && pathname.startsWith(`${item.to}/`));
 }
 export function matchReturnPath(value) {
   // Navigation state is untrusted: allow only known Manager list routes.

@@ -22,6 +22,7 @@ import { AccountPage } from './pages/AccountPage.jsx';
 import { UsersPage } from './pages/UsersPage.jsx';
 import { AvailabilityPage } from './pages/AvailabilityPage.jsx';
 import { BoardPage } from './pages/BoardPage.jsx';
+import RetrospectivesPage from './pages/RetrospectivesPage.jsx';
 import { OperationsPage } from './operations/OperationsPage.jsx';
 import AdministrationPage from './pages/AdministrationPage.jsx';
 import RankedMonitorPage from './pages/RankedMonitorPage.jsx';
@@ -45,6 +46,7 @@ const SECTION_ROUTES = [
   { section: 'recursos', path: '/recursos' },
   { section: 'disponibilidad', path: '/disponibilidad' },
   { section: 'tablero', path: '/tablero' },
+  { section: 'retrospectivas', path: '/retrospectivas' },
 ];
 
 function NoAccess() {
@@ -126,6 +128,8 @@ function App() {
           <Route path="recursos" element={guard('recursos', <ResourcesPage />)} />
           <Route path="disponibilidad" element={guard('disponibilidad', <AvailabilityPage />)} />
           <Route path="tablero" element={guard('tablero', <BoardPage />)} />
+          <Route path="retrospectivas" element={guard('retrospectivas', <RetrospectivesPage />)} />
+          <Route path="retrospectivas/:retrospectiveId" element={guard('retrospectivas', <RetrospectivesPage />)} />
           <Route path="usuarios" element={canManageStaff(me) ? <UsersPage /> : <Navigate to={home} replace />} />
           <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />

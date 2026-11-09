@@ -49,7 +49,30 @@ export function isStaffUser(user) {
 }
 
 export function canAccess(user, section) {
+  if (section === 'retrospectivas') return canUseRetrospectives(user);
   return Boolean(user && (user.is_admin || user.sections?.includes(section)));
+}
+
+/** Internal feedback is shared by the staff already admitted to Manager. */
+export function canUseRetrospectives(user) {
+  if (!user || user.active === false || user.active === 0) return false;
+  if (user.auth_mode === 'ctp') {
+    if (!user.ctp_user_id) return false;
+    return user.ctp_role === 'admin' && user.is_admin === true
+      || user.ctp_role === 'referee'
+      || user.ctp_role === 'staff' && STAFF_KINDS.some(kind => kind.id === user.staff_kind);
+  }
+  return isStaffUser(user);
+}
+
+/** Coordination and direction facilitate the review; participation stays open. */
+export function canManageRetrospectives(user) {
+  if (!canUseRetrospectives(user)) return false;
+  if (user.is_admin) return true;
+  const leads = ['operations', 'executive'];
+  return user.auth_mode === 'ctp'
+    ? user.ctp_role === 'staff' && leads.includes(user.staff_kind)
+    : Boolean(user.roles?.some(role => leads.includes(role.staff_kind)));
 }
 
 /** Ranked supervision is limited to the current CTP game role, not local sections. */

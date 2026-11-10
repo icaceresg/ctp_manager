@@ -912,5 +912,8 @@
   "manager.tournamentScenario.chooseExact": "Wähle eine Teilnehmerzahl",
   "manager.tournamentLive.page.chat.notice.scoreCorrected": "Das Turnierteam hat den Spielstand korrigiert.",
   "manager.tournamentLive.bracket.replaceGroupEntrant": "{name} ersetzen",
-  "manager.tournamentLive.bracket.replaceGroupHelp": "{name} hat danach keine Gruppe. Du kannst den Teilnehmer unter Anmeldungen entfernen."
+  "manager.tournamentLive.bracket.replaceGroupHelp": "{name} hat danach keine Gruppe. Du kannst den Teilnehmer unter Anmeldungen entfernen.",
+  "manager.scrims.publication.title": "Scrims",
+  "manager.scrims.publication.description": "Trainingsplan zwischen Clubs mit Zeitfenstern und Reservierungen. Aktiviert keine Herausforderungen und vergibt keine Punkte.",
+  "manager.scrims.publication.unavailable": "Nicht verfügbar"
 }

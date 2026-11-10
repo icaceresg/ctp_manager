@@ -912,5 +912,8 @@
   "manager.tournamentScenario.chooseExact": "Choose an entrant count",
   "manager.tournamentLive.page.chat.notice.scoreCorrected": "Staff corrected the score.",
   "manager.tournamentLive.bracket.replaceGroupEntrant": "Replace {name}",
-  "manager.tournamentLive.bracket.replaceGroupHelp": "{name} will have no group. You can remove this entrant in Registrations."
+  "manager.tournamentLive.bracket.replaceGroupHelp": "{name} will have no group. You can remove this entrant in Registrations.",
+  "manager.scrims.publication.title": "Scrims",
+  "manager.scrims.publication.description": "A club practice schedule with time slots and bookings. It does not enable Challenges or award points.",
+  "manager.scrims.publication.unavailable": "Unavailable"
 }

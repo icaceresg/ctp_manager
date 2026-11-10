@@ -5,6 +5,8 @@ import { EMPTY_PRICING, pricingChanges, pricingPendingCount } from './paymentPri
 // `found` guarda nombre y etiqueta de los clubes añadidos desde la búsqueda; no se envía.
 export const EMPTY_DRAFT = Object.freeze({ sections: {}, tournaments: {}, clubs: {}, tax: {}, eu_rates: {}, found: {}, pricing: EMPTY_PRICING, pricingInputs: {} });
 export const PROGRAM_LABELS = Object.freeze({ team_pass: 'Team Pass', semi_team_pass: 'Semi-Team Pass', circuit_pass: 'Circuit Pass' });
+export const PUBLICATION_SECTIONS = Object.freeze(['calendar', 'market', 'scrims']);
+export const sectionSupported = (snapshot, key) => PUBLICATION_SECTIONS.includes(key) && typeof snapshot?.sections?.[key] === 'boolean';
 
 export const COUNTRY_LABELS = Object.freeze({
   AT: 'Austria', BE: 'Bélgica', BG: 'Bulgaria', HR: 'Croacia', CY: 'Chipre', CZ: 'Chequia', DK: 'Dinamarca', EE: 'Estonia', FI: 'Finlandia',
@@ -18,6 +20,7 @@ const drop = (record, key) => { const next = { ...record }; delete next[key]; re
 
 /** Pone o quita un cambio; si vuelve al valor publicado, deja de estar pendiente. */
 export function setSection(draft, snapshot, key, value) {
+  if (!sectionSupported(snapshot, key) || typeof value !== 'boolean') throw new TypeError('Unsupported publication section');
   const sections = snapshot.sections[key] === value ? drop(draft.sections, key) : { ...draft.sections, [key]: value };
   return { ...draft, sections };
 }
@@ -78,7 +81,7 @@ export function draftChanges(draft) {
 
 /** Valor efectivo (borrador o publicado) para pintar cada control. */
 export const effective = {
-  section: (draft, snapshot, key) => (key in draft.sections ? draft.sections[key] : snapshot.sections[key]),
+  section: (draft, snapshot, key) => (key in draft.sections ? draft.sections[key] : snapshot.sections[key]) === true,
   club: (draft, club, key = 'announced') => (draft.clubs[club.id] && key in draft.clubs[club.id] ? draft.clubs[club.id][key] : clubBase(club)[key]),
   visible: (draft, t) => (draft.tournaments[t.id] && 'visible' in draft.tournaments[t.id] ? draft.tournaments[t.id].visible : t.visible),
   dateVisible: (draft, t) => (draft.tournaments[t.id] && 'date_visible' in draft.tournaments[t.id] ? draft.tournaments[t.id].date_visible : t.date_visible !== false),

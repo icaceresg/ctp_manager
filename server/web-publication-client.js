@@ -39,7 +39,7 @@ export function webPublicationPayload(value){
   ||!only(value.changes,['sections','tournaments','clubs','tax','pricing'])||!Object.keys(value.changes).length)invalid();
  const c=value.changes,changes={};
  if('sections' in c){
-  if(!only(c.sections,['calendar','market'])||!Object.keys(c.sections).length||Object.values(c.sections).some(v=>typeof v!=='boolean'))invalid();
+  if(!only(c.sections,['calendar','market','scrims'])||!Object.keys(c.sections).length||Object.values(c.sections).some(v=>typeof v!=='boolean'))invalid();
   changes.sections={...c.sections};
  }
  if('tournaments' in c){
@@ -105,10 +105,14 @@ export function webPublicationUploadResponse(value){
 export function webPublicationResponse(value,payload){
  const fail=()=>{throw new HttpError(502,'No se ha podido verificar el estado de la web. Actualiza la consulta.');};
  if(!object(value)||value.schema_version!==1||!Number.isSafeInteger(value.revision)||value.revision<1
-  ||!only(value.sections,['calendar','market'])||!Array.isArray(value.tournaments)||!Array.isArray(value.clubs)||!object(value.tax)||!Array.isArray(value.tax.eu_rates))fail();
+  ||!only(value.sections,['calendar','market','scrims'])||('scrims' in value.sections&&typeof value.sections.scrims!=='boolean')
+  ||!Array.isArray(value.tournaments)||!Array.isArray(value.clubs)||!object(value.tax)||!Array.isArray(value.tax.eu_rates))fail();
  if(payload?.action==='configure'&&(!uuid(value.request_id)||value.request_id.toLowerCase()!==payload.request_id))fail();
  return{schema_version:1,revision:value.revision,server_time:value.server_time,updated_at:value.updated_at,
-  sections:{calendar:value.sections.calendar===true,market:value.sections.market===true},
+  // An omitted Scrims flag means the connected CTP backend does not support it
+  // yet. Keep that distinction so the Manager cannot offer an unusable toggle.
+  sections:{calendar:value.sections.calendar===true,market:value.sections.market===true,
+   ...('scrims' in value.sections?{scrims:value.sections.scrims}:{})},
   pricing:paymentPricingResponse(value.pricing,fail),
   tournaments:value.tournaments.filter(t=>object(t)&&uuid(t.id)).map(t=>({id:t.id,name:String(t.name??''),kind:t.kind,circuit_code:t.circuit_code??null,
    season:t.season??null,status:t.status,start_at:t.start_at,registration_open_at:t.registration_open_at??null,registration_close_at:t.registration_close_at??null,

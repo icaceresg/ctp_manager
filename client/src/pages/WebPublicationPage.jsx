@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { dateTime } from '../operations/model.js';
 import {
   COUNTRY_LABELS, EMPTY_DRAFT, KIND_LABELS, PROGRAM_LABELS, bpsToPercent, draftChanges, effective, euros, ossProgress,
-  pendingCount, percentToBps, setClub, setEuRate, setSection, setTax, setTournament, tournamentToggleable, tournamentState,
+  pendingCount, percentToBps, sectionSupported, setClub, setEuRate, setSection, setTax, setTournament, tournamentToggleable, tournamentState,
 } from './webPublicationModel.js';
 import '../operations/operations.css';
 import './web-publication.css';
@@ -23,8 +23,8 @@ const TABS = [
 ];
 const madrid = value => (value ? new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—');
 
-function Toggle({ on, onChange, disabled, labelOn, labelOff, changed }) {
-  return <button type="button" role="switch" aria-checked={on} disabled={disabled} onClick={() => onChange(!on)}
+function Toggle({ on, onChange, disabled, labelOn, labelOff, changed, ariaLabel }) {
+  return <button type="button" role="switch" aria-checked={on} aria-label={ariaLabel} disabled={disabled} onClick={() => onChange(!on)}
     className={`wp-toggle${on ? ' is-on' : ''}${changed ? ' is-changed' : ''}`}>
     {on ? <Eye size={15} aria-hidden /> : <EyeOff size={15} aria-hidden />}{on ? labelOn : labelOff}
   </button>;
@@ -33,14 +33,16 @@ function Toggle({ on, onChange, disabled, labelOn, labelOff, changed }) {
 function Sections({ snapshot, draft, setDraft }) {
   const rows = [
     { key: 'calendar', icon: CalendarDays, title: 'Calendario del circuito', text: 'Página /calendar. Muestra las fechas de los torneos publicados.' },
+    { key: 'scrims', icon: CalendarDays, title: translate('manager.scrims.publication.title'), text: translate('manager.scrims.publication.description') },
     { key: 'market', icon: ShoppingBag, title: 'Mercado de fichajes', text: 'Páginas /market y /market/fa (agentes libres).' },
   ];
   return <section className="op-card" aria-labelledby="wp-sections">
     <div className="op-section-title"><div><h2 id="wp-sections">Secciones de la web</h2><p>Lo que no está visible aparece en el menú como «Clasificado» y su URL lleva a la portada.</p></div></div>
     <ul className="wp-list">{rows.map(({ key, icon: Icon, title, text }) => {
       const on = effective.section(draft, snapshot, key);
+      const supported = sectionSupported(snapshot, key);
       return <li key={key}><Icon size={20} aria-hidden /><div><strong>{title}</strong><small>{text}</small></div>
-        <Toggle on={on} changed={key in draft.sections} labelOn="Visible" labelOff="Clasificado" onChange={value => setDraft(d => setSection(d, snapshot, key, value))} /></li>;
+        <Toggle on={on} ariaLabel={title} disabled={!supported} changed={key in draft.sections} labelOn="Visible" labelOff={supported ? 'Clasificado' : translate('manager.scrims.publication.unavailable')} onChange={value => setDraft(d => setSection(d, snapshot, key, value))} /></li>;
     })}</ul>
   </section>;
 }

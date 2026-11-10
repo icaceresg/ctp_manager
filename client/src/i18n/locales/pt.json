@@ -912,5 +912,8 @@
   "manager.tournamentScenario.chooseExact": "Escolha um número de inscritos",
   "manager.tournamentLive.page.chat.notice.scoreCorrected": "A equipa de arbitragem corrigiu o marcador.",
   "manager.tournamentLive.bracket.replaceGroupEntrant": "Substituir {name}",
-  "manager.tournamentLive.bracket.replaceGroupHelp": "{name} ficará sem grupo. Podes remover este participante em Inscrições."
+  "manager.tournamentLive.bracket.replaceGroupHelp": "{name} ficará sem grupo. Podes remover este participante em Inscrições.",
+  "manager.scrims.publication.title": "Scrims",
+  "manager.scrims.publication.description": "Agenda de treinos entre clubes, com horários e reservas. Não ativa os Desafios nem atribui pontos.",
+  "manager.scrims.publication.unavailable": "Indisponível"
 }

@@ -893,5 +893,8 @@
   "manager.teamRoster.error.activeCompetition": "Le club a des inscriptions actives ou des défis en attente. Résous-les avant de l’archiver.",
   "manager.teamRoster.error.inactive": "Le club est archivé et ne peut plus être modifié. Actualise la liste.",
   "manager.teamRoster.error.restoreConflict": "L’effectif ne peut pas être restauré car un ou plusieurs joueurs appartiennent déjà à une autre équipe.",
-  "manager.teamRoster.error.directDeleteForbidden": "Archive le club pour conserver ses points et son historique."
+  "manager.teamRoster.error.directDeleteForbidden": "Archive le club pour conserver ses points et son historique.",
+  "manager.scrims.publication.title": "Scrims",
+  "manager.scrims.publication.description": "Calendrier des entraînements entre clubs, avec horaires et réservations. N’active pas les Défis et n’attribue pas de points.",
+  "manager.scrims.publication.unavailable": "Indisponible"
 }

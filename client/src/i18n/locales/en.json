@@ -893,5 +893,8 @@
   "manager.teamRoster.error.activeCompetition": "The club has active registrations or pending challenges. Resolve them before archiving it.",
   "manager.teamRoster.error.inactive": "The club is archived and cannot be changed. Refresh the list.",
   "manager.teamRoster.error.restoreConflict": "The roster cannot be restored because one or more players already belong to another team.",
-  "manager.teamRoster.error.directDeleteForbidden": "Archive the club to preserve its points and history."
+  "manager.teamRoster.error.directDeleteForbidden": "Archive the club to preserve its points and history.",
+  "manager.scrims.publication.title": "Scrims",
+  "manager.scrims.publication.description": "A club practice schedule with time slots and bookings. It does not enable Challenges or award points.",
+  "manager.scrims.publication.unavailable": "Unavailable"
 }

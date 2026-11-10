@@ -893,5 +893,8 @@
   "manager.teamRoster.error.activeCompetition": "Il club ha iscrizioni attive o sfide in sospeso. Risolvile prima di archiviarlo.",
   "manager.teamRoster.error.inactive": "Il club è archiviato e non può essere modificato. Aggiorna l’elenco.",
   "manager.teamRoster.error.restoreConflict": "La rosa non può essere ripristinata perché uno o più giocatori appartengono già a un’altra squadra.",
-  "manager.teamRoster.error.directDeleteForbidden": "Archivia il club per conservarne i punti e lo storico."
+  "manager.teamRoster.error.directDeleteForbidden": "Archivia il club per conservarne i punti e lo storico.",
+  "manager.scrims.publication.title": "Scrim",
+  "manager.scrims.publication.description": "Calendario degli allenamenti tra club, con orari e prenotazioni. Non attiva le Sfide né assegna punti.",
+  "manager.scrims.publication.unavailable": "Non disponibile"
 }

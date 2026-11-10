@@ -893,5 +893,8 @@
   "manager.teamRoster.error.activeCompetition": "Der Club hat aktive Anmeldungen oder offene Herausforderungen. Kläre diese vor der Archivierung.",
   "manager.teamRoster.error.inactive": "Der Club ist archiviert und kann nicht geändert werden. Aktualisiere die Liste.",
   "manager.teamRoster.error.restoreConflict": "Der Kader kann nicht wiederhergestellt werden, da mindestens ein Spieler bereits einem anderen Team angehört.",
-  "manager.teamRoster.error.directDeleteForbidden": "Archiviere den Club, um seine Punkte und seinen Verlauf zu erhalten."
+  "manager.teamRoster.error.directDeleteForbidden": "Archiviere den Club, um seine Punkte und seinen Verlauf zu erhalten.",
+  "manager.scrims.publication.title": "Scrims",
+  "manager.scrims.publication.description": "Trainingsplan zwischen Clubs mit Zeitfenstern und Reservierungen. Aktiviert keine Herausforderungen und vergibt keine Punkte.",
+  "manager.scrims.publication.unavailable": "Nicht verfügbar"
 }

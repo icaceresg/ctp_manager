@@ -21,33 +21,45 @@ import { matchReturnPath } from '../navigation.js';
 import './operations.css';
 import { workspaceRequest, workspacePageParams, workspaceFirstPageParams } from './workspaceQuery.js';
 import { useWorkspaceSearch } from './useWorkspaceSearch.js';
+import { createVisibleReadController } from '../visibleReadController.js';
 
-function useOperations(url) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const mounted = useRef(true);
-  const requestId = useRef(0);
-  const viewKey=new URLSearchParams(url.split('?')[1]).get('view');
-  const previousView=useRef(viewKey);
-  const reload = useCallback(async () => {
-    const id = ++requestId.current;
-    try {
-      const next = await api.get(url);
-      if (mounted.current && id === requestId.current) { setData(next); setError(''); }
-    } catch (err) { if (mounted.current && id === requestId.current) { setError(err.message); if ([401, 403].includes(err.status)) setData(null); } }
-    finally { if (mounted.current && id === requestId.current) setLoading(false); }
-  }, [url]);
+function useOperations(url, actorKey) {
+  const [data, setData] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true);
+  const [dataActor, setDataActor] = useState(actorKey);
+  const reader = useRef(null), scope = useRef('');
+  const requestScope = JSON.stringify([url, actorKey]); scope.current = requestScope;
+  const viewKey = new URLSearchParams(url.split('?')[1]).get('view');
+  const previousView = useRef(viewKey), previousActor = useRef(actorKey);
+  const reload = useCallback(() => reader.current?.scope === requestScope ? reader.current.controller.run({ manual: true }) : Promise.resolve(false), [requestScope]);
+  const write = useCallback(async action => {
+    const active = reader.current;
+    if (!active || active.scope !== requestScope) throw new Error('La vista ha cambiado. Vuelve a abrirla para guardar.');
+    active.writes++; active.controller.cancel();
+    try { return await action(); }
+    finally { active.writes--; active.controller.cancel(); }
+  }, [requestScope]);
   useEffect(() => {
-    mounted.current = true;
-    if(previousView.current!==viewKey){previousView.current=viewKey;setLoading(true);setData(null);}
+    const active = requestScope;
+    if (previousView.current !== viewKey || previousActor.current !== actorKey) {
+      previousView.current = viewKey; previousActor.current = actorKey; setLoading(true); setData(null);
+    }
     setError('');
-    // Search is sent to SQLite; debounce keystrokes before creating network work.
-    const initial=setTimeout(reload,200);
-    const interval = setInterval(() => { if (!document.hidden) reload(); }, 20000);
-    return () => { mounted.current = false;requestId.current++;clearTimeout(initial); clearInterval(interval); };
-  }, [reload]);
-  return { data, error, loading, reload };
+    const state = { scope: active, controller: null, writes: 0 };
+    const controller = createVisibleReadController({
+      read: signal => api.get(url, { signal }), visible: () => !document.hidden, retryMs: 20_000,
+      blocked: () => state.writes > 0,
+      onValue: next => { if (scope.current === active) { setData(next); setDataActor(actorKey); setError(''); setLoading(false); } },
+      onError: problem => { if (scope.current === active) { setError(problem.message); setLoading(false); if ([401, 403].includes(problem.status)) setData(null); } },
+    });
+    state.controller = controller; reader.current = state;
+    // Retain the existing search debounce and healthy 20-second cadence.
+    const initial = setTimeout(() => { void controller.run(); }, 200);
+    const interval = setInterval(() => { void controller.run(); }, 20_000);
+    const visibility = () => { if (document.hidden) controller.cancel(); else void controller.run({ manual: true }); };
+    document.addEventListener('visibilitychange', visibility);
+    return () => { controller.dispose(); clearTimeout(initial); clearInterval(interval); document.removeEventListener('visibilitychange', visibility); if (reader.current === state) reader.current = null; };
+  }, [requestScope]);
+  return { data: dataActor === actorKey ? data : null, error, loading, reload, write };
 }
 
 export function OperationsPage() {
@@ -58,18 +70,19 @@ export function OperationsPage() {
   const filterKey=request.replace(/&(?:page|match_page|revision)=[^&]*/g,'');
   const previousFilter=useRef(filterKey);
   useEffect(()=>{if(previousFilter.current!==filterKey){previousFilter.current=filterKey;if(params.has('op_page')||params.has('op_match_page'))setParams(workspaceFirstPageParams,{replace:true});}},[filterKey,params,setParams]);
-  const { data, error, loading, reload } = useOperations(request);
+  const actorKey = JSON.stringify([me?.id, me?.ctp_user_id, me?.auth_mode, me?.ctp_role, me?.is_admin, me?.sections]);
+  const { data, error, loading, reload, write } = useOperations(request, actorKey);
   const [busy, setBusy] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const tabs = OP_TABS.filter((t) => t.sections.some(can));
   const mutate = async (method, path, body, message = 'Guardado en Manager.') => {
-    const result = await api[method](`/operations${path}`, body);
+    const result = await write(() => api[method](`/operations${path}`, body));
     await reload(); toast(message); return result;
   };
   const sync = async () => {
     if (busy) return;
     setBusy(true);
-    try { await api.post('/operations/integration/sync', {}); await reload(); toast('Datos de CTP actualizados.'); }
+    try { await write(() => api.post('/operations/integration/sync', {})); await reload(); toast('Datos de CTP actualizados.'); }
     catch (err) { toast(err.message, 'error'); }
     finally { setBusy(false); }
   };

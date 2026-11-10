@@ -7,6 +7,7 @@ import { canManageRanked } from '../../../shared/access.js';
 import { ticketProofUrl } from '../../../shared/ticket-proof.js';
 import { dateTime } from './model.js';
 import { createTicketActionState } from './ticketActionState.js';
+import { createVisibleReadController } from '../visibleReadController.js';
 import { ArrowUpRight, Check, Link2, MessageSquare, RefreshCw, Send, ShieldCheck, UserRound } from 'lucide-react';
 import './ticket-chat.css';
 
@@ -17,33 +18,37 @@ const CLOSED = ['resuelto', 'rechazado', 'cerrado'];
 export function TicketChat({ incident, reload }) {
   const { me } = useApp(), location = useLocation();
   const [thread, setThread] = useState(null), [threadScope, setThreadScope] = useState(null), [text, setText] = useState(''), [error, setError] = useState(''), [readError, setReadError] = useState(''), [busy, setBusy] = useState(false);
-  const requestScope = JSON.stringify([me?.id, me?.ctp_user_id, me?.auth_mode, me?.ctp_role, me?.is_admin, incident.id]);
-  const lock = useRef(null), scope = useRef(requestScope), reads = useRef(0), actions = useRef(null);
+  const requestScope = JSON.stringify([me?.id, me?.ctp_user_id, me?.auth_mode, me?.ctp_role, me?.is_admin, me?.sections, incident.id]);
+  const lock = useRef(null), scope = useRef(requestScope), reader = useRef(null), actions = useRef(null);
   scope.current = requestScope;
   if (actions.current?.scope !== requestScope) actions.current = createTicketActionState(requestScope);
   const url = `/operations/tickets/${encodeURIComponent(incident.id)}`;
-  const load = useCallback(async () => {
-    const active = requestScope, read = ++reads.current;
-    try { const next = await api.get(url); if (scope.current === active && read === reads.current) { setThread(next); setThreadScope(active); setReadError(''); } }
-    catch (problem) { if (scope.current === active && read === reads.current) { setReadError(problem.message); if ([401,403,404].includes(problem.status)) { setThread(null); setThreadScope(null); setText(''); actions.current = createTicketActionState(active); } } }
-  }, [requestScope, url]);
+  const load = useCallback(() => reader.current?.run({ manual: true }) ?? Promise.resolve(false), [requestScope, url]);
   useEffect(() => {
-    scope.current = requestScope;
-    setThread(null); setThreadScope(null); setText(''); setError(''); setReadError(''); setBusy(false); lock.current = null; void load();
-    const timer = setInterval(() => { if (document.visibilityState === 'visible' && !lock.current) void load(); }, 10000);
-    return () => { clearInterval(timer); ++reads.current; scope.current = null; };
-  }, [load]);
+    const active = requestScope; scope.current = active;
+    setThread(null); setThreadScope(null); setText(''); setError(''); setReadError(''); setBusy(false); lock.current = null;
+    const controller = createVisibleReadController({
+      read: signal => api.get(url, { signal }), visible: () => document.visibilityState === 'visible', blocked: () => !!lock.current, retryMs: 10_000,
+      onValue: next => { if (scope.current === active) { setThread(next); setThreadScope(active); setReadError(''); } },
+      onError: problem => { if (scope.current === active) { setReadError(problem.message); if ([401,403,404].includes(problem.status)) { setThread(null); setThreadScope(null); setText(''); actions.current = createTicketActionState(active); } } },
+    });
+    reader.current = controller; void controller.run();
+    const timer = setInterval(() => { void controller.run(); }, 10000);
+    const visibility = () => { if (document.visibilityState !== 'visible') controller.cancel(); else void controller.run({ manual: true }); };
+    document.addEventListener('visibilitychange', visibility);
+    return () => { controller.dispose(); clearInterval(timer); document.removeEventListener('visibilitychange', visibility); if (reader.current === controller) reader.current = null; if (scope.current === active) scope.current = null; };
+  }, [requestScope, url]);
   async function act(action, value) {
     if (lock.current) return false;
     const active = requestScope, pending = actions.current, token = Symbol();
     const input = pending.begin(action, value);
     const viewer = me?.ctp_user_id || thread?.viewer_id;
-    lock.current = token; setBusy(true); setError('');
+    lock.current = token; reader.current?.cancel(); setBusy(true); setError('');
     try {
       const next = await api.post(`${url}/actions`, input);
       if (scope.current !== active) return false;
       pending.confirm(input, next, incident.id, viewer);
-      ++reads.current; setThread(next); setThreadScope(active); setReadError('');
+      reader.current?.cancel(); setThread(next); setThreadScope(active); setReadError('');
       void reload?.();
       return true;
     } catch (problem) {

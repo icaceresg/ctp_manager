@@ -151,23 +151,79 @@ def service_environment(name):
     return 'prod' if 'prod' in name else 'pre' if name.startswith(('supabase-', 'realtime-dev.supabase-', 'ctp-pre-', 'ctp-manager-pre', 'ctp-edge-guard-pre')) else 'host'
 
 
-def service_snapshots(previous, elapsed):
+def _small_text(path, limit=16384):
+    with path.open('rb') as source:
+        data = source.read(limit+1)
+    if len(data) > limit:
+        raise ValueError('observer_counter_limit')
+    return data.decode('ascii')
+
+
+def cgroup_measurement(info, previous, elapsed, cgroup_root, proc_root):
+    """Read existing kernel counters, never open a Docker stats stream.
+
+    Docker's CPU convention is 100% per busy core, not percent divided by host
+    cores. First/reset/gap samples remain unknown; memory follows Linux Docker
+    CLI's memory.current minus inactive_file convention.
+    """
+    try:
+        identity, pid = info.get('id'), info.get('pid')
+        if not isinstance(identity, str) or not re.fullmatch('[a-f0-9]{64}', identity) or type(pid) is not int or pid <= 0:
+            return None
+        root = pathlib.Path(cgroup_root).resolve(strict=True)
+        if not (root/'cgroup.controllers').is_file():
+            return None
+        lines = _small_text(pathlib.Path(proc_root)/str(pid)/'cgroup', 4096).splitlines()
+        groups = [line[3:] for line in lines if line.startswith('0::')]
+        if len(groups) != 1 or not groups[0].startswith('/') or '..' in pathlib.PurePosixPath(groups[0]).parts:
+            return None
+        group = (root/groups[0].lstrip('/')).resolve(strict=True)
+        if not group.is_relative_to(root) or not any(identity in part for part in group.relative_to(root).parts):
+            return None
+        cpu = dict(line.split() for line in _small_text(group/'cpu.stat').splitlines())
+        memory = int(_small_text(group/'memory.current', 128).strip())
+        memory_stat = dict(line.split() for line in _small_text(group/'memory.stat').splitlines())
+        usage, inactive = int(cpu['usage_usec']), int(memory_stat['inactive_file'])
+        if min(usage, memory, inactive) < 0 or inactive > memory:
+            return None
+        # A PID can be reused or a container move while we read. Require the
+        # same identity-owned cgroup both before and after reading the counters.
+        if _small_text(pathlib.Path(proc_root)/str(pid)/'cgroup', 4096).splitlines() != lines:
+            return None
+        old = previous.get(identity) if isinstance(previous, dict) else None
+        return {'cpuPercent': rate(usage, old, elapsed, 100/1e6),
+                'memoryBytes': memory-inactive}, usage
+    except (OSError, ValueError, KeyError, UnicodeError):
+        return None
+
+
+def service_snapshots(previous, elapsed, *, cgroup_root=pathlib.Path('/sys/fs/cgroup'), proc_root=pathlib.Path('/proc')):
     result = []
     next_units = {}
     try:
         names = sorted({name for name in command(['docker', 'ps', '-a', '--format', '{{.Names}}'], timeout=3).splitlines()
                         if SERVICE_NAME.fullmatch(name)}, key=lambda name: (name not in STOPPED_CORE_SERVICES, name))[:80]
-        fmt = '{"name":{{json .Name}},"memoryLimit":{{json .HostConfig.Memory}},"oomKilled":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"status":{{json .State.Status}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}}}'
+        fmt = '{"name":{{json .Name}},"id":{{json .Id}},"pid":{{json .State.Pid}},"memoryLimit":{{json .HostConfig.Memory}},"oomKilled":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"status":{{json .State.Status}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}}}'
         inventory = {row['name'].lstrip('/'): row for row in
                      (json.loads(line) for line in command(['docker', 'inspect', '--format', fmt, *names], timeout=3).splitlines())} if names else {}
         running = [name for name in names if inventory.get(name, {}).get('status') == 'running']
-        measurements = {}
+        measurements, cpu_counters = {}, {}
+        for name in running:
+            info = inventory[name]
+            measured = cgroup_measurement(info, previous.get('_containerCpu', {}), elapsed, cgroup_root, proc_root)
+            if measured is not None:
+                measurements[name], cpu_counters[info['id']] = measured
+        if cpu_counters:
+            next_units['_containerCpu'] = cpu_counters
+        fallback = [name for name in running if name not in measurements]
         try:
-            stats = command(['docker', 'stats', '--no-stream', '--format', '{{json .}}', *running], timeout=8) if running else ''
+            # Unsupported cgroup versions, missing counters or identity changes
+            # retain the old bounded fallback, only for affected containers.
+            stats = command(['docker', 'stats', '--no-stream', '--format', '{{json .}}', *fallback], timeout=8) if fallback else ''
             for line in stats.splitlines():
                 try:
                     row = json.loads(line)
-                    if row.get('Name') in running:
+                    if row.get('Name') in fallback:
                         measurements[row['Name']] = {'cpuPercent': float(row['CPUPerc'].rstrip('%')),
                                                      'memoryBytes': bytes_value(row['MemUsage'].split('/')[0])}
                 except (KeyError, ValueError, TypeError):

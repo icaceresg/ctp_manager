@@ -3,6 +3,7 @@ import sys
 import unittest
 import json
 import subprocess
+import tempfile
 from types import SimpleNamespace
 from unittest import mock
 
@@ -157,6 +158,77 @@ class AggregateObserverTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 observer.command(['docker', 'exec'])
             self.assertEqual(observer.command(['systemctl', 'show'], accepted_codes=(0, 1)), 'Id=caddy.service')
+
+
+class CgroupCounterTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = pathlib.Path(self.temporary.name)
+        self.cgroups, self.proc = self.root/'cgroup', self.root/'proc'
+        self.cgroups.mkdir(); (self.cgroups/'cgroup.controllers').write_text('cpu memory io pids')
+        self.identity = 'a'*64
+        self.info = {'id': self.identity, 'pid': 1234, 'name': '/supabase-rest', 'status': 'running',
+                     'memoryLimit': 4096, 'oomKilled': False, 'restarts': 0, 'health': 'healthy'}
+        self.group = self.cgroups/'system.slice'/('docker-'+self.identity+'.scope')
+        self.group.mkdir(parents=True); (self.proc/'1234').mkdir(parents=True)
+        (self.proc/'1234'/'cgroup').write_text('0::/system.slice/docker-'+self.identity+'.scope\n')
+        (self.group/'cpu.stat').write_text('usage_usec 90000000\nuser_usec 50000000\nsystem_usec 40000000\n')
+        (self.group/'memory.current').write_text('4096\n')
+        (self.group/'memory.stat').write_text('anon 2048\ninactive_file 1024\n')
+
+    def measurement(self, old=None, elapsed=60):
+        return observer.cgroup_measurement(self.info, old or {}, elapsed, self.cgroups, self.proc)
+
+    def test_cpu_uses_per_core_docker_convention_and_memory_excludes_inactive_file(self):
+        value, counter = self.measurement({self.identity: 30000000})
+        self.assertEqual(counter, 90000000)
+        self.assertEqual(value, {'cpuPercent': 100.0, 'memoryBytes': 3072})
+        self.assertEqual(self.measurement({self.identity: 0}, 30)[0]['cpuPercent'], 300.0)
+
+    def test_first_reset_gap_or_recreated_identity_never_reports_false_zero_cpu(self):
+        for old, elapsed in [({}, 60), ({self.identity: 100000000}, 60), ({self.identity: 0}, 301), ({'b'*64: 0}, 60)]:
+            self.assertIsNone(self.measurement(old, elapsed)[0]['cpuPercent'])
+        self.assertEqual(self.measurement({self.identity: 90000000})[0]['cpuPercent'], 0)
+
+    def test_invalid_missing_foreign_or_escaping_counter_paths_refuse_the_fast_path(self):
+        for path in ['0::/../../outside\n', '0::/system.slice/docker-foreign.scope\n', '1:cpu:/legacy\n']:
+            (self.proc/'1234'/'cgroup').write_text(path)
+            self.assertIsNone(self.measurement())
+        (self.proc/'1234'/'cgroup').write_text('0::/system.slice/docker-'+self.identity+'.scope\n')
+        (self.group/'cpu.stat').write_text('usage_usec invalid\n')
+        self.assertIsNone(self.measurement())
+
+    def test_valid_cgroup_snapshot_avoids_docker_stats_but_preserves_inventory_and_bounded_private_counters(self):
+        calls = []
+        def fake(args, **kwargs):
+            calls.append(args[:2])
+            if args[:2] == ['docker', 'ps']: return 'supabase-rest'
+            if args[:2] == ['docker', 'inspect']: return json.dumps(self.info)
+            if args[:2] == ['systemctl', 'show']: return ''
+            self.fail('unexpected stats stream')
+        with mock.patch.object(observer, 'command', side_effect=fake):
+            rows, state = observer.service_snapshots({'_containerCpu': {self.identity: 30000000}}, 60, cgroup_root=self.cgroups, proc_root=self.proc)
+        self.assertNotIn(['docker', 'stats'], calls)
+        self.assertEqual(rows[0]['cpuPercent'], 100.0)
+        self.assertEqual(rows[0]['memoryBytes'], 3072)
+        self.assertEqual(state, {'_containerCpu': {self.identity: 90000000}})
+        self.assertNotIn('pid', rows[0]); self.assertNotIn('id', rows[0])
+
+    def test_missing_cgroup_falls_back_once_and_a_failed_fallback_keeps_unknown_not_zero(self):
+        (self.group/'memory.current').unlink()
+        calls = []
+        def fake(args, **kwargs):
+            calls.append(args[:2])
+            if args[:2] == ['docker', 'ps']: return 'supabase-rest'
+            if args[:2] == ['docker', 'inspect']: return json.dumps(self.info)
+            if args[:2] == ['docker', 'stats']: raise subprocess.TimeoutExpired(args, 8)
+            return ''
+        with mock.patch.object(observer, 'command', side_effect=fake):
+            rows, state = observer.service_snapshots({}, 60, cgroup_root=self.cgroups, proc_root=self.proc)
+        self.assertEqual(calls.count(['docker', 'stats']), 1)
+        self.assertIsNone(rows[0]['cpuPercent']); self.assertIsNone(rows[0]['memoryBytes'])
+        self.assertEqual(state, {})
 
 
 if __name__ == '__main__':

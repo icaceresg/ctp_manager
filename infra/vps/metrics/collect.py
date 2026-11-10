@@ -159,7 +159,19 @@ def _small_text(path, limit=16384):
     return data.decode('ascii')
 
 
-def cgroup_measurement(info, previous, elapsed, cgroup_root, proc_root):
+def _process_start_ticks(proc, pid):
+    # comm is parenthesised and can itself contain spaces or ')'. Field 22
+    # follows the last closing parenthesis, not the second whitespace token.
+    head, separator, tail = _small_text(proc/'stat', 4096).rpartition(') ')
+    if not separator or not head.startswith(str(pid)+' ('):
+        raise ValueError('observer_process_identity')
+    start = int(tail.split()[19])
+    if start < 0:
+        raise ValueError('observer_process_identity')
+    return start
+
+
+def cgroup_measurement(info, previous, cgroup_root, proc_root):
     """Read existing kernel counters, never open a Docker stats stream.
 
     Docker's CPU convention is 100% per busy core, not percent divided by host
@@ -167,13 +179,16 @@ def cgroup_measurement(info, previous, elapsed, cgroup_root, proc_root):
     CLI's memory.current minus inactive_file convention.
     """
     try:
-        identity, pid = info.get('id'), info.get('pid')
-        if not isinstance(identity, str) or not re.fullmatch('[a-f0-9]{64}', identity) or type(pid) is not int or pid <= 0:
+        identity, pid, restarts = info.get('id'), info.get('pid'), info.get('restarts')
+        if (not isinstance(identity, str) or not re.fullmatch('[a-f0-9]{64}', identity)
+                or type(pid) is not int or pid <= 0 or type(restarts) is not int or restarts < 0):
             return None
         root = pathlib.Path(cgroup_root).resolve(strict=True)
         if not (root/'cgroup.controllers').is_file():
             return None
-        lines = _small_text(pathlib.Path(proc_root)/str(pid)/'cgroup', 4096).splitlines()
+        proc = pathlib.Path(proc_root)/str(pid)
+        lines = _small_text(proc/'cgroup', 4096).splitlines()
+        start_ticks = _process_start_ticks(proc, pid)
         groups = [line[3:] for line in lines if line.startswith('0::')]
         if len(groups) != 1 or not groups[0].startswith('/') or '..' in pathlib.PurePosixPath(groups[0]).parts:
             return None
@@ -181,6 +196,7 @@ def cgroup_measurement(info, previous, elapsed, cgroup_root, proc_root):
         if not group.is_relative_to(root) or not any(identity in part for part in group.relative_to(root).parts):
             return None
         cpu = dict(line.split() for line in _small_text(group/'cpu.stat').splitlines())
+        sampled_at = time.monotonic()
         memory = int(_small_text(group/'memory.current', 128).strip())
         memory_stat = dict(line.split() for line in _small_text(group/'memory.stat').splitlines())
         usage, inactive = int(cpu['usage_usec']), int(memory_stat['inactive_file'])
@@ -188,12 +204,23 @@ def cgroup_measurement(info, previous, elapsed, cgroup_root, proc_root):
             return None
         # A PID can be reused or a container move while we read. Require the
         # same identity-owned cgroup both before and after reading the counters.
-        if _small_text(pathlib.Path(proc_root)/str(pid)/'cgroup', 4096).splitlines() != lines:
+        if (_small_text(proc/'cgroup', 4096).splitlines() != lines
+                or _process_start_ticks(proc, pid) != start_ticks):
             return None
         old = previous.get(identity) if isinstance(previous, dict) else None
-        return {'cpuPercent': rate(usage, old, elapsed, 100/1e6),
-                'memoryBytes': memory-inactive}, usage
-    except (OSError, ValueError, KeyError, UnicodeError):
+        same_generation = (isinstance(old, dict) and old.get('pid') == pid
+                           and old.get('startTicks') == start_ticks and old.get('restarts') == restarts)
+        old_at = old.get('monotonic') if same_generation else None
+        elapsed = sampled_at-old_at if finite(old_at) else None
+        old_usage = old.get('usageUsec') if same_generation else None
+        # The Docker ID survives restart. Couple its counter to the current
+        # init process and use actual counter sample times, not collect() start
+        # times (traffic/DB collection duration can vary substantially).
+        counter = {'usageUsec': usage, 'monotonic': sampled_at, 'pid': pid,
+                   'startTicks': start_ticks, 'restarts': restarts}
+        return {'cpuPercent': rate(usage, old_usage, elapsed, 100/1e6),
+                'memoryBytes': memory-inactive}, counter
+    except (OSError, ValueError, KeyError, IndexError, UnicodeError):
         return None
 
 
@@ -210,7 +237,7 @@ def service_snapshots(previous, elapsed, *, cgroup_root=pathlib.Path('/sys/fs/cg
         measurements, cpu_counters = {}, {}
         for name in running:
             info = inventory[name]
-            measured = cgroup_measurement(info, previous.get('_containerCpu', {}), elapsed, cgroup_root, proc_root)
+            measured = cgroup_measurement(info, previous.get('_containerCpu', {}), cgroup_root, proc_root)
             if measured is not None:
                 measurements[name], cpu_counters[info['id']] = measured
         if cpu_counters:

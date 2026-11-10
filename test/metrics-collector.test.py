@@ -173,23 +173,57 @@ class CgroupCounterTests(unittest.TestCase):
         self.group = self.cgroups/'system.slice'/('docker-'+self.identity+'.scope')
         self.group.mkdir(parents=True); (self.proc/'1234').mkdir(parents=True)
         (self.proc/'1234'/'cgroup').write_text('0::/system.slice/docker-'+self.identity+'.scope\n')
+        self.start_ticks = 12500
+        self.write_stat(1234, self.start_ticks)
         (self.group/'cpu.stat').write_text('usage_usec 90000000\nuser_usec 50000000\nsystem_usec 40000000\n')
         (self.group/'memory.current').write_text('4096\n')
         (self.group/'memory.stat').write_text('anon 2048\ninactive_file 1024\n')
 
-    def measurement(self, old=None, elapsed=60):
-        return observer.cgroup_measurement(self.info, old or {}, elapsed, self.cgroups, self.proc)
+    def write_stat(self, pid, start_ticks):
+        # The parenthesised process name deliberately contains spaces and ')'.
+        fields = ['S']+['0']*18+[str(start_ticks)]+['0']*5
+        (self.proc/str(pid)/'stat').write_text(str(pid)+' (synthetic ) worker) '+' '.join(fields)+'\n')
+
+    def previous(self, usage, at=100, **generation):
+        return {self.identity: {'usageUsec': usage, 'monotonic': at, 'pid': 1234,
+                               'startTicks': self.start_ticks, 'restarts': 0, **generation}}
+
+    def measurement(self, old=None, at=160):
+        with mock.patch.object(observer.time, 'monotonic', return_value=at):
+            return observer.cgroup_measurement(self.info, old or {}, self.cgroups, self.proc)
 
     def test_cpu_uses_per_core_docker_convention_and_memory_excludes_inactive_file(self):
-        value, counter = self.measurement({self.identity: 30000000})
-        self.assertEqual(counter, 90000000)
+        value, counter = self.measurement(self.previous(30000000))
+        self.assertEqual(counter, self.previous(90000000, at=160)[self.identity])
         self.assertEqual(value, {'cpuPercent': 100.0, 'memoryBytes': 3072})
-        self.assertEqual(self.measurement({self.identity: 0}, 30)[0]['cpuPercent'], 300.0)
+        self.assertEqual(self.measurement(self.previous(0), at=130)[0]['cpuPercent'], 300.0)
 
     def test_first_reset_gap_or_recreated_identity_never_reports_false_zero_cpu(self):
-        for old, elapsed in [({}, 60), ({self.identity: 100000000}, 60), ({self.identity: 0}, 301), ({'b'*64: 0}, 60)]:
-            self.assertIsNone(self.measurement(old, elapsed)[0]['cpuPercent'])
-        self.assertEqual(self.measurement({self.identity: 90000000})[0]['cpuPercent'], 0)
+        for old, at in [({}, 160), (self.previous(100000000), 160), (self.previous(0), 401),
+                        ({'b'*64: 0}, 160), ({self.identity: 30000000}, 160), (self.previous(0), 100)]:
+            self.assertIsNone(self.measurement(old, at)[0]['cpuPercent'])
+        self.assertEqual(self.measurement(self.previous(90000000))[0]['cpuPercent'], 0)
+
+    def test_restart_of_same_docker_id_is_unknown_even_when_reset_counter_exceeds_previous_usage(self):
+        old = self.previous(30000000)
+        self.info['pid'] = 5678
+        (self.proc/'5678').mkdir()
+        (self.proc/'5678'/'cgroup').write_text('0::/system.slice/docker-'+self.identity+'.scope\n')
+        self.write_stat(5678, 60000)
+        self.info['restarts'] = 1
+        value, counter = self.measurement(old)
+        self.assertIsNone(value['cpuPercent'])
+        self.assertEqual(counter['usageUsec'], 90000000)
+        (self.group/'cpu.stat').write_text('usage_usec 150000000\n')
+        self.assertEqual(self.measurement({self.identity: counter}, at=220)[0]['cpuPercent'], 100.0)
+
+    def test_pid_reuse_or_restart_count_change_cannot_reuse_a_counter_generation(self):
+        for generation in [{'startTicks': self.start_ticks-1}, {'restarts': 1}, {'pid': 5678}]:
+            self.assertIsNone(self.measurement(self.previous(30000000, **generation))[0]['cpuPercent'])
+
+    def test_counter_changes_generation_while_reading_refuses_fast_path(self):
+        with mock.patch.object(observer, '_process_start_ticks', side_effect=[12500, 60000]):
+            self.assertIsNone(self.measurement(self.previous(30000000)))
 
     def test_invalid_missing_foreign_or_escaping_counter_paths_refuse_the_fast_path(self):
         for path in ['0::/../../outside\n', '0::/system.slice/docker-foreign.scope\n', '1:cpu:/legacy\n']:
@@ -207,13 +241,29 @@ class CgroupCounterTests(unittest.TestCase):
             if args[:2] == ['docker', 'inspect']: return json.dumps(self.info)
             if args[:2] == ['systemctl', 'show']: return ''
             self.fail('unexpected stats stream')
-        with mock.patch.object(observer, 'command', side_effect=fake):
-            rows, state = observer.service_snapshots({'_containerCpu': {self.identity: 30000000}}, 60, cgroup_root=self.cgroups, proc_root=self.proc)
+        with mock.patch.object(observer, 'command', side_effect=fake), mock.patch.object(observer.time, 'monotonic', return_value=160):
+            rows, state = observer.service_snapshots({'_containerCpu': self.previous(30000000)}, 60, cgroup_root=self.cgroups, proc_root=self.proc)
         self.assertNotIn(['docker', 'stats'], calls)
         self.assertEqual(rows[0]['cpuPercent'], 100.0)
         self.assertEqual(rows[0]['memoryBytes'], 3072)
-        self.assertEqual(state, {'_containerCpu': {self.identity: 90000000}})
+        self.assertEqual(state, {'_containerCpu': self.previous(90000000, at=160)})
         self.assertNotIn('pid', rows[0]); self.assertNotIn('id', rows[0])
+
+    def test_cpu_denominator_uses_actual_sample_times_when_earlier_collection_work_varies(self):
+        def fake(args, **kwargs):
+            if args[:2] == ['docker', 'ps']: return 'supabase-rest'
+            if args[:2] == ['docker', 'inspect']: return json.dumps(self.info)
+            if args[:2] == ['systemctl', 'show']: return ''
+            self.fail('unexpected stats stream')
+        # Collect starts may be 60 seconds apart while work before sampling
+        # grows from 5s to 35s. These CPU counters are 90s apart, not 60s.
+        (self.group/'cpu.stat').write_text('usage_usec 120000000\n')
+        previous = {'_containerCpu': self.previous(30000000, at=105)}
+        with mock.patch.object(observer, 'command', side_effect=fake), mock.patch.object(observer.time, 'monotonic', return_value=195):
+            rows, state = observer.service_snapshots(previous, 60, cgroup_root=self.cgroups, proc_root=self.proc)
+        self.assertEqual(rows[0]['cpuPercent'], 100.0, 'using collect-start delta would incorrectly produce 150%')
+        self.assertEqual(state['_containerCpu'][self.identity]['monotonic'], 195)
+        self.assertNotIn('monotonic', rows[0]); self.assertNotIn('startTicks', rows[0]); self.assertNotIn('pid', rows[0])
 
     def test_missing_cgroup_falls_back_once_and_a_failed_fallback_keeps_unknown_not_zero(self):
         (self.group/'memory.current').unlink()

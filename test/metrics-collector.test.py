@@ -67,7 +67,10 @@ class AggregateObserverTests(unittest.TestCase):
                 return '\n'.join(item['name'].lstrip('/') for item in inventory)+'\nnot-ctp-application\n'
             if args[:2] == ['docker', 'inspect']:
                 self.assertNotIn('not-ctp-application', args)
-                self.assertIn('.State.Health', args[3])
+                # Docker's strict template evaluation rejects .State.Health on
+                # containers with no healthcheck; map lookup keeps them visible.
+                self.assertIn('index .State "Health"', args[3])
+                self.assertNotIn('.State.Health', args[3])
                 return '\n'.join(json.dumps(item) for item in inventory)
             if args[:2] == ['docker', 'stats']:
                 self.assertEqual(args[5:], ['supabase-rest'])

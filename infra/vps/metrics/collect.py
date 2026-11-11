@@ -230,7 +230,7 @@ def service_snapshots(previous, elapsed, *, cgroup_root=pathlib.Path('/sys/fs/cg
     try:
         names = sorted({name for name in command(['docker', 'ps', '-a', '--format', '{{.Names}}'], timeout=3).splitlines()
                         if SERVICE_NAME.fullmatch(name)}, key=lambda name: (name not in STOPPED_CORE_SERVICES, name))[:80]
-        fmt = '{"name":{{json .Name}},"id":{{json .Id}},"pid":{{json .State.Pid}},"memoryLimit":{{json .HostConfig.Memory}},"oomKilled":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"status":{{json .State.Status}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}}}'
+        fmt = '{"name":{{json .Name}},"id":{{json .Id}},"pid":{{json .State.Pid}},"memoryLimit":{{json .HostConfig.Memory}},"oomKilled":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"status":{{json .State.Status}},"health":{{with (index .State "Health")}}{{json .Status}}{{else}}null{{end}}}'
         inventory = {row['name'].lstrip('/'): row for row in
                      (json.loads(line) for line in command(['docker', 'inspect', '--format', fmt, *names], timeout=3).splitlines())} if names else {}
         running = [name for name in names if inventory.get(name, {}).get('status') == 'running']

@@ -14,6 +14,7 @@ runs:
       run: |
         python3 -B test/metrics-traffic.test.py
         python3 -B test/metrics-collector.test.py
+        python3 -B test/metrics-update.test.py
         python3 -B test/manager-release.test.py
       shell: bash
     - run: npm run build

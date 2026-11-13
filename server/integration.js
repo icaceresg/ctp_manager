@@ -19,7 +19,7 @@ import { CRM_ERRORS, crmIsRead } from './crm-contract.js';
 import { USER_PROFILE_ERRORS, userProfileId, userProfilePayload, userProfileResponse } from './user-profile-contract.js';
 import { CLUB_PROFILE_ERRORS, clubProfilePayload, clubProfileResponse } from './club-profile-contract.js';
 import { teamRosterPayload, teamRosterProblem, teamRosterQuery, teamRosterRead, teamRosterResponse } from './team-roster-contract.js';
-import { tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse, tournamentRegistrationRosterRead } from './tournament-live-contract.js';
+import { tournamentArbitrationRead, tournamentArbitrationResponse, tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse, tournamentRegistrationRosterRead } from './tournament-live-contract.js';
 import { tournamentScenarioError, tournamentScenarioPayload, tournamentScenarioResponse } from './tournament-scenario-contract.js';
 import {
   DISCIPLINE_ERRORS, USER_DELETE_ERRORS, USER_DELETE_FAILURE_STATUS, USER_DELETE_UNCERTAIN_MESSAGE,
@@ -832,6 +832,12 @@ export async function tournamentScenarioService(user, tournamentId, count, body 
   const payload = tournamentScenarioPayload(tournamentId, count, body);
   const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_scenarios', payload });
   return tournamentScenarioResponse(result, payload);
+}
+
+export async function tournamentArbitrationService(user, tournamentId) {
+  if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
+  const payload = tournamentArbitrationRead(tournamentId);
+  return tournamentArbitrationResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
 }
 
 export async function tournamentLiveMatchService(user, tournamentId, matchId, body = null) {

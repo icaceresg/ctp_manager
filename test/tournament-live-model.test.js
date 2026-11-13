@@ -105,7 +105,7 @@ test('reason check explains how much is missing', () => {
 });
 
 test('referee veto board: slots, current turn, valid corrections and blocks', async () => {
-  const { vetoSlots, currentStep, stepChoices, vetoBlocked, vetoActions, vetoTooEarly, systemNotice, chatCheck } = await import('../client/src/operations/tournamentLiveModel.js');
+  const { canEditVetoStep, vetoSlots, currentStep, stepChoices, stepSwapChoices, vetoBlocked, vetoActions, vetoTooEarly, systemNotice, chatCheck } = await import('../client/src/operations/tournamentLiveModel.js');
   const s = (id, step_index, map_slot, action, map_name, actor_side = 'a', mode = 'HP') => ({ id, step_index, map_slot, action, map_name, actor_side, mode });
   const steps = [s('1', 0, 1, 'ban', 'Rewind'), s('2', 1, 1, 'ban', 'Skyline', 'b'), s('3', 2, 1, 'pick', 'Hacienda'), s('4', 3, 1, 'side', 'SAS', 'b'), s('5', 4, 2, 'pick', null, 'b', 'SnD')];
   const pool = ['Rewind', 'Skyline', 'Hacienda', 'Vista'].map(name => ({ mode: 'HP', name })).concat([{ mode: 'SnD', name: 'Vista' }]);
@@ -114,6 +114,14 @@ test('referee veto board: slots, current turn, valid corrections and blocks', as
   assert.equal(currentStep(steps).id, '5');
   assert.deepEqual(stepChoices(steps[0], steps, pool), ['Vista']);
   assert.deepEqual(stepChoices(steps[3], steps, pool), ['NKA']);
+  const remaining = { ...s('6', 5, 6, 'pick', 'Vista'), automatic_map: true };
+  assert.deepEqual(stepChoices(steps[0], [...steps, remaining], pool), ['Vista']);
+  assert.deepEqual(stepChoices(remaining, [...steps, remaining], pool), []);
+  assert.deepEqual(stepSwapChoices(steps[2], [...steps, remaining], pool).map(step => step.step_index), [0, 1]);
+  assert.deepEqual(stepSwapChoices(remaining, [...steps, remaining], pool), []);
+  assert.deepEqual(stepSwapChoices(steps[3], steps, pool), []);
+  assert.deepEqual(stepSwapChoices(steps[4], steps, pool), []);
+  assert.deepEqual(stepChoices(steps[4], [...steps, { ...remaining, mode: 'SnD' }], pool), []);
   const a = team('A'), b = team('B');
   const ready = match('m', 1, 1, { entrant_a: a, entrant_b: b, pick_ban_status: 'ready' });
   assert.equal(vetoBlocked(ready, 'en_curso'), '');
@@ -121,8 +129,16 @@ test('referee veto board: slots, current turn, valid corrections and blocks', as
   assert.equal(vetoBlocked({ ...ready, result_status: 'pending' }, 'en_curso'), 'played');
   assert.equal(vetoBlocked(ready, 'finalizado'), 'closed');
   assert.equal(vetoBlocked(match('m', 1, 1), 'en_curso'), 'incomplete');
-  assert.deepEqual(vetoActions(ready), ['veto_start', 'veto_reset']);
+  assert.deepEqual(vetoActions(ready), ['veto_start', 'startManual', 'veto_reset']);
   assert.deepEqual(vetoActions({ pick_ban_status: 'none' }), ['veto_prepare']);
+  assert.deepEqual(vetoActions({ pick_ban_status: 'running' }), ['takeControl', 'veto_reset']);
+  assert.deepEqual(vetoActions({ pick_ban_status: 'running', pick_ban_manual_referee: true }), ['resumeTeams', 'veto_reset']);
+  const turn = currentStep([{ ...remaining, step_index: 0, map_name: null }, ...steps]);
+  assert.equal(turn.id, '5');
+  assert.equal(canEditVetoStep(turn, turn, 'running'), true);
+  assert.equal(canEditVetoStep(turn, turn, 'ready'), false);
+  assert.equal(canEditVetoStep(remaining, remaining, 'running'), false);
+  assert.equal(canEditVetoStep(steps[0], null, 'done'), true);
   assert.equal(vetoTooEarly({ scheduled_at: '2026-11-06T18:00:00Z' }, Date.parse('2026-11-06T17:00:00Z')), true);
   assert.equal(systemNotice('tournaments.staff.vetoReset'), 'vetoReset');
   assert.equal(systemNotice('Veto cerrado. Orden de mapas: 1. Rewind'), null);

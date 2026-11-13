@@ -48,7 +48,7 @@ export default function TournamentLiveMatchPanel({ tournamentId, match, matches,
     </div>
     <p className="op-live-meta">{t('match.bestOf', { count: match.best_of })} · {match.scheduled_at ? when(match.scheduled_at) : t('match.unscheduled')} · {t(`veto.${['running', 'done', 'ready'].includes(match.pick_ban_status) ? match.pick_ban_status : 'none'}`)}</p>
 
-    {canOpenMatch && <Link className="btn op-live-open" to={`/operaciones/torneos/${encodeURIComponent(tournamentId)}/partidos/${encodeURIComponent(match.id)}`} target="_blank" rel="noopener noreferrer">
+    {canOpenMatch && <Link className="btn op-live-open" to={`/operaciones/torneos?tournament=${encodeURIComponent(tournamentId)}&tab=arbitration&arbitrationMatch=${encodeURIComponent(match.id)}`}>
       {t('panel.openPage')} <ArrowUpRight size={15} /></Link>}
     {needsAttention(match) && <p className="op-notice">{t(match.result_status === 'disputed' ? 'panel.disputed' : 'panel.reported')}</p>}
 

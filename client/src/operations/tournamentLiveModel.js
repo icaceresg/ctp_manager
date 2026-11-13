@@ -236,17 +236,24 @@ export function vetoSlots(steps = []) {
   });
 }
 /** The turn being played now: first step without a decision. */
-export const currentStep = (steps = []) => [...steps].sort((a, b) => a.step_index - b.step_index).find(step => !step.map_name) || null;
+export const currentStep = (steps = []) => [...steps].sort((a, b) => a.step_index - b.step_index).find(step => !step.map_name && !step.automatic_map) || null;
 
 /**
  * Values staff may put in a decided step: SAS/NKA for a side choice; for a
  * ban or pick, pool maps of that mode not used by another ban/pick.
  */
 export function stepChoices(step, steps = [], pool = []) {
-  if (!step) return [];
+  if (!step || step.automatic_map) return [];
   if (step.action === 'side') return VETO_SIDES.filter(value => value !== step.map_name);
-  const used = new Set(steps.filter(other => other.id !== step.id && other.action !== 'side' && other.mode === step.mode && other.map_name).map(other => other.map_name));
+  const used = new Set(steps.filter(other => other.id !== step.id && other.action !== 'side'
+    && (!other.automatic_map || !step.map_name) && other.mode === step.mode && other.map_name).map(other => other.map_name));
   return pool.filter(map => map.mode === step.mode && map.name !== step.map_name && !used.has(map.name)).map(map => map.name);
+}
+
+export function stepSwapChoices(step, steps = [], pool = []) {
+  if (!step?.map_name || step.automatic_map || step.action === 'side' || !pool.some(map => map.mode === step.mode && map.name === step.map_name)) return [];
+  const available = new Set(pool.filter(map => map.mode === step.mode).map(map => map.name));
+  return steps.filter(other => other.id !== step.id && other.mode === step.mode && !other.automatic_map && other.action !== 'side' && available.has(other.map_name));
 }
 
 /** Why staff cannot touch the pick & ban right now (a key under `page.veto.blocked`), or ''. */
@@ -262,8 +269,13 @@ export function vetoBlocked(match, tournamentStatus) {
 export function vetoActions(match) {
   const status = match?.pick_ban_status ?? 'none';
   if (status === 'none') return ['veto_prepare'];
-  if (status === 'ready') return ['veto_start', 'veto_reset'];
+  if (status === 'ready') return ['veto_start', 'startManual', 'veto_reset'];
+  if (status === 'running') return [match.pick_ban_manual_referee ? 'resumeTeams' : 'takeControl', 'veto_reset'];
   return ['veto_reset'];
+}
+
+export function canEditVetoStep(step, current, status) {
+  return !step.automatic_map && (Boolean(step.map_name) || (status === 'running' && current?.id === step.id));
 }
 /** Opening before the scheduled time is refused by CTP. */
 export const vetoTooEarly = (match, now = Date.now()) => Boolean(match?.scheduled_at) && new Date(match.scheduled_at).getTime() > now;

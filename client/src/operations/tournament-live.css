@@ -210,11 +210,18 @@ button.op-live-time:hover, .op-live-open-match:hover { background: var(--accent-
 .op-live-page-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
 .op-live-page-title { flex: 1; min-width: 220px; }
 .op-live-page-title small { color: var(--muted); font-size: 12px; }
-.op-live-page-title h1 { margin: 2px 0 0; font-family: var(--font-display); font-size: 22px; line-height: 1.2; overflow-wrap: anywhere; }
-.op-live-page-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
-.op-live-page-main { display: grid; gap: 16px; min-width: 0; }
+.op-live-page-title :is(h1, h3) { margin: 2px 0 0; font-family: var(--font-display); font-size: 22px; line-height: 1.2; overflow-wrap: anywhere; }
+.op-live-page-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); grid-template-rows: repeat(3, auto) 1fr; gap: 16px; align-items: start; }
+.op-live-page-grid > * { grid-column: 1; grid-row: auto; min-width: 0; }
+.op-live-page-grid > .op-live-page-score { grid-row: 1; }
+.op-live-page-grid > .op-arbitration-roster-card { grid-row: 2; }
+.op-live-page-grid > .op-live-chat { grid-column: 2; grid-row: 1 / span 4; }
 .op-live-page-score .op-live-score { margin: 0; }
 .op-live-page .op-notice { display: flex; align-items: center; gap: 6px; }
+.op-live-page.is-embedded { min-width: 0; }
+.op-live-page.is-embedded .op-live-page-grid { grid-template-columns: minmax(0, 1fr) minmax(260px, .9fr); }
+.op-live-page.is-embedded .op-section-title h2 { font-size: 16px; }
+.op-live-page :is(h2, h3) > svg { vertical-align: text-bottom; }
 .op-live-state.is-veto-none { color: var(--muted); }
 .op-live-state.is-veto-ready { color: var(--text-2); }
 .op-live-state.is-veto-running { color: #8fb3ff; }
@@ -240,26 +247,71 @@ button.op-live-time:hover, .op-live-open-match:hover { background: var(--accent-
 .op-live-step.is-current { background: var(--accent-soft); }
 .op-live-step-value em { font-style: normal; font-weight: 500; font-size: 11px; color: var(--warning); }
 .op-live-step-editor { grid-column: 1 / -1; border-top: 1px dashed var(--border); padding-top: 10px; margin-top: 4px; }
-.op-live-chat { display: flex; flex-direction: column; position: sticky; top: 12px; max-height: calc(100vh - 40px); }
-.op-live-chat-list { list-style: none; margin: 0; padding: 0 2px; flex: 1; min-height: 220px; overflow-y: auto; display: grid; align-content: start; gap: 8px; }
-.op-live-chat-list > li { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--bg); }
-.op-live-chat-list > li.is-system { background: var(--surface-2); border-style: dashed; }
-.op-live-chat-list > li.is-system p { color: var(--text-2); font-size: 12px; }
-.op-live-chat-list header { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
-.op-live-chat-list time { color: var(--muted); white-space: nowrap; }
-.op-live-chat-list p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.op-live-chat { display: flex; flex-direction: column; position: sticky; top: 12px; max-height: calc(100vh - 40px); min-width: 0; }
+.op-live-chat-scroll { flex: 1; min-height: 180px; max-height: 540px; overflow-y: auto; }
+.op-live-chat-list { list-style: none; margin: 0; padding: 0 4px 0 0; display: grid; align-content: start; gap: 9px; }
+.op-live-chat-list > .is-team-a, .op-arbitration-roster.is-team-a { --op-chat-team: #54cbd5; }
+.op-live-chat-list > .is-team-b, .op-arbitration-roster.is-team-b { --op-chat-team: #e19753; }
+.op-live-chat-list > li { border-inline-start: 2px solid var(--op-chat-team, var(--border-strong)); padding-inline-start: 9px; min-width: 0; }
+.op-live-chat-list > li.is-staff { --op-chat-team: var(--accent); }
+.op-live-chat-list > li.is-system { border-inline-start-style: dashed; padding-block: 4px; color: var(--muted); }
+.op-live-chat-list > li.is-system p { font-size: 12px; }
+.op-live-chat-list > li.is-continued { margin-top: -9px; padding-top: 3px; }
+.op-live-chat-list header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 6px; font-size: 12px; overflow-wrap: anywhere; }
+.op-live-chat-list strong { color: var(--op-chat-team, inherit); }
+.op-live-chat-team, .op-live-chat-staff { font-size: 11px; font-weight: 600; }
+.op-live-chat-team { color: var(--op-chat-team, var(--muted)); }
+.op-live-chat-staff { color: var(--accent-text); }
+.op-live-chat-list time { color: var(--muted); white-space: nowrap; margin-inline-start: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+.op-live-chat-list p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .op-live-chat-compose { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; display: grid; gap: 6px; }
 .op-live-chat-compose textarea { width: 100%; resize: vertical; }
-.op-live-chat-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.op-live-chat-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .op-live-chat-bar small { color: var(--muted); }
 .op-live-chat-bar small.is-alert { color: var(--danger); }
 @media (max-width: 1000px) {
-  .op-live-page-grid { grid-template-columns: 1fr; }
+  .op-live-page-grid { grid-template-columns: 1fr; grid-template-rows: none; }
+  .op-live-page-grid > :is(.op-live-page-score, .op-arbitration-roster-card, .op-live-chat) { grid-area: auto; }
   .op-live-chat { position: static; max-height: none; }
-  .op-live-chat-list { max-height: 420px; }
+  .op-live-chat-scroll { max-height: 420px; }
 }
 @media (max-width: 560px) {
   .op-live-step { grid-template-columns: 1fr auto; }
   .op-live-step > .btn { grid-column: 1 / -1; justify-self: start; }
 }
 .op-live-chip.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+
+/* Tournament refereeing workspace */
+.op-arbitration { display: grid; grid-template-columns: minmax(250px, .7fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.op-arbitration-queue { position: sticky; top: 12px; display: grid; gap: 10px; min-width: 0; }
+.op-arbitration-search { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+.op-arbitration-search input { width: 100%; min-width: 0; }
+.op-arbitration-list { list-style: none; margin: 0 -6px; padding: 4px 6px; display: grid; gap: 7px; max-height: min(58vh, 670px); overflow: auto; }
+.op-arbitration-list button { cursor: pointer; padding: 9px 10px; gap: 5px; }
+.op-arbitration-match-label { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.op-arbitration-match-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; }
+.op-arbitration-match-meta small { color: var(--muted); font-size: 11px; }
+.op-arbitration-request-count { display: flex; align-items: center; gap: 5px; color: var(--danger); font-size: 11px; font-weight: 600; }
+.op-arbitration-load-error { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.op-arbitration-requests { margin-bottom: 14px; }
+.op-arbitration-requests h3 { color: var(--danger); }
+.op-arbitration-requests ul, .op-arbitration-roster ul { list-style: none; margin: 0; padding: 0; }
+.op-arbitration-requests li { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding: 8px 0; }
+.op-arbitration-requests li + li { border-top: 1px solid var(--border); }
+.op-arbitration-requests time { color: var(--muted); font-size: 11px; }
+.op-arbitration-rosters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.op-arbitration-roster { border: 1px solid var(--border); border-inline-start: 2px solid var(--op-chat-team); border-radius: 8px; padding: 8px 10px; overflow-wrap: anywhere; }
+.op-arbitration-roster h4 { margin: 0 0 5px; color: var(--op-chat-team); font-size: 13px; }
+.op-arbitration-roster li { font-size: 13px; line-height: 1.55; }
+.op-arbitration-roster p { margin: 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 1160px) {
+  .op-live-page.is-embedded .op-live-page-grid { grid-template-columns: 1fr; grid-template-rows: none; }
+  .op-live-page.is-embedded .op-live-page-grid > :is(.op-live-page-score, .op-arbitration-roster-card, .op-live-chat) { grid-area: auto; }
+  .op-live-page.is-embedded .op-live-chat { position: static; max-height: none; }
+  .op-live-page.is-embedded .op-live-chat-scroll { max-height: 420px; }
+}
+@media (max-width: 820px) {
+  .op-arbitration { grid-template-columns: 1fr; }
+  .op-arbitration-queue { position: static; }
+  .op-arbitration-list { max-height: 300px; }
+}

@@ -269,6 +269,17 @@ test('staff availability notes are private to the person and operations coordina
   assert.equal(operations.bootstrap(admin).staff.find(s=>s.id===caster.id).availability[0].note,'Nota personal del caster');
 });
 
+test('collection completeness retires only missing records in confirmed collections', () => {
+  const generated_at = new Date().toISOString();
+  operations.ingestSnapshot({matches:[{...baseMatch,id:'retained-match'}],
+    incidents:[{id:'retired-ticket',title:'Fixture',status:'abierto'}]});
+  operations.ingestSnapshot({generated_at,possibly_truncated:true,matches:[],incidents:[],
+    collection_complete:{matches:false,incidents:true}});
+  assert.throws(()=>operations.incidentDetail(referee,'retired-ticket'),{status:404});
+  assert.equal(operations.matchDossier(caster,'retained-match').match.id,'retained-match');
+  assert.equal(db.prepare("SELECT count(*) n FROM operation_records WHERE id='retired-ticket'").get().n,1);
+});
+
 test('suspension scopes are explicit and warnings never grant hidden enforcement scopes', () => {
   operations.ingestSnapshot({incidents:[{id:'official-discipline-case',match_id:'match-a',kind:'tournament',status:'resolved',version:1,title:'Arbitraje',reason:'Expediente revisado'}]});
   const input={incident_id:'official-discipline-case',subject_id:'player-discipline',subject_type:'player',reason:'Propuesta motivada y documentada',restriction:'competition_suspend',starts_at:new Date(Date.now()+60_000).toISOString(),ends_at:new Date(Date.now()+3600_000).toISOString()};

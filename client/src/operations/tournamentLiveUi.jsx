@@ -6,13 +6,13 @@ import { REASON_MAX, STATUSES, matchState, reasonCheck } from './tournamentLiveM
 export const KEY_PREFIX = 'manager.tournamentLive.';
 export const t = (key, values) => translate(KEY_PREFIX + key, values);
 
-/** Server errors arrive as `manager.tournamentLive.error.*` keys; other failures keep their message. */
+/** Translate the bridge's tournament errors and use localized copy for transport failures. */
 export function tournamentLiveError(cause) {
   const message = cause?.message;
   if (typeof message === 'string' && message.startsWith(KEY_PREFIX)) {
     try { return translate(message); } catch { /* Unknown key: fall through to the generic copy. */ }
   }
-  return message || t('error.unavailable');
+  return t([401, 403].includes(cause?.status) ? 'error.forbidden' : 'error.unavailable');
 }
 
 export const statusLabel = status => t(`status.values.${STATUSES.includes(status) ? status : 'borrador'}`);

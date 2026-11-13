@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, CalendarDays, Info, Network, RefreshCw, Settings2, Users } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, CalendarDays, Gavel, Info, Network, RefreshCw, Settings2, Users } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { getIntlLocale, translate } from '../i18n/runtime.js';
@@ -13,6 +13,7 @@ import TournamentForm from './TournamentForm.jsx';
 import TournamentFormatPreview from './TournamentFormatPreview.jsx';
 import TournamentScheduleScenarios from './TournamentScheduleScenarios.jsx';
 import TournamentRegistrations from './TournamentRegistrations.jsx';
+import TournamentArbitration from './TournamentArbitration.jsx';
 import { TournamentLivePanel } from './TournamentLiveDialog.jsx';
 import './competition.css';
 
@@ -20,6 +21,7 @@ const t = (key, values) => translate(`manager.tournament.${key}`, values);
 const statusLabel = status => translate(`manager.tournamentLive.status.values.${status}`);
 const states = ['borrador', 'inscripcion_abierta', 'en_curso', 'finalizado', 'cancelado'];
 const tabs = [['bracket', Network], ['teams', Users], ['settings', Settings2]];
+const arbitrationTab = ['arbitration', Gavel];
 const quickActions = ['tournament.update', 'tournament.generate', 'tournament.publish'];
 const actions = {
   'tournament.status': 'status',
@@ -41,7 +43,9 @@ export function CompetitionPanel({ data, reload, can, me }) {
   const liveControl = Boolean(me?.is_admin || can?.('arbitraje'));
   const [params, setParams] = useSearchParams();
   const target = params.get('tournament');
-  const tab = tabs.some(([key]) => key === params.get('tab')) ? params.get('tab') : 'bracket';
+  const visibleTabs = liveControl ? [...tabs, arbitrationTab] : tabs;
+  const tab = visibleTabs.some(([key]) => key === params.get('tab')) ? params.get('tab') : 'bracket';
+  const selectedMatchId = params.get('arbitrationMatch');
   const [read, setRead] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -108,8 +112,14 @@ export function CompetitionPanel({ data, reload, can, me }) {
     const next = new URLSearchParams(previous);
     if (key === 'bracket') next.delete('tab');
     else next.set('tab', key);
+    if (key !== 'arbitration') next.delete('arbitrationMatch');
     return next;
   });
+  const selectMatch = id => setParams(previous => {
+    const next = new URLSearchParams(previous);
+    next.set('arbitrationMatch', id);
+    return next;
+  }, { preventScrollReset: true });
   const showList = () => {
     setParams({});
     setCursor(null);
@@ -204,8 +214,8 @@ export function CompetitionPanel({ data, reload, can, me }) {
           <span title={t('madrid')}>{t('startsOn', { date: competitionDateTime(tournament.start_at) })}</span>
         </div>
         <nav className="op-dossier-nav" aria-label={t('navigation')}>
-          {tabs.map(([key, Icon]) => <button key={key} type="button" className={tab === key ? 'is-active' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => switchTab(key)}>
-            <Icon size={17} aria-hidden="true" />{t(`tabs.${key}`)}{key === 'teams' && <span>{number(participants.length)}</span>}
+          {visibleTabs.map(([key, Icon]) => <button key={key} type="button" className={tab === key ? 'is-active' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => switchTab(key)}>
+            <Icon size={17} aria-hidden="true" />{key === 'arbitration' ? translate('manager.tournamentLive.arbitration.title') : t(`tabs.${key}`)}{key === 'teams' && <span>{number(participants.length)}</span>}
           </button>)}
         </nav>
         {pendingTournament.length > 0 && <DecisionPanel data={{ ...data, commands: pendingTournament }} resourceType="tournament" resourceId={tournament.id} reload={reload} onChanged={afterDecision} />}
@@ -219,6 +229,8 @@ export function CompetitionPanel({ data, reload, can, me }) {
           <TournamentLivePanel key={tournament.id} tournament={tournament} fallbackMatches={matches} fallbackGroupOrder={result.group_order} refreshKey={refreshKey}
             canEdit={liveControl} canWrite={Boolean(data.connection?.write_enabled)} onChanged={load} onParticipants={() => switchTab('teams')} />
         </section>}
+        {tab === 'arbitration' && <TournamentArbitration key={tournament.id} tournamentId={tournament.id}
+          selectedMatchId={selectedMatchId} selectMatch={selectMatch} canWrite={Boolean(data.connection?.write_enabled)} refreshKey={refreshKey} />}
         {tab === 'teams' && <TournamentRegistrations key={tournament.id} tournament={tournament} participants={participants} eligibleTeams={result.eligible_teams} liveControl={liveControl} canWrite={Boolean(data.connection?.write_enabled)} onChanged={load} />}
         {tab === 'settings' && <section className="op-card">
           <div className="op-section-title"><h3>{t('tabs.settings')}</h3>

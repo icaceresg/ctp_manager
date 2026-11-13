@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { TOURNAMENT_LIVE_ERRORS, TOURNAMENT_LIVE_MATCH_WRITES, TOURNAMENT_LIVE_WRITES, tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse, tournamentRegistrationRosterRead } from '../server/tournament-live-contract.js';
+import { TOURNAMENT_LIVE_ERRORS, TOURNAMENT_LIVE_MATCH_WRITES, TOURNAMENT_LIVE_WRITES, tournamentArbitrationRead, tournamentArbitrationResponse, tournamentLiveMatchPayload, tournamentLiveMatchRead, tournamentLiveMatchResponse, tournamentLivePayload, tournamentLiveProblem, tournamentLiveQuery, tournamentLiveRead, tournamentLiveResponse, tournamentRegistrationRosterRead } from '../server/tournament-live-contract.js';
 
 const tournament = randomUUID(), match = randomUUID(), participant = randomUUID(), team = randomUUID(), revision = 'b'.repeat(32), reason = 'Resolución arbitral en directo';
 const write = extra => ({ expected_revision: revision, reason, ...extra });
@@ -102,18 +102,52 @@ const matchView = extra => ({
 });
 
 test('the referee match page sends exact chat and veto payloads', () => {
-  assert.deepEqual(Object.keys(TOURNAMENT_LIVE_MATCH_WRITES), ['chat_send', 'veto_prepare', 'veto_start', 'veto_reset', 'veto_set_step']);
+  assert.deepEqual(Object.keys(TOURNAMENT_LIVE_MATCH_WRITES), ['chat_send', 'veto_prepare', 'veto_start', 'veto_reset', 'veto_set_step', 'veto_set_control']);
   assert.deepEqual(tournamentLiveMatchRead(tournament, match), { action: 'match_get', tournament_id: tournament, match_id: match });
   assert.deepEqual(tournamentLiveMatchPayload(tournament, match, { action: 'chat_send', body: '  Hola\r\ncapitanes ' }),
     { action: 'chat_send', tournament_id: tournament, match_id: match, body: 'Hola\ncapitanes' });
   assert.deepEqual(tournamentLiveMatchPayload(tournament, match, write({ action: 'veto_set_step', step_index: 2, map_name: ' Rewind ' })),
     { action: 'veto_set_step', tournament_id: tournament, match_id: match, expected_revision: revision, reason, step_index: 2, map_name: 'Rewind' });
+  const swap = write({ action: 'veto_set_step', step_index: 2, map_name: 'Rewind', swap_step_index: 1 });
+  assert.deepEqual(tournamentLiveMatchPayload(tournament, match, swap), { ...swap, tournament_id: tournament, match_id: match });
+  for (const [action, manual_referee] of [['veto_start', true], ['veto_set_control', false]]) {
+    const body = write({ action, manual_referee });
+    assert.deepEqual(tournamentLiveMatchPayload(tournament, match, body), { ...body, tournament_id: tournament, match_id: match });
+  }
   for (const body of [
+    write({ action: 'veto_set_control' }), write({ action: 'veto_start', manual_referee: 'true' }), write({ action: 'veto_reset', manual_referee: true }),
+    { ...swap, swap_step_index: '1' }, write({ action: 'veto_reset', swap_step_index: 1 }),
     { action: 'chat_send', body: '   ' }, { action: 'chat_send', body: 'x'.repeat(1001) }, { action: 'chat_send', body: 'a\u0007' }, { action: 'chat_send', body: 'hola', reason },
     write({ action: 'veto_reset', step_index: 1 }), { action: 'veto_reset', reason }, write({ action: 'veto_start', reason: 'corto' }),
     write({ action: 'veto_set_step', step_index: '2', map_name: 'Rewind' }), write({ action: 'veto_set_step', step_index: 2 }), write({ action: 'set_result' }),
   ]) assert.throws(() => tournamentLiveMatchPayload(tournament, match, body), /manager\.tournamentLive\.error\./);
   assert.throws(() => tournamentLiveMatchRead(tournament, 'nope'));
+});
+
+test('arbitration returns active ticket identifiers and limits roster and chat metadata to match detail', () => {
+  const payload = tournamentArbitrationRead(tournament);
+  assert.deepEqual(payload, { action: 'arbitration_get', tournament_id: tournament });
+  const request = { id: randomUUID(), code: 'CTP-QA', status: 'en_revision', created_at: '2026-11-06T18:00:00Z', description: 'Synthetic private reason' };
+  const view = matchView();
+  const arbitration = tournamentArbitrationResponse({ tournament: view.tournament, matches: [{ ...view.match, referee_requests: [request] }] }, payload);
+  assert.equal(arbitration.matches[0].referee_requests[0].id, request.id);
+  assert.equal(arbitration.matches[0].referee_requests[0].description, undefined);
+  assert.throws(() => tournamentArbitrationResponse({ tournament: view.tournament, matches: [{ ...view.match, referee_requests: [{ ...request, status: 'cerrado' }] }] }, payload));
+  const detail = tournamentLiveMatchResponse({
+    ...view,
+    match: { ...view.match, pick_ban_manual_referee: true },
+    roster: { a: [{ user_id: participant, name: 'QA Player', email: 'hidden@example.invalid' }], b: [] },
+    referee_requests: [request],
+    messages: [{ ...view.messages[0], author_side: 'b', author_is_staff: true, author_key: revision }],
+  }, tournamentLiveMatchRead(tournament, match));
+  assert.deepEqual(detail.referee_requests, arbitration.matches[0].referee_requests);
+  assert.deepEqual(detail.roster.a, [{ user_id: participant, name: 'QA Player' }]);
+  assert.equal(detail.messages[0].author_side, 'b');
+  assert.equal(detail.messages[0].author_is_staff, true);
+  assert.equal(detail.messages[0].author_key, revision);
+  assert.equal(detail.match.pick_ban_manual_referee, true);
+  const routes = fs.readFileSync(new URL('../server/routes/integration.js', import.meta.url), 'utf8');
+  assert.match(routes, /'\/operations\/tournaments\/:id\/live\/arbitration',requireAuth,allow\('arbitraje'\)/);
 });
 
 test('the match DTO keeps the veto, pool and chat but drops ids and unsafe images', () => {

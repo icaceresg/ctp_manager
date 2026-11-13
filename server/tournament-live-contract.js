@@ -69,6 +69,7 @@ export function tournamentLiveProblem(code) {
 }
 
 export function tournamentLiveRead(tournamentId) { return { action: 'get', tournament_id: id(tournamentId) }; }
+export function tournamentArbitrationRead(tournamentId) { return { action: 'arbitration_get', tournament_id: id(tournamentId) }; }
 export function tournamentRegistrationRosterRead(tournamentId, teamId) {
   return { action: 'registration_roster', tournament_id: id(tournamentId), team_id: id(teamId) };
 }
@@ -209,12 +210,14 @@ export function tournamentLiveResponse(value, payload) {
 export const TOURNAMENT_LIVE_MATCH_WRITES = Object.freeze({
   chat_send: ['body'],
   veto_prepare: [],
-  veto_start: [],
+  veto_start: ['manual_referee'],
   veto_reset: [],
-  veto_set_step: ['step_index', 'map_name'],
+  veto_set_step: ['step_index', 'map_name', 'swap_step_index'],
+  veto_set_control: ['manual_referee'],
 });
 const STEP_ACTIONS = ['ban', 'pick', 'side'];
 const SIDES = ['a', 'b'];
+const ACTIVE_REFEREE_REQUESTS = ['abierto', 'en_revision', 'esperando_respuesta'];
 export const CHAT_MAX = 1000;
 
 export function tournamentLiveMatchRead(tournamentId, matchId) {
@@ -239,8 +242,56 @@ export function tournamentLiveMatchPayload(tournamentId, matchId, body = {}) {
     if (!Number.isInteger(body.step_index) || body.step_index < 0 || body.step_index > 999) fail();
     if (!text(body.map_name, 80) || !body.map_name.trim()) fail();
     payload.step_index = body.step_index; payload.map_name = body.map_name.trim();
+    if ('swap_step_index' in body) {
+      if (!Number.isInteger(body.swap_step_index) || body.swap_step_index < 0 || body.swap_step_index > 999) fail();
+      payload.swap_step_index = body.swap_step_index;
+    }
+  }
+  if ('manual_referee' in body || body.action === 'veto_set_control') {
+    if (typeof body.manual_referee !== 'boolean') fail();
+    payload.manual_referee = body.manual_referee;
   }
   return payload;
+}
+
+function refereeRequests(rows) {
+  if (!Array.isArray(rows)) fail(502, 'unavailable');
+  return rows.map(row => {
+    if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !text(row.code, 80)
+      || !ACTIVE_REFEREE_REQUESTS.includes(row.status) || !date(row.created_at)) fail(502, 'unavailable');
+    return { id: row.id.toLowerCase(), code: row.code, status: row.status, created_at: row.created_at };
+  });
+}
+
+function matchIdentity(m) {
+  if (!object(m) || typeof m.id !== 'string' || !UUID.test(m.id)
+    || !['grupos', 'eliminacion'].includes(m.phase) || !Number.isInteger(m.round) || !Number.isInteger(m.position)
+    || !RESULTS.includes(m.result_status) || (m.winner_id != null && (typeof m.winner_id !== 'string' || !UUID.test(m.winner_id)))) fail(502, 'unavailable');
+  return {
+    id: m.id.toLowerCase(), phase: m.phase, group_label: text(m.group_label, 20) ? m.group_label : null, round: m.round, position: m.position,
+    is_third_place: m.is_third_place === true, entrant_a: entrant(m.entrant_a), entrant_b: entrant(m.entrant_b),
+    winner_id: m.winner_id ? m.winner_id.toLowerCase() : null, result_status: m.result_status, scheduled_at: optionalDate(m.scheduled_at),
+    pick_ban_status: VETO.includes(m.pick_ban_status) ? m.pick_ban_status : 'none', started: m.started === true,
+  };
+}
+
+export function tournamentArbitrationResponse(value, payload) {
+  if (!object(value)) fail(502, 'unavailable');
+  const t = value.tournament;
+  if (!object(t) || t.id !== payload.tournament_id || !text(t.name) || !STATUSES.includes(t.status)
+    || !Array.isArray(value.matches) || value.matches.length > 1024) fail(502, 'unavailable');
+  return {
+    tournament: { id: t.id, name: t.name, status: t.status },
+    matches: value.matches.map(row => ({ ...matchIdentity(row), referee_requests: refereeRequests(row.referee_requests) })),
+  };
+}
+
+function matchRoster(rows) {
+  if (!Array.isArray(rows) || rows.length > 256) fail(502, 'unavailable');
+  return rows.map(row => {
+    if (!object(row) || typeof row.user_id !== 'string' || !UUID.test(row.user_id) || !text(row.name)) fail(502, 'unavailable');
+    return { user_id: row.user_id.toLowerCase(), name: row.name };
+  });
 }
 
 /** Explicit DTO for one match: public names, veto sequence, pool and chat. */
@@ -248,25 +299,17 @@ export function tournamentLiveMatchResponse(value, payload) {
   if (!object(value)) fail(502, 'unavailable');
   const t = value.tournament, m = value.match;
   if (!object(t) || t.id !== payload.tournament_id || !text(t.name) || !STATUSES.includes(t.status)
-    || !object(m) || typeof m.id !== 'string' || m.id.toLowerCase() !== payload.match_id
-    || !['grupos', 'eliminacion'].includes(m.phase) || !Number.isInteger(m.round) || !Number.isInteger(m.position)
-    || ![1, 3, 5, 7, 9].includes(m.best_of) || !RESULTS.includes(m.result_status)
-    || (m.winner_id != null && (typeof m.winner_id !== 'string' || !UUID.test(m.winner_id)))
+    || !object(m) || typeof m.id !== 'string' || m.id.toLowerCase() !== payload.match_id || ![1, 3, 5, 7, 9].includes(m.best_of)
     || typeof value.revision !== 'string' || !REVISION.test(value.revision)
     || !Array.isArray(value.steps) || value.steps.length > 200 || !Array.isArray(value.pool) || value.pool.length > 300
     || !Array.isArray(value.messages) || value.messages.length > 100) fail(502, 'unavailable');
   const result = {
     tournament: { id: t.id, name: t.name, status: t.status, pick_ban_turn_seconds: Number.isInteger(t.pick_ban_turn_seconds) ? t.pick_ban_turn_seconds : null },
     match: {
-      id: m.id.toLowerCase(), phase: m.phase, group_label: text(m.group_label, 20) ? m.group_label : null, round: m.round, position: m.position,
-      is_third_place: m.is_third_place === true, best_of: m.best_of,
-      entrant_a: entrant(m.entrant_a), entrant_b: entrant(m.entrant_b),
-      winner_id: m.winner_id ? m.winner_id.toLowerCase() : null, score_a: optionalInt(m.score_a), score_b: optionalInt(m.score_b),
-      result_status: m.result_status, scheduled_at: optionalDate(m.scheduled_at),
-      pick_ban_status: VETO.includes(m.pick_ban_status) ? m.pick_ban_status : 'none',
+      ...matchIdentity(m), best_of: m.best_of, score_a: optionalInt(m.score_a), score_b: optionalInt(m.score_b),
       pick_ban_ready_a: m.pick_ban_ready_a === true, pick_ban_ready_b: m.pick_ban_ready_b === true,
       pick_ban_started_at: optionalDate(m.pick_ban_started_at), pick_ban_role_choice: ['A', 'B'].includes(m.pick_ban_role_choice) ? m.pick_ban_role_choice : null,
-      started: m.started === true,
+      pick_ban_manual_referee: m.pick_ban_manual_referee === true,
     },
     steps: value.steps.map(row => {
       if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !Number.isInteger(row.step_index) || !Number.isInteger(row.map_slot)
@@ -284,8 +327,12 @@ export function tournamentLiveMatchResponse(value, payload) {
     messages: value.messages.map(row => {
       if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || typeof row.body !== 'string' || row.body.length > 4000
         || !date(row.created_at) || (row.author_name != null && !text(row.author_name))) fail(502, 'unavailable');
-      return { id: row.id.toLowerCase(), body: row.body, system: row.system === true, created_at: row.created_at, author_name: row.author_name ?? null };
+      return { id: row.id.toLowerCase(), body: row.body, system: row.system === true, created_at: row.created_at, author_name: row.author_name ?? null,
+        author_key: typeof row.author_key === 'string' && REVISION.test(row.author_key) ? row.author_key : null,
+        author_side: SIDES.includes(row.author_side) ? row.author_side : null, author_is_staff: row.author_is_staff === true };
     }),
+    roster: { a: matchRoster(value.roster?.a ?? []), b: matchRoster(value.roster?.b ?? []) },
+    referee_requests: refereeRequests(value.referee_requests ?? []),
     revision: value.revision,
   };
   if (payload.action !== 'match_get') {

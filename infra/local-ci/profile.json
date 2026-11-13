@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "application": "manager",
+  "repository": "icaceresg/ctp_manager",
+  "nodeMajor": 24,
+  "workflowSha256": {
+    ".github/actions/manager-checks/action.yml": "9a937592656af67c36c686a5070dfc254b21abbdbd5877aca17356785efd5be6",
+    ".github/workflows/deploy-pre.yml": "978fcf98469a11d148905bc6c3681229349628942fa64afbbfc7990281b0030b",
+    ".github/workflows/deploy-prod.yml": "83ed644dd5c526a3101fdf8348143f0cb6c93f1258d518d75fd6567020b41b67"
+  },
+  "checks": [
+    { "id": "install", "argv": ["npm", "ci"], "timeoutSeconds": 240 },
+    { "id": "audit", "argv": ["npm", "audit", "--audit-level=high"], "timeoutSeconds": 120 },
+    { "id": "application-tests", "argv": ["npm", "test"], "timeoutSeconds": 420 },
+    { "id": "metrics-traffic", "argv": ["python3", "-B", "test/metrics-traffic.test.py"], "timeoutSeconds": 90 },
+    { "id": "metrics-collector", "argv": ["python3", "-B", "test/metrics-collector.test.py"], "timeoutSeconds": 90 },
+    { "id": "metrics-update", "argv": ["python3", "-B", "test/metrics-update.test.py"], "timeoutSeconds": 90 },
+    { "id": "manager-release", "argv": ["python3", "-B", "test/manager-release.test.py"], "timeoutSeconds": 90 },
+    { "id": "local-ci-contract", "argv": ["python3", "-B", "-m", "unittest", "discover", "-s", "infra/local-ci", "-p", "test_*.py"], "timeoutSeconds": 90 }
+  ],
+  "build": [
+    { "id": "build", "argv": ["npm", "run", "build"], "timeoutSeconds": 180 }
+  ],
+  "package": [
+    { "id": "runtime-prepare", "argv": ["bash", "-eu", "-c", "mkdir -p output && mkdir output/runtime && cp package.json package-lock.json output/runtime/"], "timeoutSeconds": 30 },
+    { "id": "runtime-install", "argv": ["npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", "output/runtime"], "timeoutSeconds": 180 },
+    { "id": "package", "argv": ["node", "scripts/package-vps.mjs", "--out", "output/ctp-manager.tar.gz", "--deps", "output/runtime"], "timeoutSeconds": 180 }
+  ]
+}

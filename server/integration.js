@@ -353,6 +353,7 @@ export function integrationStatus() {
     write_enabled: config.configured && config.writes,
     syncing: Boolean(activeSync),
     last_sync_at: stored.last_sync_at || null,
+    last_incident_sync_at: stored.last_incident_sync_at || null,
     last_error: stored.last_error || null,
     supported_actions: supportedActions(stored.supported_actions),
     web_origin: webOrigin(),
@@ -365,19 +366,33 @@ export function integrationStatus() {
 export async function syncOperations() {
   if (activeSync) throw integrationError(409, 'Ya hay una sincronización en curso.');
   activeSync = (async () => {
+    const observedBefore = Date.now();
+    const incidents = request({ action: 'incidents_snapshot' }).then(snapshot => {
+      const complete = snapshot?.collection_complete?.incidents;
+      if (!Array.isArray(snapshot?.incidents) || !Number.isFinite(Date.parse(snapshot.generated_at))
+        || typeof complete !== 'boolean') return false;
+      ingestSnapshot({ generated_at: snapshot.generated_at, incidents: snapshot.incidents,
+        collection_complete: { incidents: complete } }, { observedBefore });
+      setIntegrationStatus({ last_incident_sync_at: new Date().toISOString() });
+      return true;
+    }).catch(() => false);
     try {
       const snapshot = await request({ action: 'snapshot' });
       if (['matches', 'incidents', 'stats', 'clubs', 'deliveries'].some((key) => !Array.isArray(snapshot[key]))) {
         throw integrationError(502, 'CTP ha devuelto una instantánea incompleta. Se conservan los últimos datos válidos.');
       }
       const actions = supportedActions(snapshot.supported_actions);
-      // Validation/persistence is transactional; failed snapshots retain the last good projection.
-      ingestSnapshot(snapshot);
-      setIntegrationStatus({ last_sync_at: new Date().toISOString(), last_error: null, supported_actions: actions, possibly_truncated: snapshot.possibly_truncated === true, competition_cutover_enabled: typeof snapshot.competition_cutover_enabled === 'boolean' ? snapshot.competition_cutover_enabled : null });
+      const independent = await incidents;
+      if (independent) delete snapshot.incidents;
+      ingestSnapshot(snapshot, { observedBefore });
+      const syncedAt = new Date().toISOString();
+      setIntegrationStatus({ last_sync_at: syncedAt, last_incident_sync_at: independent ? undefined : syncedAt, last_error: null, supported_actions: actions, possibly_truncated: snapshot.possibly_truncated === true, competition_cutover_enabled: typeof snapshot.competition_cutover_enabled === 'boolean' ? snapshot.competition_cutover_enabled : null });
     } catch (error) {
       const safe = error instanceof HttpError && error.status >= 500 ? error.message : 'No se ha podido sincronizar CTP. Se conservan los últimos datos válidos.';
       setIntegrationStatus({ last_error: safe });
       throw integrationError(error instanceof HttpError ? error.status : 502, safe);
+    } finally {
+      await incidents;
     }
   })();
   try { await activeSync; } finally { activeSync = null; }

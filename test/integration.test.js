@@ -157,6 +157,15 @@ before(async () => {
     const parsed = JSON.parse(body); observed.push(parsed);
     assert.equal(request.headers.authorization, `Bearer ${token}`);
     response.setHeader('Content-Type', 'application/json');
+    if (mode === 'matches_outage') {
+      if (parsed.action === 'incidents_snapshot') {
+        response.end(JSON.stringify({ok:true,data:{generated_at:new Date().toISOString(),
+          collection_complete:{incidents:true},incidents:[...snapshot.incidents,
+            {id:'independent-ticket',status:'abierto',title:'CTP-Independent',version:1}]}}));
+        return;
+      }
+      if (parsed.action === 'snapshot') { response.writeHead(503).end('{}'); return; }
+    }
     if (mode === 'outage') { response.statusCode = 503; response.end(JSON.stringify({ error: token })); return; }
     if (mode === 'rejected') { response.statusCode = 422; response.end(JSON.stringify({ ok: false, code: 'invalid_command' })); return; }
     if (mode === 'unauthenticated' || mode === 'forbidden' || mode === 'self_review' && parsed.action === 'command' && parsed.actor_id === operatorId) {
@@ -196,6 +205,7 @@ test('sincronización real requiere sesión, preserva datos al fallar y no expon
   assert.equal((await api('POST', '/operations/integration/sync', {}, '')).status, 401);
   const synced = await api('POST', '/operations/integration/sync', {});
   assert.equal(synced.status, 200); assert.ok(synced.data.last_sync_at);
+  assert.equal(synced.data.last_incident_sync_at,synced.data.last_sync_at);
   assert.equal(JSON.stringify(synced.data).includes(token), false);
   assert.equal(synced.data.write_enabled, false);
   assert.equal(synced.data.competition_cutover_enabled, false);
@@ -262,6 +272,16 @@ test('un ACK de otro comando no confirma la solicitud local', async () => {
   assert.equal(state.stats.find((s) => s.id === item.id).status, 'pending');
   assert.equal(state.commands.find((c) => c.id === prepared.id).status, 'failed');
   mode = 'ok';
+});
+
+test('incident polling persists tickets even when the full snapshot fails', async () => {
+  mode = 'matches_outage';
+  try {
+    assert.equal((await api('POST','/operations/integration/sync',{})).status,502);
+    const workspace = (await api('GET','/operations/bootstrap')).data;
+    assert.ok(workspace.incidents.some(item => item.id === 'independent-ticket' && item.status === 'open'));
+    assert.ok(workspace.matches.some(item => item.id === 'match-integration'));
+  } finally { mode = 'ok'; }
 });
 
 test('solo administración envía y una revocación del autor impide usar su solicitud pendiente', async () => {

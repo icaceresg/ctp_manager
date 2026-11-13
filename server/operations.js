@@ -159,7 +159,7 @@ function normalize(kind, input) {
   throw new HttpError(400,'Tipo de registro desconocido.');
 }
 
-export function ingestSnapshot(snapshot) {
+export function ingestSnapshot(snapshot, { observedBefore } = {}) {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new HttpError(400,'Snapshot no válido.');
   const groups = [['matches','match'],['incidents','incident'],[snapshot.stats?'stats':'statistics','stat'],['clubs','club'],['deliveries','delivery'],['sanctions','sanction']];
   const prepared = groups.flatMap(([key,kind])=>{if(snapshot[key]===undefined)return[];if(!Array.isArray(snapshot[key])||snapshot[key].length>20000)throw new HttpError(400,`Colección ${key} no válida.`); const seen=new Set();return snapshot[key].map(input=>{const value=normalize(kind,input);if(seen.has(value.id))throw new HttpError(400,'Identificador CTP duplicado.');seen.add(value.id);return[kind,value];});});
@@ -189,13 +189,18 @@ export function ingestSnapshot(snapshot) {
       if(old && json(merged)===old.data)continue;
       save(kind,merged,'ctp');changed++;
     }
-    // A complete feed can retire a projection, but its history and linked local work remain.
-    // Truncated feeds cannot establish that an absent resource has left the source.
-    if(snapshot.generated_at&&!snapshot.possibly_truncated){
+    // Keep the legacy global flag as a fallback for bridges without per-collection metadata.
+    if(snapshot.generated_at){
       for(const [key,kind]of groups){
         if(snapshot[key]===undefined)continue;
-        const visible=new Set(prepared.filter(([k])=>k===kind).map(([,value])=>value.id));
-        for(const item of rows(kind))if(item.source==='ctp'&&!visible.has(item.id)){save(kind,{...item,in_feed:false},'ctp');changed++;}
+        const complete = snapshot.collection_complete === undefined
+          ? !snapshot.possibly_truncated : snapshot.collection_complete?.[key] === true;
+        if(!complete)continue;
+        const visible=new Set(incomingByKind.get(kind));
+        for(const item of rows(kind))if(item.source==='ctp'&&!visible.has(item.id)
+          && (observedBefore === undefined || item.updated_at < observedBefore)){
+          save(kind,{...item,in_feed:false},'ctp');changed++;
+        }
       }
     }
     return{received:prepared.length,changed};
@@ -203,7 +208,7 @@ export function ingestSnapshot(snapshot) {
 }
 
 export function getIntegrationStatus() { const row=db.prepare("SELECT value FROM settings WHERE key='operations_integration'").get();return {configured:false,write_enabled:false,last_sync_at:null,last_error:null,supported_actions:[],...parse(row?.value,{})}; }
-export function setIntegrationStatus(status) { const safe={...getIntegrationStatus()};for(const key of ['configured','write_enabled','writesEnabled','last_sync_at','lastSyncedAt','last_error','lastError','supported_actions','mode','status','web_origin','possibly_truncated','competition_cutover_enabled','local_test_mode']) if(status?.[key]!==undefined)safe[key]=status[key];db.prepare("INSERT INTO settings(key,value) VALUES('operations_integration',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(json(safe));return safe; }
+export function setIntegrationStatus(status) { const safe={...getIntegrationStatus()};for(const key of ['configured','write_enabled','writesEnabled','last_sync_at','lastSyncedAt','last_incident_sync_at','last_error','lastError','supported_actions','mode','status','web_origin','possibly_truncated','competition_cutover_enabled','local_test_mode']) if(status?.[key]!==undefined)safe[key]=status[key];db.prepare("INSERT INTO settings(key,value) VALUES('operations_integration',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(json(safe));return safe; }
 export function listPendingCommands(limit=50) { const n=Number.isInteger(limit)?Math.min(200,Math.max(1,limit)):50;return db.prepare("SELECT * FROM operation_commands WHERE status='pending' ORDER BY created_at,id LIMIT ?").all(n).map(commandView); }
 export function getCommand(commandId) {
   const command=commandView(db.prepare('SELECT * FROM operation_commands WHERE id=?').get(id(commandId)));

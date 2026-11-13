@@ -37,6 +37,7 @@ before(async () => {
     response.setHeader('Content-Type', 'application/json');
     let data;
     if (body.action === 'snapshot') data = { matches: [{ id: matchId, title: 'QA fixture', kind: 'tournament' }], incidents: [], stats: [], clubs: [], deliveries: [], supported_actions: { 'pro_view.configure': true } };
+    else if (body.action === 'incidents_snapshot') { response.writeHead(422).end(JSON.stringify({ok:false})); return; }
     else if (body.action === 'pro_view_state') data = state;
     else if (body.action === 'pro_view_configure') {
       assert.deepEqual(Object.keys(body).sort(), ['action', 'actor_id', 'commandId', 'expectedRevision', 'settings']);

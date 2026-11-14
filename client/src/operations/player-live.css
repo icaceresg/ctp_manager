@@ -1,0 +1,7 @@
+.op-player-live{display:inline-flex;align-items:center;gap:5px;flex:none;vertical-align:middle;max-width:100%;margin-inline-start:8px;padding:4px 8px;border:1px solid #c64b6573;border-radius:6px;background:#b82b491a;color:#ff8da8!important;font:700 11px/1.2 var(--font-body,inherit);letter-spacing:.05em;white-space:nowrap;text-decoration:none!important;box-shadow:inset 0 0 12px #b82b4908;transition:background .15s,border-color .15s}
+.op-player-live:hover{background:#b82b4933;border-color:#e95a7d;color:#ffd9e2!important}
+.op-player-live:focus-visible{outline:2px solid var(--accent,#e6c366);outline-offset:3px}
+.op-player-live svg{flex:none}
+.op-arbitration-roster li:has(.op-player-live){display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.ta-person .op-player-live{margin-block:3px}
+@media(prefers-reduced-motion:reduce){.op-player-live{transition:none}}

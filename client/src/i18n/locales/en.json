@@ -1,4 +1,6 @@
 {
+  "manager.playerLive.badge": "LIVE",
+  "manager.playerLive.watch": "Watch {name} live on Twitch",
   "manager.pricing.tab": "Prices and fees",
   "manager.pricing.description": "Edit prices and management fees for each product, tournament and Season Pass. Changes apply to new orders; existing orders keep their amount.",
   "manager.pricing.defaultsTitle": "Product prices",

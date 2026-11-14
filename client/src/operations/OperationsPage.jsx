@@ -6,6 +6,7 @@ import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Modal, Spinner } from '../components/ui.jsx';
 import { OP_TABS, OP_TAB_ALIASES, dateTime, label, matchName, teamName, approvedMaps, playersForMap, rosterRows, officialResult, playerInsights } from './model.js';
+import PlayerLiveBadge from './PlayerLiveBadge.jsx';
 import { AuditList, Badge, DataTable, Empty, Field, FormDialog, MatchLink, StatsTable, WebLink } from './ui.jsx';
 import { IncidentsPanel, StatisticsPanel } from './ReviewPanels.jsx';
 import { SanctionsPanel } from './SanctionsPanel.jsx';
@@ -194,7 +195,7 @@ function MatchDossier({ id, data, mutate, can, reload }) {
     {can('arbitraje') && m.kind === 'tournament' && <GuardPanel key={id} id={id} />}
     {can('arbitraje') && m.kind === 'tournament' && <MatchControlPanel id={id} data={data} reload={reload} mutate={mutate} />}
     {can('arbitraje') && m.kind === 'challenge' && <MatchConversation kind={m.kind} id={id} data={data} reload={reload} mutate={mutate} />}
-    <div className="op-two-columns"><section className="op-card"><details className="op-roster-details"><summary>Roster del encuentro · {rosterRows(m.roster).length} jugadores</summary><DataTable rows={rosterRows(m.roster)} columns={[{ key: 'name', title: 'Jugador', render: (p) => p.username || p.gamertag || p.name || 'Sin identificar' }, { key: 'side', title: 'Equipo', render: (p) => p.team_name || (['a', 'A', 'team_a'].includes(p.side) ? teamName(m.team_a) : ['b', 'B', 'team_b'].includes(p.side) ? teamName(m.team_b) : 'Sin asignar') }]} empty="Roster no disponible" /></details></section>
+    <div className="op-two-columns"><section className="op-card"><details className="op-roster-details"><summary>Roster del encuentro · {rosterRows(m.roster).length} jugadores</summary><DataTable rows={rosterRows(m.roster)} columns={[{ key: 'name', title: 'Jugador', render: (p) => <span>{p.username || p.gamertag || p.name || 'Sin identificar'}<PlayerLiveBadge userId={p.user_id || p.player_id || p.id} name={p.username || p.gamertag || p.name || 'Sin identificar'} /></span> }, { key: 'side', title: 'Equipo', render: (p) => p.team_name || (['a', 'A', 'team_a'].includes(p.side) ? teamName(m.team_a) : ['b', 'B', 'team_b'].includes(p.side) ? teamName(m.team_b) : 'Sin asignar') }]} empty="Roster no disponible" /></details></section>
       <section className="op-card"><h2>Equipo asignado</h2><DataTable rows={detail.assignments || []} columns={[{ key: 'user_name', title: 'Persona', render: (a) => a.user_name || data.staff?.find((s) => s.id === a.user_id)?.name || 'Usuario' }, { key: 'role', title: 'Función', render: (a) => label(a.role) }, { key: 'status', title: 'Estado', render: (a) => <Badge value={a.status} /> }]} empty="Sin personal asignado" />{can('operaciones') && <Link className="btn" to={`/operaciones/turnos?match=${encodeURIComponent(id)}`}>Asignar equipo <ArrowUpRight size={14} /></Link>}</section></div>
     </>}
     {section === 'stats' && <>

@@ -1,4 +1,6 @@
 {
+  "manager.playerLive.badge": "EN DIRECT",
+  "manager.playerLive.watch": "Voir {name} en direct sur Twitch",
   "manager.pricing.tab": "Prix et frais",
   "manager.pricing.description": "Modifiez les prix et frais de gestion de chaque produit, tournoi et Season Pass. Les changements concernent les nouvelles commandes ; les commandes existantes conservent leur montant.",
   "manager.pricing.defaultsTitle": "Tarifs des produits",

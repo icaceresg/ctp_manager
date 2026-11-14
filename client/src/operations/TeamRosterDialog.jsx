@@ -7,6 +7,7 @@ import { Field } from './ui.jsx';
 import { getIntlLocale, translate } from '../i18n/runtime.js';
 import { prepareWebImage, WEB_IMAGE_SPECS } from '../webImageUpload.js';
 import { teamCloseCopy, teamIsArchived } from './teamArchiveContract.js';
+import PlayerLiveBadge from './PlayerLiveBadge.jsx';
 
 const KEY_PREFIXES = ['manager.teamRoster.', 'manager.clubProfile.'];
 /** Server errors arrive as translation keys; other failures keep their message. */
@@ -173,8 +174,8 @@ export default function TeamRosterDialog({ club, onClose, onChanged }) {
   </Modal>;
 }
 
-function Person({ name, children }) {
-  return <span className="ta-person"><span className="ta-avatar" aria-hidden>{initialOf(name)}</span><span><strong>{name}</strong>{children && <><br />{children}</>}</span></span>;
+function Person({ name, userId, children }) {
+  return <span className="ta-person"><span className="ta-avatar" aria-hidden>{initialOf(name)}</span><span><strong>{name}</strong>{userId && <PlayerLiveBadge userId={userId} name={name} />}{children && <><br />{children}</>}</span></span>;
 }
 
 function RosterPanel({ members, leaders, full, disabled, actions, roster, requests }) {
@@ -183,7 +184,7 @@ function RosterPanel({ members, leaders, full, disabled, actions, roster, reques
       <h3 id="ta-manager"><Crown size={15} aria-hidden /> {translate('manager.teamAdmin.managerTitle')}</h3>
       <p className="muted">{translate('manager.teamAdmin.managerHelp')}</p>
       {leaders.length ? <ul className="ta-people">{leaders.map(member => <li key={member.user_id}>
-        <Person name={member.username} />
+        <Person name={member.username} userId={member.user_id} />
         <span className="op-actions">
           <button type="button" className="btn" disabled={disabled || members.length < 2} title={members.length < 2 ? translate('manager.teamAdmin.onlyMemberHint') : undefined}
             onClick={() => actions.removeManager(member)}>{translate('manager.teamAdmin.removeManager')}</button>
@@ -196,7 +197,7 @@ function RosterPanel({ members, leaders, full, disabled, actions, roster, reques
       {!members.length ? <p className="muted">{translate('manager.teamRoster.noMembers')}</p> : <ul className="ta-people">{members.map(member => {
         const isLeader = member.role === 'lider', soleLeader = isLeader && leaders.length === 1, alone = members.length === 1;
         return <li key={member.user_id}>
-          <Person name={member.username}><small className="muted">{translate('manager.teamAdmin.joined', { date: day(member.joined_at) })}</small></Person>
+          <Person name={member.username} userId={member.user_id}><small className="muted">{translate('manager.teamAdmin.joined', { date: day(member.joined_at) })}</small></Person>
           <span className="op-actions">
             {isLeader ? <span className="ta-chip is-accent"><Crown size={13} aria-hidden /> {teamRoleLabel('lider')}</span>
               : <select aria-label={translate('manager.teamRoster.roleFor', { name: member.username })} value={member.role} disabled={disabled}

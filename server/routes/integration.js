@@ -10,8 +10,14 @@ import {getPlayerWorkspace} from '../integration.js';
 import { getCaseData,getOfficialIncident,getTicketThread,ticketAction,getDisciplineOverview,getDisciplineUsers,getDisciplineHistory,writeDiscipline } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
 import { tournamentArbitrationService, tournamentLiveMatchService, tournamentLiveService, tournamentRegistrationRoster, tournamentScenarioService } from '../integration.js';
+import { getPlayerLiveDirectory } from '../integration.js';
+import { PLAYER_LIVE_SECTIONS } from '../player-live-contract.js';
 
 export const integrationRouter = Router();
+integrationRouter.get('/operations/player-live', requireAuth, allow(...PLAYER_LIVE_SECTIONS), async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(await getPlayerLiveDirectory(req.user));
+});
 const requireRanked=(req,res,next)=>canManageRanked(req.user)?next():res.status(403).json({error:'La supervisión de Ranked requiere ser administrador o árbitro de CTP.'});
 integrationRouter.get('/operations/pro-view', requireAuth, allow('realizacion'), async (req, res) => res.json(await getProViewState(req.user)));
 integrationRouter.post('/operations/pro-view/commands', requireAuth, allow('realizacion'), async (req, res) => {

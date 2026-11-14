@@ -8,6 +8,7 @@ import { canEditVetoStep, currentStep, playoffRounds, scheduleLocked, stepChoice
 import { ReasonConfirm, StateBadge, clock, clockSeconds, entrantName, matchRoundLabel, statusLabel, t, tournamentLiveError, when } from './tournamentLiveUi.jsx';
 import { ResultForm, RevertForm, ScheduleForm } from './TournamentLiveMatchPanel.jsx';
 import TournamentMatchChat from './TournamentMatchChat.jsx';
+import PlayerLiveBadge from './PlayerLiveBadge.jsx';
 import './operations.css';
 import './tournament-live.css';
 
@@ -281,7 +282,7 @@ function MatchRosters({ match, roster }) {
       const players = roster?.[side] ?? [];
       return <div key={side} className={`op-arbitration-roster is-team-${side}`}>
         <h4>{entrantName(match[`entrant_${side}`])}</h4>
-        {players.length > 0 ? <ul>{players.map(player => <li key={player.user_id}>{player.name || p('chat.unknownAuthor')}</li>)}</ul>
+        {players.length > 0 ? <ul>{players.map(player => <li key={player.user_id}><span>{player.name || p('chat.unknownAuthor')}</span><PlayerLiveBadge userId={player.user_id} name={player.name || p('chat.unknownAuthor')} /></li>)}</ul>
           : <p>{t('participants.rosterEmpty')}</p>}
       </div>;
     })}</div>

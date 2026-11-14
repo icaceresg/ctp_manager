@@ -35,6 +35,7 @@ import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {createRankedEventClient} from './ranked-event-client.js';
 import {createWebPublicationClient} from './web-publication-client.js';
 import {createSiteNoticeClient} from './site-notice-client.js';
+import { createPlayerLiveReader } from './player-live-client.js';
 import {
   ingestSnapshot, getIntegrationStatus, setIntegrationStatus,
   getCommand, markCommandSending, acknowledgeCommand, failCommand,
@@ -210,11 +211,13 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
   return async function request(body) {
     if (!config.configured) throw integrationError(503, 'Conexión con CTP sin configurar.');
     const deletingAccount = body?.action === 'admin_service' && body.service === 'users' && body.payload?.action === 'delete';
+    const playerLiveRead = body?.action === 'admin_service' && body.service === 'player_live';
+    const maxResponseBytes = playerLiveRead ? 32 * 1024 : MAX_BYTES;
     let response;
     try {
       const serialized = JSON.stringify(body);
       response = await fetchImpl(config.url, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(body.action === 'admin_service' ? 25_000 : 10_000),
+        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(playerLiveRead ? 8_000 : body.action === 'admin_service' ? 25_000 : 10_000),
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.token}`, ...signManagerRequest(serialized, config.signingSecret) },
         body: serialized,
       });
@@ -270,7 +273,7 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
         throw integrationError(502, 'CTP ha devuelto una respuesta no válida.');
       }
       const declared = Number(response.headers.get('content-length') || 0);
-      if (declared > MAX_BYTES) {
+      if (declared > maxResponseBytes) {
         await response.body?.cancel();
         throw integrationError(502, 'La respuesta de CTP supera el límite permitido.');
       }
@@ -281,7 +284,7 @@ export function createOperationsTransport(config, fetchImpl = fetch) {
         const { done, value } = await reader.read();
         if (done) break;
         size += value.byteLength;
-        if (size > MAX_BYTES) {
+        if (size > maxResponseBytes) {
           await reader.cancel();
           throw integrationError(502, 'La respuesta de CTP supera el límite permitido.');
         }
@@ -357,6 +360,7 @@ let activeSync = null;
 const sending = new Set();
 const config = integrationConfig();
 const request = createOperationsTransport(config);
+export const getPlayerLiveDirectory = createPlayerLiveReader({ request, actorFor: user => getOperatorIdentity(user.id), configured: () => config.configured });
 const staffAlertsService=createStaffAlertsClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const rankedEventService=createRankedEventClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const webPublicationService=createWebPublicationClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});

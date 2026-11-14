@@ -1,4 +1,6 @@
 {
+  "manager.playerLive.badge": "LIVE",
+  "manager.playerLive.watch": "{name} live auf Twitch ansehen",
   "manager.pricing.tab": "Preise und Gebühren",
   "manager.pricing.description": "Bearbeite Preise und Bearbeitungsgebühren je Produkt, Turnier und Season Pass. Änderungen gelten für neue Bestellungen; bestehende behalten ihren Betrag.",
   "manager.pricing.defaultsTitle": "Produktpreise",

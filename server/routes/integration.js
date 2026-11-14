@@ -4,7 +4,7 @@ import { getIncidentContext, integrationStatus, sendOperationCommand, syncOperat
 import { canManageRanked } from '../../shared/access.js';
 import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClubCommand, prepareProViewCommand } from '../operations.js';
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
-import { GUARD_ACTIONS } from '../guard-contract.js';
+import { GUARD_ACTIONS, guardReadOptions } from '../guard-contract.js';
 import { HttpError } from '../auth.js';
 import {getPlayerWorkspace} from '../integration.js';
 import { getCaseData,getOfficialIncident,getTicketThread,ticketAction,getDisciplineOverview,getDisciplineUsers,getDisciplineHistory,writeDiscipline } from '../integration.js';
@@ -53,7 +53,7 @@ integrationRouter.post('/operations/discipline/bans/:id/lift',requireAuth,allow(
 integrationRouter.get('/operations/incidents/:id/context', requireAuth, allow('arbitraje'), async (req, res) => res.json(await getIncidentContext(req.user, req.params.id, req.query.cursor)));
 integrationRouter.get('/operations/competition', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getCompetitionData(req.user, req.query)));
 integrationRouter.get('/operations/history', requireAuth, allow('operaciones', 'arbitraje'), async (req, res) => res.json(await getOperationHistory(req.user, req.query)));
-integrationRouter.get('/operations/matches/:id/guard',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getGuardState(req.user,req.params.id)));
+integrationRouter.get('/operations/matches/:id/guard',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getGuardState(req.user,req.params.id,guardReadOptions(req.query))));
 integrationRouter.get('/operations/ranked', requireAuth, requireAdmin, async (req, res) => res.json(await getRankedState(req.user)));
 integrationRouter.get('/operations/ranked/monitor', requireAuth, requireRanked, async (req, res) => res.json(await getRankedMonitor(req.user)));
 integrationRouter.get('/operations/ranked/statistics', requireAuth, requireRanked, async (req, res) => {

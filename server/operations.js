@@ -504,15 +504,20 @@ export function rememberCompetitionData(resource,result) {
   });
 }
 
-export function rememberGuardState(state) {
+export function rememberGuardState(state,{compact=false}={}) {
  return tx(()=>{
   for(const [kind,key,source_version]of [['guard_match',state.match_id,state.match_version],['guard_tournament',state.tournament_id,state.tournament_version]]){
    let old=null;try{old=record(kind,key,true);}catch{}
    if(old&&old.source_version>source_version)throw new HttpError(409,'Se ha recibido un estado Guard obsoleto.');
-   save(kind,{...old,id:key,source_version,in_feed:true,observed_at:state.observed_at},'ctp');
+   // Heartbeats change observed_at, not the tournament/match command revision.
+   // Keep source CAS current without rewriting SQLite on every identical read.
+   if(!old||old.source_version!==source_version||old.in_feed===false)save(kind,{...old,id:key,source_version,in_feed:true,observed_at:state.observed_at},'ctp');
   }
-  const commands=db.prepare("SELECT * FROM operation_commands WHERE (resource_type='guard_match' AND resource_id=?) OR (resource_type='guard_tournament' AND resource_id=?) ORDER BY created_at DESC LIMIT 10").all(state.match_id,state.tournament_id).map(c=>getCommand(c.id));
-  return {...state,commands};
+  // The two source revisions have just been checked above; avoid re-reading
+  // both the command and its source for each row of this same response.
+  const commands=db.prepare(`SELECT * FROM operation_commands WHERE ((resource_type='guard_match' AND resource_id=?) OR (resource_type='guard_tournament' AND resource_id=?)) ${compact?"AND status IN ('pending','failed','sending','rejected')":''} ORDER BY created_at DESC LIMIT 10`).all(state.match_id,state.tournament_id)
+   .map(row=>({...commandView(row),source_available:true,source_version_current:row.resource_type==='guard_match'?state.match_version:state.tournament_version}));
+  return {...state,...(compact?{events:[]}:{}),commands};
  });
 }
 export function prepareGuardCommand(user,input,state) {

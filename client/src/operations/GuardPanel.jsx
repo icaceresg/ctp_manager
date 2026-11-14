@@ -1,66 +1,119 @@
-import { useEffect, useRef, useState } from 'react';
-import { Info, RefreshCw, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock3, Info, RefreshCw, ShieldCheck } from 'lucide-react';
 import { api } from '../api.js';
+import { useApp } from '../context.jsx';
 import { Modal } from '../components/ui.jsx';
 import { DataTable, Field, FormDialog } from './ui.jsx';
-import { dateTime } from './model.js';
-import { actionLabel } from './actionLabels.js';
-const status={ready:'Conectado',console_verified:'Consola verificada',guard_not_connected:'Sin Guard',signal_lost:'Señal perdida',controller_missing:'Mando desconectado',camera_missing:'Cámara no disponible',capture_missing:'Captura no disponible'};
-const events={paired:'Guard vinculado',connected:'Conectado',reconnected:'Reconectado',signal_changed:'Cambio de señal',closed:'Sesión cerrada',match_started:'Inicio autorizado',console_exempted:'Consola verificada',console_revoked:'Verificación revocada',tournament_enabled:'Guard habilitado',tournament_disabled:'Guard deshabilitado',lineup_selected:'Titulares seleccionados'};
-export function GuardPanel({id}){
- const [state,setState]=useState(null),[error,setError]=useState(''),[dialog,setDialog]=useState(null),[info,setInfo]=useState(false),[busy,setBusy]=useState(false),[,setTick]=useState(0);
- const [receivedAt,setReceivedAt]=useState(0);
- const epoch=useRef(0),alive=useRef(true),loading=useRef(false);
- async function refresh(){
-  if(loading.current)return;loading.current=true;const generation=epoch.current;
-  try{const next=await api.get(`/operations/matches/${encodeURIComponent(id)}/guard`);if(alive.current&&epoch.current===generation){setState(next);setReceivedAt(Date.now());setError('');}}
-  catch(e){if(alive.current&&epoch.current===generation)setError(e.message);}
-  finally{loading.current=false;}
+import { getIntlLocale, translate } from '../i18n/runtime.js';
+import { guardTournamentError, guardTournamentReport, guardTournamentView } from './guardTournamentModel.js';
+import { useGuardTournamentRead } from './useGuardTournamentRead.js';
+const t = (key, values) => translate(`manager.guardTournament.${key}`, values);
+const dateTime = value => Number.isFinite(Date.parse(value ?? '')) ? new Intl.DateTimeFormat(getIntlLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
+const statusKeys = new Set(['ready','console_verified','guard_not_connected','signal_lost','controller_missing','camera_missing','capture_missing','unknown']);
+const eventKeys = new Set(['paired','connected','reconnected','signal_changed','closed','match_started','console_exempted','console_revoked','tournament_enabled','tournament_disabled','lineup_selected']);
+const statusLabel = state => t(`status.${statusKeys.has(state) ? state : 'unknown'}`);
+const number=value=>Number.isSafeInteger(value)&&value>=0?new Intl.NumberFormat(getIntlLocale()).format(value):'—';
+function PcReport({player,fresh,now}) {
+ const report=guardTournamentReport(player,fresh,now);
+ return <div className="op-guard-pc"><strong className={report.review===true?'op-guard-review':''}>{t(report.priorReview?'reportPriorReview':report.review===true?'reportReview':report.review===false?'reportNoAlert':'reportUnknown')}</strong>
+  {report.current&&<><small>{t('reportProcesses',{count:number(report.processes),coverage:t(`coverage.${report.processCoverage}`)})}</small><small>{t('reportNetwork',{count:number(report.connections),coverage:t(`coverage.${report.networkCoverage}`)})}</small><small>{t('reportFiles',{count:number(report.files),coverage:t(`coverage.${report.fileCoverage}`)})}</small><small>{t('reportPackage',{status:t(`integrity.${report.integrity}`)})}</small><small>{t('reportRules',{count:number(report.ruleMatches)})}</small></>}
+ </div>;
+}
+
+export function GuardPanel({ id }) {
+ const { me } = useApp(); const scope = `${me.id}:${id}`;
+ const read = useGuardTournamentRead(id, me.id); const state = read.data;
+ const view = guardTournamentView(state, read.receivedAt, read.now, !!read.error);
+ const [error, setError] = useState(null), [dialog, setDialog] = useState(null), [info, setInfo] = useState(false), [busy, setBusy] = useState(false);
+ const [historyOpen, setHistoryOpen] = useState(false), [history, setHistory] = useState({ scope, data: [], loading: false, error: null, at: 0 });
+ const historyAbort = useRef(null), historyEpoch = useRef(0), alive = useRef(true), writing = useRef(null);
+ const pending = state?.commands?.find(command => ['pending','failed','sending','rejected'].includes(command.status));
+ const mutable = !!state && view.fresh && !busy && !pending;
+ const loadHistory = useCallback(async () => {
+  if (document.hidden || historyAbort.current) return;
+  const controller = new AbortController(); historyAbort.current = controller; const token = ++historyEpoch.current;
+  const deadline = setTimeout(() => controller.abort(), 12000);
+  setHistory(value => ({ ...value, scope, loading: true, error: null }));
+  try {
+   const next = await api.get(`/operations/matches/${encodeURIComponent(id)}/guard?include_events=true`, { signal: controller.signal });
+   if (alive.current && token === historyEpoch.current && !controller.signal.aborted && !document.hidden && next.match_id === id) setHistory({ scope, data: next.events, loading: false, error: null, at: Date.now() });
+  } catch (failure) {
+   if (alive.current && token === historyEpoch.current) setHistory(value => ({ ...value, loading: false, error: guardTournamentError(failure) }));
+  } finally { clearTimeout(deadline); if (historyAbort.current === controller) historyAbort.current = null; }
+ }, [id, scope]);
+ useEffect(() => {
+  alive.current = true;
+  return () => { alive.current = false; writing.current?.abort(); historyEpoch.current++; historyAbort.current?.abort(); historyAbort.current = null; };
+ }, [scope]);
+ useEffect(() => {
+  const hide = () => { if (document.hidden) { historyEpoch.current++; historyAbort.current?.abort(); historyAbort.current = null; setHistory(value => ({ ...value, loading: false })); } };
+  document.addEventListener('visibilitychange', hide);
+  if (historyOpen) void loadHistory();
+  return () => { document.removeEventListener('visibilitychange', hide); historyEpoch.current++; historyAbort.current?.abort(); historyAbort.current = null; };
+ }, [historyOpen, loadHistory]);
+ async function post(url, body) {
+  const controller = new AbortController(); writing.current = controller;
+  const deadline = setTimeout(() => controller.abort(), 15000);
+  try { return await api.post(url, body, { signal: controller.signal }); }
+  finally { clearTimeout(deadline); if (writing.current === controller) writing.current = null; }
  }
- useEffect(()=>{alive.current=true;epoch.current++;setState(null);setError('');refresh();
-  const poll=setInterval(()=>{setTick(v=>v+1);if(!document.hidden)refresh();},5000);
-  const visible=()=>{if(!document.hidden)refresh();};document.addEventListener('visibilitychange',visible);
-  return()=>{alive.current=false;epoch.current++;clearInterval(poll);document.removeEventListener('visibilitychange',visible);};
- },[id]);
- const connected=state?.players.filter(p=>['ready','console_verified'].includes(p.state)).length??0;
- const fresh=!error&&state&&Date.now()-receivedAt<10000;
- const pending=state?.commands.find(c=>['pending','failed','sending','rejected'].includes(c.status));
- async function send(command){setBusy(true);setError('');try{await api.post(`/operations/guard/commands/${command.id}/send`,{});await refresh();}catch(e){await refresh();setError(e.message);throw e;}finally{setBusy(false);}}
- async function submit(body){
-  const payload=dialog.type==='guard.start'?{}:dialog.type==='guard.exempt'?{user_id:dialog.player.user_id,approve:dialog.player.state!=='console_verified',reason:body.reason}
-   :{enabled:body.enabled==='true',controller_required:body.controller_required==='true',capture_required:body.capture_required==='true',reason:body.reason};
-  const prepared=await api.post(`/operations/matches/${id}/guard/commands`,{type:dialog.type,target_id:dialog.target,expected_version:dialog.version,payload});
-  await send(prepared.command);
+ async function send(command) {
+  setBusy(true); setError(null);
+  try { await post(`/operations/guard/commands/${command.id}/send`, {}); }
+  catch (failure) { if (alive.current) setError(guardTournamentError(failure)); throw failure; }
+  finally { if (alive.current) { setBusy(false); void read.refresh(true); } }
  }
- const open=(type,player)=>setDialog({type,player,version:type==='guard.configure'?state.tournament_version:state.match_version,target:type==='guard.configure'?state.tournament_id:id});
- return <section className="op-card op-guard" aria-label="CTP Guard">
-  <div className="op-section-title"><div><h2><ShieldCheck size={19}/> Lobby · CTP Guard</h2><p>{state?.started_at?`Inicio autorizado · ${dateTime(state.started_at)}`:state?.enabled?`${connected}/8 jugadores listos`:state?'Guard no exigido en este torneo':'Consultando el estado de Guard…'}</p></div>
-   <div className="op-actions"><button className="btn" onClick={()=>setInfo(true)} aria-label="Información sobre Guard"><Info size={16}/></button><button className="btn" onClick={refresh} disabled={busy} aria-label="Actualizar Guard"><RefreshCw size={16}/></button>
-    {state&&!state.started_at&&<button className="btn" onClick={()=>open('guard.configure')} disabled={busy||!!pending}>Configurar torneo</button>}
-    {state?.enabled&&!state.started_at&&<button className="btn primary" disabled={!state.ready||!fresh||busy||!!pending} onClick={()=>open('guard.start')}>Autorizar inicio</button>}
+ async function submit(body) {
+  setBusy(true); setError(null);
+  const snapshot = dialog;
+  const payload = snapshot.type === 'guard.start' ? {} : snapshot.type === 'guard.exempt'
+   ? { user_id: snapshot.player.user_id, approve: snapshot.player.state !== 'console_verified', reason: body.reason }
+   : { enabled: body.enabled === 'true', controller_required: body.controller_required === 'true', capture_required: body.capture_required === 'true', reason: body.reason };
+  try {
+   const prepared = await post(`/operations/matches/${id}/guard/commands`, { type: snapshot.type, target_id: snapshot.target, expected_version: snapshot.version, payload });
+   if (alive.current) { setDialog(null); await send(prepared.command); }
+  } catch (failure) {
+   // After a lost receipt, reconcile the existing identity from the pending
+   // card instead of preparing a second command on the same resource.
+   if (alive.current) { setDialog(null); setError(guardTournamentError(failure)); void read.refresh(true); }
+   throw Error(t(`error.${guardTournamentError(failure)}`));
+  } finally { if (alive.current) setBusy(false); }
+ }
+ const open = (type, player) => setDialog({ type, player, version: type === 'guard.configure' ? state.tournament_version : state.match_version, target: type === 'guard.configure' ? state.tournament_id : id, enabled: state.enabled, controller_required: state.enabled ? state.controller_required : true, capture_required: state.capture_required });
+ const consoleAction = player => !state.started_at && <button className="btn" disabled={!mutable} onClick={() => open('guard.exempt', player)}>{t(player.state === 'console_verified' ? 'revokeConsole' : 'verifyConsole')}</button>;
+ const hist = history.scope === scope ? history : { data: [], loading: false, error: null, at: 0 };
+ return <section className="op-card op-guard" aria-label={t('title')}>
+  <div className="op-section-title"><div><p className="op-guard-eyebrow">CTP Guard</p><h2><ShieldCheck size={19}/>{t('title')}</h2><p>{state?.started_at ? t('started', { at: dateTime(state.started_at) }) : state?.enabled ? t('readyCount', { count: view.ready }) : state ? t('notRequired') : t('loading')}</p></div>
+   <div className="op-actions"><button className="btn" onClick={() => setInfo(true)} aria-label={t('info')}><Info size={16}/></button><button className="btn" onClick={() => { setError(null); void read.refresh(); if (historyOpen) void loadHistory(); }} disabled={busy || read.loading} aria-label={t('refresh')}><RefreshCw size={16} className={read.loading ? 'spin' : ''}/>{t('refresh')}</button>
+    {state && !state.started_at && <button className="btn" onClick={() => open('guard.configure')} disabled={!mutable}>{t('configure')}</button>}
+    {state?.enabled && !state.started_at && <button className="btn primary" disabled={!view.canStart || !mutable} onClick={() => open('guard.start')}>{t('start')}</button>}
    </div></div>
-  {error&&<p className="op-error" role="alert">{error}</p>}
-  {state?.enabled&&<><div className="op-guard-meter" aria-hidden="true"><span style={{width:`${connected/8*100}%`}}/></div>
-   {state.lineup_pending&&<p className="op-error">Los líderes deben seleccionar cuatro titulares por equipo en CTP.</p>}
-   {!fresh&&<p className="muted">Estado pendiente de actualizar. El inicio permanece bloqueado.</p>}
-   <div className="op-guard-desktop"><DataTable rows={state.players} columns={[{key:'username',title:'Jugador'},{key:'side',title:'Lado',render:p=>p.side.toUpperCase()},{key:'state',title:'Estado',render:p=><span className={`op-guard-state ${['ready','console_verified'].includes(p.state)?'ready':''}`}>{status[p.state]}</span>},{key:'last_seen_at',title:'Última señal',render:p=>dateTime(p.last_seen_at)},
-    {key:'action',title:'Consola',render:p=>!state.started_at&&<button className="btn" disabled={busy||!!pending} onClick={()=>open('guard.exempt',p)}>{p.state==='console_verified'?'Revocar':'Verificar'}</button>}]}/></div>
-   <ul className="op-guard-players" aria-label="Jugadores Guard">{state.players.map(p=><li key={p.user_id}>
-    <div><strong>{p.username}</strong><small>Lado {p.side.toUpperCase()}</small></div>
-    <p className={`op-guard-state ${['ready','console_verified'].includes(p.state)?'ready':''}`}>{status[p.state]}</p>
-    <div><small>Señal: {dateTime(p.last_seen_at)}</small>{!state.started_at&&<button className="btn" disabled={busy||!!pending} onClick={()=>open('guard.exempt',p)}>{p.state==='console_verified'?'Revocar':'Verificar consola'}</button>}</div>
-   </li>)}</ul>
-   <details className="op-guard-events"><summary>Actividad reciente · {state.events.length}</summary><ol>{state.events.map(e=><li key={e.id}><strong>{events[e.kind]||'Cambio de Guard'}</strong> · {state.players.find(p=>p.user_id===e.user_id)?.username||'Staff'} · {dateTime(e.created_at)}{e.detail&&<p>{e.detail}</p>}</li>)}</ol></details>
+  <div className="op-guard-refresh"><span><Clock3 size={14}/>{t('currentTime', { time: new Intl.DateTimeFormat(getIntlLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(read.now)) })}</span><span>{t('refreshPolicy')}</span></div>
+  {(error || read.error) && <p className="op-error" role="alert">{t(`error.${error || guardTournamentError(read.error)}`)}</p>}
+  {state?.enabled && <>
+   <div className={`op-guard-summary ${view.fresh ? '' : 'is-stale'}`} role="status"><strong>{view.canStart ? <CheckCircle2 size={18}/> : <AlertTriangle size={18}/>}{t(!view.fresh ? 'stale' : state.started_at ? 'monitoring' : view.canStart ? 'allReady' : 'waitingCount', { count: view.waiting })}</strong><p>{t(state.lineup_pending ? 'lineupPending' : 'presenceOnly')}</p></div>
+   <div className="op-guard-meter" aria-hidden="true"><span style={{ width: `${view.ready / 8 * 100}%` }}/></div>
+   <div className="op-guard-desktop"><DataTable rows={view.players} regionLabel={t('tableLabel')} empty={t('noPlayers')} emptyDetail={t('lineupPending')} columns={[
+    { key: 'username', title: t('player') }, { key: 'side', title: t('team'), render: player => t('teamSide', { side: player.side.toUpperCase() }) },
+    { key: 'state', title: t('status'), render: player => <span className={`op-guard-state ${player.ready ? 'ready' : ''}`}>{statusLabel(player.displayState)}</span> },
+    { key: 'next', title: t('nextStep'), render: player => <small>{t(`next.${statusKeys.has(player.displayState) ? player.displayState : 'unknown'}`)}</small> },
+    { key: 'pc', title: t('pcReport'), render: player => <PcReport player={player} fresh={view.fresh} now={read.now}/> },
+    { key: 'last_seen_at', title: t('lastSignal'), render: player => dateTime(player.last_seen_at) },
+    { key: 'action', title: t('console'), render: consoleAction },
+   ]}/></div>
+   <ul className="op-guard-players" aria-label={t('players')}>{view.players.map(player => <li key={player.user_id}><div><strong>{player.username}</strong><small>{t('teamSide', { side: player.side.toUpperCase() })}</small></div><p className={`op-guard-state ${player.ready ? 'ready' : ''}`}>{statusLabel(player.displayState)}</p><p>{t(`next.${statusKeys.has(player.displayState) ? player.displayState : 'unknown'}`)}</p><PcReport player={player} fresh={view.fresh} now={read.now}/><div><small>{t('lastSignal')} · {dateTime(player.last_seen_at)}</small>{consoleAction(player)}</div></li>)}</ul>
+   <p className="op-guard-report-note">{t('reportHelp')}</p>
+   <details className="op-guard-events" onToggle={event => setHistoryOpen(event.currentTarget.open)}><summary>{t('recentActivity')}</summary><p className="muted">{t('historyPolicy')}</p>{hist.loading && <p>{t('loadingHistory')}</p>}{hist.error && <p className="op-error" role="alert">{t(`error.${hist.error}`)}</p>}{hist.at > 0 && <small>{t('historyAt', { at: dateTime(new Date(hist.at).toISOString()) })}</small>}{!hist.loading && hist.at > 0 && !hist.data.length && <p>{t('emptyHistory')}</p>}<ol>{hist.data.map(event => <li key={event.id}><strong>{t(`event.${eventKeys.has(event.kind) ? event.kind : 'other'}`)}</strong> · {view.players.find(player => player.user_id === event.user_id)?.username || t('staff')} · {dateTime(event.created_at)}</li>)}</ol></details>
   </>}
-  {pending&&<div className="op-guard-pending"><p>{actionLabel(pending.type)} · {pending.status==='rejected'?'Rechazada':pending.status==='sending'?'Enviando':'Pendiente de confirmar'}</p>{pending.last_error&&<p className="op-error">{pending.last_error}</p>}
-   {['pending','failed','sending'].includes(pending.status)&&<button className="btn" disabled={busy||(pending.status==='sending'&&Date.now()-pending.updated_at<30000)} onClick={()=>send(pending).catch(()=>{})}>Reintentar misma solicitud</button>}
-   {(pending.status==='pending'&&pending.attempts===0||pending.status==='rejected')&&<button className="btn" disabled={busy} onClick={async()=>{try{await api.post(`/operations/commands/${pending.id}/cancel`,{expected_updated_at:pending.updated_at});await refresh();}catch(e){setError(e.message);}}}>Descartar solicitud</button>}
+  {pending && <div className="op-guard-pending" role="status"><p><strong>{t(`action.${pending.type.split('.')[1]}`)}</strong> · {t(pending.status === 'rejected' ? 'rejected' : pending.status === 'sending' ? 'sending' : 'pending')}</p><p>{t('pendingHelp')}</p>
+   {['pending','failed','sending'].includes(pending.status) && <button className="btn" disabled={busy || pending.status === 'sending' && read.now - pending.updated_at < 30000} onClick={() => send(pending).catch(() => {})}>{t('retrySame')}</button>}
+   {(pending.status === 'pending' && pending.attempts === 0 || pending.status === 'rejected') && <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await post(`/operations/commands/${pending.id}/cancel`, { expected_updated_at: pending.updated_at }); } catch (failure) { setError(guardTournamentError(failure)); } finally { if (alive.current) { setBusy(false); void read.refresh(true); } } }}>{t('discard')}</button>}
   </div>}
-  {dialog&&<FormDialog title={dialog.type==='guard.start'?'Autorizar el inicio del partido':dialog.type==='guard.exempt'?`${dialog.player.state==='console_verified'?'Revocar verificación':'Verificar consola'} · ${dialog.player.username}`:'Requisitos Guard del torneo'} onClose={()=>setDialog(null)} submit={submit} submitLabel="Confirmar y enviar a CTP">
-   {dialog.type==='guard.start'?<p>El servidor comprobará de nuevo las ocho conexiones o verificaciones de consola. Esta acción registra la autorización de inicio.</p>:<>
-    {dialog.type==='guard.configure'&&<><Field label="Guard en este torneo"><select name="enabled" defaultValue={String(state.enabled)}><option value="true">Exigido</option><option value="false">Desactivado</option></select></Field><Field label="Mando conectado"><select name="controller_required" defaultValue={String(state.enabled?state.controller_required:true)}><option value="true">Obligatorio</option><option value="false">No exigido</option></select></Field><Field label="Captura preparada"><select name="capture_required" defaultValue={String(state.capture_required)}><option value="true">Obligatoria</option><option value="false">No exigida</option></select></Field></>}
-    <Field label="Motivo registrado"><textarea name="reason" minLength={12} maxLength={160} required rows={3}/></Field></>}
+  {dialog && <FormDialog title={t(dialog.type === 'guard.start' ? 'startTitle' : dialog.type === 'guard.exempt' ? dialog.player.state === 'console_verified' ? 'revokeConsole' : 'verifyConsole' : 'configureTitle')} onClose={() => setDialog(null)} submit={submit} submitLabel={t('confirm')} cancelLabel={t('cancel')} closeLabel={t('cancel')}>
+   {dialog.player && <p><strong>{dialog.player.username}</strong></p>}{dialog.type === 'guard.start' ? <p>{t('startHelp')}</p> : <>
+    {dialog.type === 'guard.configure' && <><Field label={t('requireGuard')}><select name="enabled" defaultValue={String(dialog.enabled)}><option value="true">{t('required')}</option><option value="false">{t('disabled')}</option></select></Field><Field label={t('requireController')}><select name="controller_required" defaultValue={String(dialog.controller_required)}><option value="true">{t('mandatory')}</option><option value="false">{t('notRequiredShort')}</option></select></Field><Field label={t('requireCapture')} hint={t('captureHelp')}><select name="capture_required" defaultValue={String(dialog.capture_required)}><option value="true">{t('mandatory')}</option><option value="false">{t('notRequiredShort')}</option></select></Field></>}
+    <Field label={t('reason')} hint={t('reasonHelp')}><textarea name="reason" minLength={12} maxLength={160} required rows={3}/></Field></>}
   </FormDialog>}
-  {info&&<Modal title="Qué comprueba CTP Guard" onClose={()=>setInfo(false)}><p>Guard envía una señal cada cinco segundos. Tras quince segundos sin señal, el jugador deja de estar listo. Se comprueban los cuatro titulares de cada club.</p><p>El árbitro verifica las consolas con un motivo y puede revocarlo antes del inicio. Este estado comprueba presencia y señales; no certifica que un PC esté libre de trampas. La cámara todavía no está habilitada.</p></Modal>}
+  {info && <Modal title={t('infoTitle')} onClose={() => setInfo(false)} closeLabel={t('cancel')}><p>{t('infoSignals')}</p><p>{t('infoConsoles')}</p><p>{t('presenceOnly')}</p><p>{t('infoPrivacy')}</p></Modal>}
  </section>;
 }

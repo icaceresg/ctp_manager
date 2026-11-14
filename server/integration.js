@@ -1,7 +1,7 @@
 import { HttpError, describeUser } from './auth.js';
 import { db } from './db.js';
 import { signManagerRequest } from './bridge-signature.js';
-import { MANAGER_PUBLIC_ORIGINS } from './config.js';
+import { MANAGER_PUBLIC_ORIGINS, PRE_MANAGER_ORIGIN, PRE_CTP_ORIGIN } from './config.js';
 import { COMPETITION_ACTIONS, competitionPayload, correctionPayload, tournamentsByProximity } from './competition-contract.js';
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
 import { RANKED_ACTIONS, rankedPayload, rankedState } from './ranked-contract.js';
@@ -85,6 +85,9 @@ export function integrationConfig(env = process.env) {
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || url.hash || url.search) {
     throw new Error('CTP_OPERATIONS_URL requiere HTTPS y no admite credenciales ni parámetros.');
+  }
+  if (env.PUBLIC_ORIGIN === PRE_MANAGER_ORIGIN && url.href !== `${PRE_CTP_ORIGIN}/functions/v1/manager-operations`) {
+    throw new Error('Manager PRE sólo puede conectarse al servicio de operaciones de CTP PRE.');
   }
   if (token.length < 32 || /\s/.test(token)) throw new Error('CTP_OPERATIONS_TOKEN debe tener al menos 32 caracteres sin espacios.');
   const signingSecret = env.CTP_SIGNING_SECRET || '';
@@ -469,12 +472,12 @@ export async function getProViewState(user) {
   return rememberProViewState(state);
 }
 
-export async function getGuardState(user,id) {
+export async function getGuardState(user,id,{includeEvents=true}={}) {
   if(!user?.is_admin&&!user?.sections?.includes('arbitraje'))throw integrationError(403,'Necesitas acceso de arbitraje.');
   guardId(id);
   if(!integrationStatus().supported_actions.includes('guard.start'))throw integrationError(503,'El puente CTP todavía no tiene habilitada la integración Guard.');
-  const state=guardState(await request({action:'guard_state',actor_id:getOperatorIdentity(user.id),target_id:id}),id);
-  return rememberGuardState(state);
+  const state=guardState(await request({action:'guard_state',actor_id:getOperatorIdentity(user.id),target_id:id,...(includeEvents?{}:{include_events:false})}),id);
+  return rememberGuardState(state,{compact:!includeEvents});
 }
 export async function getRankedState(user) {
   if (!user?.is_admin) throw integrationError(403, 'La programación de Ranked requiere administración.');

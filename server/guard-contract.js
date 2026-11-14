@@ -1,7 +1,26 @@
 import { HttpError } from './auth.js';
 export const GUARD_ACTIONS = Object.freeze(['guard.configure','guard.exempt','guard.start']);
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+const count=(value,max)=>Number.isSafeInteger(value)&&value>=0&&value<=max?value:null;
+const coverage=value=>['not_collected','available','partial','unavailable'].includes(value)?value:'unknown';
+const optionalBool=value=>typeof value==='boolean'?value:null;
+/** Only bounded counters and coverage reach the staff browser. Never project
+ * device identities, rule IDs, network destinations or process paths. */
+function pcReport(player) {
+ const observation=object(player.observation)?player.observation:null,security=object(player.security_observation)?player.security_observation:null;
+ return {monitoring_current:optionalBool(player.monitoring_current),review_required:optionalBool(player.review_required),
+  observation:observation?{process_inventory:coverage(observation.process_inventory),network_metadata:coverage(observation.network_metadata),
+   integrity:['self_reported','unavailable'].includes(observation.integrity)?observation.integrity:'unknown',process_count:count(observation.process_count,512),connection_count:count(observation.connection_count,4096),rule_matches:count(observation.rule_matches,32)}:null,
+  security_observation:security?{release_integrity:['verified','mismatch','unavailable'].includes(security.release_integrity)?security.release_integrity:'unknown',
+   process_file_identity:coverage(security.process_file_identity),files_checked:count(security.files_checked,512),rule_matches:count(security.rule_matches,8)}:null};
+}
 export function guardId(v){if(typeof v!=='string'||!uuid.test(v))throw new HttpError(400,'Identificador de partido no válido.');return v;}
+export function guardReadOptions(query={}) {
+ if(!query||typeof query!=='object'||Array.isArray(query)||Object.keys(query).some(key=>key!=='include_events')
+  ||query.include_events!==undefined&&!['true','false'].includes(query.include_events))throw new HttpError(400,'La consulta de Guard no es válida.');
+ return {includeEvents:query.include_events!=='false'};
+}
 export function guardPayload(type,p){
  const keys=type==='guard.configure'?['enabled','controller_required','capture_required','reason']:type==='guard.exempt'?['user_id','approve','reason']:[];
  if(!GUARD_ACTIONS.includes(type)||!p||typeof p!=='object'||Array.isArray(p)||Object.keys(p).some(k=>!keys.includes(k)))throw new HttpError(400,'Acción Guard no válida.');
@@ -24,6 +43,6 @@ export function guardState(v,id){
  const str=(x,n)=>typeof x==='string'?x.slice(0,n):null;
  return {enabled:v.enabled,match_id:id,tournament_id:v.tournament_id,match_version:v.match_version,tournament_version:v.tournament_version,observed_at:v.observed_at,
   ready,started_at:str(v.started_at,50),lineup_pending:v.lineup_pending===true,controller_required:v.controller_required===true,capture_required:v.capture_required===true,camera_required:v.camera_required===true,
-  expected_count:8,players:players.map(p=>({user_id:p.user_id,side:p.side,username:str(p.username,100)||'Jugador',state:p.state,last_seen_at:str(p.last_seen_at,50),reason:str(p.reason,64)})),
-  events:Array.isArray(v.events)?v.events.slice(0,30).map(e=>({id:String(e.id).slice(0,30),user_id:uuid.test(e.user_id??'')?e.user_id:null,kind:str(e.kind,40),detail:str(e.detail,160),created_at:str(e.created_at,50)})):[]};
+  expected_count:8,players:players.map(p=>({user_id:p.user_id,side:p.side,username:str(p.username,100)||'Jugador',state:p.state,last_seen_at:str(p.last_seen_at,50),reason:str(p.reason,64),...pcReport(p)})),
+  events:Array.isArray(v.events)?v.events.slice(0,30).map(e=>({id:String(e.id).slice(0,30),user_id:uuid.test(e.user_id??'')?e.user_id:null,kind:str(e.kind,40),created_at:str(e.created_at,50)})):[]};
 }

@@ -2,7 +2,7 @@ import { HttpError } from './auth.js';
 import { canAccess } from '../shared/access.js';
 import { PLAYER_LIVE_SECTIONS, PLAYER_LIVE_REFRESH_MS, playerLiveResponse, unavailablePlayerLive } from './player-live-contract.js';
 
-/** One bounded cache per configured bridge; each actor retains a separate permission boundary. */
+/** One bounded public-feed cache; each staff actor retains a separate permission boundary. */
 export function createPlayerLiveReader({ request, actorFor, configured = () => true, now = Date.now, maxEntries = 64 }) {
   if (typeof request !== 'function' || typeof actorFor !== 'function' || typeof configured !== 'function' || typeof now !== 'function'
     || !Number.isInteger(maxEntries) || maxEntries < 1 || maxEntries > 256) throw new TypeError('invalid_player_live_reader');
@@ -24,7 +24,7 @@ export function createPlayerLiveReader({ request, actorFor, configured = () => t
       cache.set(actor, entry);
       entry.flight = Promise.resolve().then(async () => {
         try {
-          entry.value = playerLiveResponse(await request({ action: 'admin_service', actor_id: actor, service: 'player_live', payload: { action: 'read' } }), now());
+          entry.value = playerLiveResponse(await request(), now());
         } catch { entry.value = unavailablePlayerLive(); }
         finally { entry.flight = null; }
       });

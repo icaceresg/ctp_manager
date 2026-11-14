@@ -10,7 +10,6 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-player-live-unit-')
 Object.assign(process.env, { DATA_DIR: directory, DB_PATH: path.join(directory, 'fixture.sqlite'), CTP_AUTH_MODE: 'local',
   PUBLIC_ORIGIN: '', CTP_OPERATIONS_URL: '', CTP_OPERATIONS_TOKEN: '', CTP_SYNC_SECONDS: '0' });
 const { createPlayerLiveReader } = await import('../server/player-live-client.js');
-const { createOperationsTransport } = await import('../server/integration.js');
 const { db } = await import('../server/db.js');
 after(() => { db.close(); fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5 }); });
 
@@ -64,7 +63,7 @@ test('concurrent roster reads coalesce, actor caches stay separate and requests 
   assert.equal(calls.length, 1); release();
   assert.deepEqual(await first, await second);
   await read(admin); assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0], { action: 'admin_service', actor_id: 'ctp:1', service: 'player_live', payload: { action: 'read' } });
+  assert.equal(calls[0], undefined, 'the public feed receives no operator identity, request payload or command');
   await read({ id: 2, sections: ['casters'] }); assert.equal(calls.length, 2);
   now += 60_000; await read(admin); assert.equal(calls.length, 3);
 });
@@ -91,18 +90,4 @@ test('cache size is bounded and old entries can be reclaimed', async () => {
   for (const id of [1, 2]) assert.equal((await read({ id, is_admin: true })).status, 'ready');
   assert.deepEqual(await read({ id: 3, is_admin: true }), unavailablePlayerLive()); assert.equal(calls, 2);
   now += 60_000; assert.equal((await read({ id: 3, is_admin: true })).status, 'ready'); assert.equal(calls, 3);
-});
-
-test('player feed transport is signed, omits redirects and enforces a 32 KiB body limit', async () => {
-  const config = { configured: true, url: 'https://bridge.example.invalid/functions/v1/manager-operations',
-    token: 'fixture-private-bearer', signingSecret: 'fixture-independent-private-signing' };
-  const body = { action: 'admin_service', actor_id: 'ctp:1', service: 'player_live', payload: { action: 'read' } };
-  let seen;
-  const read = createOperationsTransport(config, async (_url, input) => { seen = input; return Response.json({ ok: true, data: fixture() }); });
-  assert.deepEqual(await read(body), fixture()); assert.equal(seen.method, 'POST'); assert.equal(seen.redirect, 'error');
-  assert.ok(Object.keys(seen.headers).some(name => /signature/i.test(name)));
-  const tooLarge = createOperationsTransport(config, async () => Response.json({ ok: true, data: { junk: 'x'.repeat(32 * 1024) } }));
-  await assert.rejects(tooLarge(body), { status: 502 });
-  const declared = createOperationsTransport(config, async () => new Response('{}', { headers: { 'content-type': 'application/json', 'content-length': '32769' } }));
-  await assert.rejects(declared(body), { status: 502 });
 });

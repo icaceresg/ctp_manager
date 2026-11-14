@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 
-// Real route + synthetic staff auth/bridge. No hosted environment or shared DEV is contacted.
+// Real route + synthetic staff auth/public feed. No hosted environment or shared DEV is contacted.
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-player-live-route-'));
 const origin = 'https://pre.manager.playctp.com';
 Object.assign(process.env, { DATA_DIR: directory, DB_PATH: path.join(directory, 'fixture.sqlite'), PUBLIC_ORIGIN: origin,
@@ -25,7 +25,21 @@ const originalFetch = globalThis.fetch, tokens = new Map(), observed = [];
 const player = '85550000-0000-4000-8000-000000000001';
 let failUpstream = false;
 globalThis.fetch = async (value, input) => {
-  const url = new URL(value), body = JSON.parse(input.body);
+  const url = new URL(value);
+  if (url.pathname === '/functions/v1/ranked-live') {
+    assert.equal(url.origin, 'https://pre.playctp.com', 'PRE never falls back to PROD');
+    assert.equal(input.method, 'GET'); assert.equal(input.body, undefined); assert.equal(input.redirect, 'error');
+    assert.equal(input.credentials, 'omit');
+    assert.deepEqual(input.headers, { apikey: process.env.CTP_AUTH_ANON_KEY, Authorization: `Bearer ${process.env.CTP_AUTH_ANON_KEY}` });
+    assert.equal(JSON.parse(Buffer.from(input.headers.apikey.split('.')[1], 'base64url')).role, 'anon');
+    assert.ok(!JSON.stringify(input).includes(process.env.CTP_OPERATIONS_TOKEN));
+    assert.ok(!JSON.stringify(input).includes(process.env.CTP_SIGNING_SECRET));
+    observed.push({ url: value, method: input.method });
+    if (failUpstream) return Response.json({ error: 'private-provider-fixture-detail' }, { status: 503 });
+    return Response.json({ schema_version: 1, status: 'ready', checked_at: new Date().toISOString(), fresh_for_seconds: 90,
+      streams: [{ user_id: player, channel: 'ctp_fixture', access_token: 'private-provider-fixture-token' }], access_token: 'private-provider-fixture-token' });
+  }
+  const body = JSON.parse(input.body);
   if (url.pathname === '/auth/v1/token') {
     const account = accounts[body.email.split('@')[0]]; assert.ok(account);
     const token = crypto.randomUUID(); tokens.set(token, account);
@@ -35,13 +49,7 @@ globalThis.fetch = async (value, input) => {
     const account = tokens.get(input.headers.Authorization?.replace('Bearer ', '')); assert.ok(account);
     return Response.json({ ...account, actor_id: `ctp:${account.ctp_user_id}` });
   }
-  assert.equal(url.pathname, '/functions/v1/manager-operations');
-  assert.deepEqual(body, { action: 'admin_service', actor_id: body.actor_id, service: 'player_live', payload: { action: 'read' } });
-  assert.ok(Object.keys(input.headers).some(name => /signature/i.test(name)));
-  observed.push(body);
-  if (failUpstream) return Response.json({ error: 'private-provider-fixture-detail' }, { status: 503 });
-  return Response.json({ ok: true, data: { schema_version: 1, status: 'ready', checked_at: new Date().toISOString(), fresh_for_seconds: 90,
-    streams: [{ user_id: player, channel: 'ctp_fixture', access_token: 'private-provider-fixture-token' }], access_token: 'private-provider-fixture-token' } });
+  assert.fail('the player feed never uses manager-operations or another endpoint');
 };
 const auth = await import('../server/auth.js');
 const { db } = await import('../server/db.js');

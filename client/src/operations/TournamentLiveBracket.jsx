@@ -1,3 +1,4 @@
+import { playoffTree } from './playoffTree.js';
 import { useMemo, useRef, useState } from 'react';
 import { CalendarClock, ChevronRight, GripVertical, Info } from 'lucide-react';
 import { groupStage, isLive, needsAttention, playoffRounds, scheduleLocked, slotsLocked } from './tournamentLiveModel.js';
@@ -147,16 +148,24 @@ function PlaceInGroup({ placement, participants, busy, blocked, run, onClose, on
 }
 
 function PlayoffView({ playoffs, filter, compact, selectedId, onSelect, playoffSlot, canEdit }) {
-  const { rounds, third, regular } = playoffs;
+  const { rounds, third } = playoffs;
   if (!rounds.length) return <p className="op-live-empty">{t('bracket.noPlayoffs')}</p>;
-  return <div className={`op-live-tree${regular ? ' is-regular' : ''}${compact ? ' is-compact' : ''}`}>
-    {rounds.map((round, index) => {
-      return <div className={`op-live-col${index < rounds.length - 1 ? ' is-link' : ''}${index > 0 ? ' is-fed' : ''}`} key={round.key}>
+  const tree = playoffTree(rounds.flatMap(round => round.matches));
+  const bracketY = row => `calc(${row} * var(--bracket-step))`;
+  return <div className={`op-live-tree bracket-geometry${compact ? ' is-compact' : ''}`}>
+    {tree.columns.map(column => {
+      const round = rounds.find(info => info.round === column.round);
+      return <div className="op-live-col" key={round.key}>
         <header><strong>{roundTitle(round)}</strong><small>{t('bracket.roundMeta', { count: round.matches.length })}</small></header>
-        <div className="op-live-col-body">
-          {round.matches.map(match => <div className="op-live-cell" key={match.id}>
+        <div className="bracket-geometry-body" style={{ height: bracketY(tree.rows) }}>
+          {column.nodes.map(match => <div className="bracket-position" style={{ top: bracketY(match.center) }} key={match.id}>
             <MatchCard match={match} dim={!matchesFilter(match, filter)} selected={match.id === selectedId} onSelect={onSelect} compact={compact} renderSlot={playoffSlot} canEdit={canEdit} />
           </div>)}
+          {column.joins.map(join => <div key={join.id} aria-hidden="true" className="bracket-join">
+              {join.starts.map(center => <i key={center} className="bracket-join-from" style={{ top: bracketY(center) }} />)}
+              <i className="bracket-join-stem" style={{ top: bracketY(join.top), height: bracketY(join.height) }} />
+              <i className="bracket-join-to" style={{ top: bracketY(join.end) }} />
+            </div>)}
         </div>
       </div>;
     })}

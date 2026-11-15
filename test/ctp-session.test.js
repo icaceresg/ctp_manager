@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { encryptTokens, decryptTokens } from '../server/ctp-auth.js';
+import { createAuthorizedReads } from '../server/authorized-reads.js';
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'ctp-shared-session-'));
 const key = crypto.randomBytes(32);
@@ -73,6 +74,19 @@ test('same CTP identity is mirrored without storing a password or exposing provi
   assert.equal(stored.includes('refresh:'), false);
   assert.equal(JSON.stringify(first.user).includes('accessToken'), false);
   assert.equal((await auth.currentUser(first.request())).is_admin, true);
+});
+
+test('live session validation binds read sharing to this cookie without caching its roles or identity checks', async () => {
+  const first = await signIn(), second = await signIn(), reads = createAuthorizedReads();
+  let release, calls = 0;
+  const held = new Promise(resolve => { release = resolve; });
+  const read = () => { calls++; return held; };
+  const one = reads.run(await auth.currentUser(first.request()), 'qa-tournament', 'match', read);
+  const sameSession = reads.run(await auth.currentUser(first.request()), 'qa-tournament', 'match', read);
+  const otherSession = reads.run(await auth.currentUser(second.request()), 'qa-tournament', 'match', read);
+  await Promise.resolve(); assert.equal(calls, 2);
+  release('ok'); await Promise.all([one, sameSession, otherSession]);
+  assert.equal(reads.size(), 0);
 });
 
 test('player, local bootstrap, local passwords and local administrator promotion are rejected', async () => {

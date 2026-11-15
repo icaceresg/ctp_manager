@@ -367,33 +367,91 @@ def switch_current(paths, name):
     sync_directory(paths.root)
 
 
-def backup_database(paths, name):
-    """Copy SQLite while Manager is stopped; the live files are never opened."""
+def backup_database(paths, name, *, timeout_seconds=45, clock=None):
+    """Consistent online SQLite backup, including WAL, without modifying source.
+
+    Another admitted HTTP instance may remain a writer while the canonical
+    service restarts. Never copy the database and WAL as independent files.
+    """
     import sqlite3
+    clock = clock or time.monotonic
+    require(type(timeout_seconds) in (int, float) and 0 < timeout_seconds <= 60,
+        'backup_timeout_invalid')
     source = paths.database
     if not source.exists() and not source.is_symlink():
         return None
     require(regular_file(source), 'database_not_regular')
+    identity = source.stat()
     folder = paths.backups / name
+    require(not os.path.lexists(folder), 'backup_destination_exists')
     folder.mkdir(mode=0o700)
     target = folder / source.name
-    shutil.copyfile(source, target, follow_symlinks=False)
-    os.chmod(target, 0o600)
-    wal = source.with_name(source.name + '-wal')
-    if regular_file(wal):
-        shutil.copyfile(wal, target.with_name(target.name + '-wal'), follow_symlinks=False)
-    connection = sqlite3.connect(str(target))
+    temporary = None
+    reader = connection = None
+    complete = published = False
+    deadline = clock() + timeout_seconds
+    def progress(_status, _remaining, _total):
+        require(clock() < deadline, 'backup_timeout')
     try:
+        descriptor, temporary_name = tempfile.mkstemp(prefix='.snapshot-', suffix='.db', dir=folder)
+        os.close(descriptor)
+        temporary = Path(temporary_name)
+        # No immutable=1: committed pages in the live WAL must be included.
+        reader = sqlite3.connect(source.resolve(strict=True).as_uri() + '?mode=ro',
+            uri=True, timeout=1, isolation_level=None)
+        reader.execute('PRAGMA query_only=ON')
+        reader.execute('PRAGMA trusted_schema=OFF')
+        reader.execute('BEGIN')
+        reader.execute('SELECT 1 FROM sqlite_schema LIMIT 1').fetchone()
+        estimated = reader.execute('PRAGMA page_count').fetchone()[0] * reader.execute('PRAGMA page_size').fetchone()[0]
+        require(shutil.disk_usage(folder).free >= estimated + 64 * MIB, 'backup_insufficient_disk')
+        connection = sqlite3.connect(str(temporary), timeout=1)
+        reader.backup(connection, pages=128, progress=progress, sleep=0.05)
+        reader.close(); reader = None
+        # Only the completed copy is normalized or checked. A VM progress hook
+        # bounds integrity_check too; it never changes the source's journal.
+        connection.set_progress_handler(lambda: int(clock() >= deadline), 1000)
         mode = connection.execute('PRAGMA journal_mode=DELETE').fetchone()[0]
         require(mode == 'delete', 'backup_journal_mode')
         require(connection.execute('PRAGMA integrity_check').fetchall() == [('ok',)], 'backup_integrity_failed')
+        connection.close(); connection = None
+        progress(None, None, None)
+        current = source.stat()
+        require(regular_file(source) and (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino),
+            'backup_source_replaced')
+        require(regular_file(temporary) and temporary.stat().st_size > 0, 'backup_empty')
+        os.chmod(temporary, 0o600)
+        with temporary.open('rb+') as copied:
+            os.fsync(copied.fileno())
+            hasher = hashlib.sha256()
+            for block in iter(lambda: copied.read(64 * 1024), b''):
+                progress(None, None, None)
+                hasher.update(block)
+        size = temporary.stat().st_size
+        require(not os.path.lexists(target), 'backup_destination_exists')
+        os.replace(temporary, target)
+        published = True
+        sync_directory(folder)
+        receipt = {'path': str(target), 'sha256': hasher.hexdigest(), 'bytes': size}
+        complete = True
+        return receipt
+    except (sqlite3.Error, OSError) as error:
+        raise ReleaseError('database_backup_failed') from error
     finally:
-        connection.close()
-    for suffix in ('-wal', '-shm', '-journal'):
-        leftover = target.with_name(target.name + suffix)
-        if leftover.exists():
-            leftover.unlink()
-    return {'path': str(target), 'sha256': sha256_file(target), 'bytes': target.stat().st_size}
+        if connection is not None:
+            connection.close()
+        if reader is not None:
+            reader.close()
+        if temporary is not None:
+            for suffix in ('', '-wal', '-shm', '-journal'):
+                leftover = temporary.with_name(temporary.name + suffix)
+                if leftover.exists():
+                    leftover.unlink()
+        if not complete:
+            if published and target.exists():
+                target.unlink()
+            with contextlib.suppress(OSError):
+                folder.rmdir()  # Preserve any unexpected file; never clear it recursively.
 
 
 def prune(paths, keep_releases, keep_backups, protect):

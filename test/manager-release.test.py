@@ -14,6 +14,8 @@ import sys
 import tarfile
 import tempfile
 import threading
+import time
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -460,6 +462,121 @@ class DeployTests(unittest.TestCase):
         names = sorted(path.name for path in self.paths.releases.iterdir())
         self.assertEqual(names, [f'{COMMIT}-23-1', f'{COMMIT}-27-1', 'manual-959d704'])
         self.assertEqual(sorted(path.name for path in self.paths.backups.iterdir()), [f'{COMMIT}-26-1', f'{COMMIT}-27-1'])
+
+
+class OnlineBackupTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix='manager-online-backup-')
+        self.addCleanup(self.directory.cleanup)
+        root = Path(self.directory.name)
+        self.paths = SimpleNamespace(database=root / 'source.db', backups=root / 'backups')
+        self.paths.backups.mkdir()
+        self.source = sqlite3.connect(self.paths.database)
+        self.source.execute('PRAGMA journal_mode=WAL')
+        self.source.execute('PRAGMA wal_autocheckpoint=0')
+        self.source.execute('CREATE TABLE counter (id INTEGER PRIMARY KEY, value INTEGER)')
+        self.source.executemany('INSERT INTO counter VALUES (?,0)', [(1,), (2,)])
+        self.source.commit()
+        self.addCleanup(lambda: self.source.close() if self.source is not None else None)
+
+    def test_online_snapshot_contains_committed_wal_and_does_not_modify_source(self):
+        before = {str(path): path.read_bytes() for path in (self.paths.database, Path(str(self.paths.database) + '-wal'))}
+        receipt = release.backup_database(self.paths, 'qa-one')
+        target = Path(receipt['path'])
+        self.assertEqual(receipt['sha256'], release.sha256_file(target))
+        self.assertEqual(receipt['bytes'], target.stat().st_size)
+        for name, data in before.items():
+            self.assertEqual(Path(name).read_bytes(), data)
+        self.assertEqual(self.source.execute('PRAGMA journal_mode').fetchone()[0], 'wal')
+        self.source.execute('UPDATE counter SET value=1'); self.source.commit()
+        with contextlib.closing(sqlite3.connect(target)) as copy:
+            self.assertEqual(copy.execute('SELECT value FROM counter ORDER BY id').fetchall(), [(0,), (0,)])
+            self.assertEqual(copy.execute('PRAGMA integrity_check').fetchall(), [('ok',)])
+            self.assertEqual(copy.execute('PRAGMA journal_mode').fetchone()[0], 'delete')
+        self.assertEqual(sorted(path.name for path in target.parent.iterdir()), ['source.db'])
+        if POSIX:
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(target.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_another_writer_commits_during_backup_but_copy_remains_one_transaction_snapshot(self):
+        self.source.execute('CREATE TABLE payload (value BLOB)')
+        self.source.executemany('INSERT INTO payload VALUES (?)', [(b'q' * 2048,)] * 1500)
+        self.source.commit()
+        begin, done = threading.Event(), threading.Event()
+        failures = []
+        def writer():
+            if not begin.wait(5):
+                failures.append('writer_not_started'); return
+            try:
+                with contextlib.closing(sqlite3.connect(self.paths.database, timeout=2)) as source:
+                    source.execute('UPDATE counter SET value=77')
+                    source.commit()
+                done.set()
+            except Exception as error:
+                failures.append(type(error).__name__); done.set()
+        thread = threading.Thread(target=writer)
+        thread.start()
+        calls = 0
+        def clock():
+            nonlocal calls
+            calls += 1
+            # The first clock establishes the budget. Subsequent calls are
+            # backup-progress checkpoints after the explicit read snapshot.
+            if calls == 2:
+                begin.set()
+                self.assertTrue(done.wait(5), 'a WAL writer must not wait for backup completion')
+            return time.monotonic()
+        try:
+            receipt = release.backup_database(self.paths, 'qa-concurrent', clock=clock)
+        finally:
+            begin.set(); thread.join(5)
+        self.assertFalse(thread.is_alive()); self.assertEqual(failures, [])
+        self.assertEqual(self.source.execute('SELECT value FROM counter ORDER BY id').fetchall(), [(77,), (77,)])
+        with contextlib.closing(sqlite3.connect(receipt['path'])) as copy:
+            self.assertEqual(copy.execute('SELECT value FROM counter ORDER BY id').fetchall(), [(0,), (0,)])
+            self.assertEqual(copy.execute('PRAGMA integrity_check').fetchall(), [('ok',)])
+
+    def test_timeout_publishes_no_partial_backup_and_releases_the_source_read_transaction(self):
+        ticks = iter([0, 100])
+        with self.assertRaises(release.ReleaseError) as caught:
+            release.backup_database(self.paths, 'qa-timeout', clock=lambda: next(ticks, 100))
+        self.assertEqual(caught.exception.reason, 'backup_timeout')
+        self.assertFalse((self.paths.backups / 'qa-timeout').exists())
+        self.source.execute('UPDATE counter SET value=9'); self.source.commit()
+        self.assertEqual(self.source.execute('PRAGMA integrity_check').fetchall(), [('ok',)])
+
+    def test_existing_destination_is_preserved_and_low_disk_does_not_touch_source(self):
+        folder = self.paths.backups / 'qa-existing'; folder.mkdir()
+        marker = folder / 'source.db'; marker.write_bytes(b'preserve')
+        with self.assertRaises(release.ReleaseError) as caught:
+            release.backup_database(self.paths, 'qa-existing')
+        self.assertEqual(caught.exception.reason, 'backup_destination_exists')
+        self.assertEqual(marker.read_bytes(), b'preserve')
+        with mock.patch.object(release.shutil, 'disk_usage', return_value=SimpleNamespace(free=0)):
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.backup_database(self.paths, 'qa-space')
+        self.assertEqual(caught.exception.reason, 'backup_insufficient_disk')
+        self.assertFalse((self.paths.backups / 'qa-space').exists())
+        self.assertEqual(self.source.execute('SELECT count(*) FROM counter').fetchone()[0], 2)
+
+    def test_corrupt_source_fails_closed_without_changing_its_bytes_or_retaining_a_target(self):
+        self.source.close(); self.source = None
+        self.paths.database.write_bytes(b'not a sqlite database')
+        with self.assertRaises(release.ReleaseError) as caught:
+            release.backup_database(self.paths, 'qa-corrupt')
+        self.assertEqual(caught.exception.reason, 'database_backup_failed')
+        self.assertEqual(self.paths.database.read_bytes(), b'not a sqlite database')
+        self.assertFalse((self.paths.backups / 'qa-corrupt').exists())
+
+    def test_destination_io_failure_removes_only_its_temporary_files(self):
+        before = self.paths.database.read_bytes()
+        with mock.patch.object(release.os, 'fsync', side_effect=OSError('fixture')):
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.backup_database(self.paths, 'qa-io')
+        self.assertEqual(caught.exception.reason, 'database_backup_failed')
+        self.assertEqual(self.paths.database.read_bytes(), before)
+        self.assertFalse((self.paths.backups / 'qa-io').exists())
+        self.source.execute('UPDATE counter SET value=3'); self.source.commit()
 
 
 class ClientProtocolTests(unittest.TestCase):

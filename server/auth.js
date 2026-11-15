@@ -4,6 +4,7 @@ import { DEPLOYMENT, SECURE_COOKIES, SESSION_COOKIE, SESSION_DAYS } from './conf
 import { SECTION_IDS, STAFF_SECTION_CAPS, STAFF_KINDS, isStaffUser } from '../shared/access.js';
 import { ctpAuthConfig, createCtpAuthClient, CtpAuthError, encryptTokens, decryptTokens } from './ctp-auth.js';
 import { createLoginLimiter, LoginLimitError } from './login-limiter.js';
+import { bindReadAuthority } from './authorized-reads.js';
 
 export const AUTH_CONFIG = ctpAuthConfig();
 export const CTP_AUTH_ENABLED = AUTH_CONFIG.mode === 'ctp';
@@ -182,7 +183,7 @@ async function readCurrentUser(req) {
       const task = validateCtpSession(token, user).finally(() => validatingSessions.delete(token));
       validatingSessions.set(token, task);
     }
-    return validatingSessions.get(token);
+    return bindReadAuthority(await validatingSessions.get(token), token, user.ctp_tokens);
   }
   if (user.session_auth_mode !== 'local') return null;
   const described = describeUser(user);
@@ -190,7 +191,7 @@ async function readCurrentUser(req) {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
     return null;
   }
-  return described;
+  return bindReadAuthority(described, token);
 }
 
 export function destroySession(req, res) {

@@ -1,6 +1,7 @@
 import { AUTH_CONFIG, HttpError, describeUser } from './auth.js';
 import { db } from './db.js';
 import { signManagerRequest } from './bridge-signature.js';
+import { createAuthorizedReads } from './authorized-reads.js';
 import { MANAGER_PUBLIC_ORIGINS, PRE_MANAGER_ORIGIN, PRE_CTP_ORIGIN } from './config.js';
 import { COMPETITION_ACTIONS, competitionPayload, correctionPayload, tournamentsByProximity } from './competition-contract.js';
 import { GUARD_ACTIONS, guardPayload, guardState, guardId } from './guard-contract.js';
@@ -830,17 +831,29 @@ export async function teamRosterService(user, operation, teamId, body = {}) {
  * bracket re-advances), entrants, participants, schedule and status. CTP
  * authorizes each call under the operator's own incident.resolve scope.
  */
+const tournamentReads = createAuthorizedReads({ conflict: () => integrationError(409, 'manager.tournamentLive.error.conflict') });
+async function tournamentRequest(user, tournamentId, payload, response, writing = false) {
+  // Auth middleware has already checked the live CTP session. Resolve the actor
+  // before sharing work, and keep the normal signed/nonce-checked SQL bridge.
+  const actor = getOperatorIdentity(user.id);
+  const send = async () => response(await request({ action: 'admin_service', actor_id: actor, service: 'tournament_live', payload }), payload);
+  if (!writing) return tournamentReads.run(user, tournamentId, JSON.stringify([actor, payload]), send);
+  tournamentReads.invalidate(tournamentId);
+  try { return await send(); }
+  finally { tournamentReads.invalidate(tournamentId); }
+}
+
 export async function tournamentLiveService(user, tournamentId, body = null, query = undefined, eligibleTeamsOnly = false) {
   if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
   const payload = query !== undefined ? tournamentLiveQuery(tournamentId, query, eligibleTeamsOnly) : body === null ? tournamentLiveRead(tournamentId) : tournamentLivePayload(tournamentId, body);
   if (body !== null && !config.writes) throw integrationError(403, 'manager.tournamentLive.error.writesDisabled');
-  return tournamentLiveResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
+  return tournamentRequest(user, tournamentId, payload, tournamentLiveResponse, body !== null);
 }
 
 export async function tournamentRegistrationRoster(user, tournamentId, teamId) {
   if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
   const payload = tournamentRegistrationRosterRead(tournamentId, teamId);
-  return tournamentLiveResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
+  return tournamentRequest(user, tournamentId, payload, tournamentLiveResponse);
 }
 
 /**
@@ -853,21 +866,24 @@ export async function tournamentScenarioService(user, tournamentId, count, body 
   }
   if (body !== null && !config.writes) throw tournamentScenarioError('forbidden', 403);
   const payload = tournamentScenarioPayload(tournamentId, count, body);
-  const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_scenarios', payload });
-  return tournamentScenarioResponse(result, payload);
+  if (body !== null) tournamentReads.invalidate(tournamentId);
+  try {
+    const result = await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_scenarios', payload });
+    return tournamentScenarioResponse(result, payload);
+  } finally { if (body !== null) tournamentReads.invalidate(tournamentId); }
 }
 
 export async function tournamentArbitrationService(user, tournamentId) {
   if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
   const payload = tournamentArbitrationRead(tournamentId);
-  return tournamentArbitrationResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
+  return tournamentRequest(user, tournamentId, payload, tournamentArbitrationResponse);
 }
 
 export async function tournamentLiveMatchService(user, tournamentId, matchId, body = null) {
   if (!canReferee(user)) throw integrationError(403, 'manager.tournamentLive.error.forbidden');
   const payload = body === null ? tournamentLiveMatchRead(tournamentId, matchId) : tournamentLiveMatchPayload(tournamentId, matchId, body);
   if (body !== null && !config.writes) throw integrationError(403, 'manager.tournamentLive.error.writesDisabled');
-  return tournamentLiveMatchResponse(await request({ action: 'admin_service', actor_id: getOperatorIdentity(user.id), service: 'tournament_live', payload }), payload);
+  return tournamentRequest(user, tournamentId, payload, tournamentLiveMatchResponse, body !== null);
 }
 
 export async function updateCtpUserProfile(user, id, body) {

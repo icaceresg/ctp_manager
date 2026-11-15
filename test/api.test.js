@@ -73,7 +73,8 @@ before(async () => {
 
   server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root,
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, CTP_OPERATIONS_URL: '', CTP_OPERATIONS_TOKEN: '', CTP_SIGNING_SECRET: '', CTP_ENABLE_WRITES: 'false', PUBLIC_ORIGIN: '' },
+    // A green instance serves the complete authenticated API while its jobs are disabled.
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, MANAGER_BACKGROUND_JOBS_ENABLED: 'false', CTP_OPERATIONS_URL: '', CTP_OPERATIONS_TOKEN: '', CTP_SIGNING_SECRET: '', CTP_ENABLE_WRITES: 'false', PUBLIC_ORIGIN: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', (d) => (output += d));

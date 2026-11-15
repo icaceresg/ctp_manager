@@ -19,9 +19,11 @@ import { startRuletaSync } from './ruleta.js';
 import { obsRouter } from './routes/obs.js';
 import { administrationRouter } from './routes/administration.js';
 import { retrospectivesRouter } from './routes/retrospectives.js';
+import { backgroundJobsEnabled, createHttpDrain, startBackgroundJobs } from './process-lifecycle.js';
 
 const app = express();
 const migrationShadow = migrationShadowEnabled();
+const jobsEnabled = backgroundJobsEnabled();
 app.disable('x-powered-by');
 
 // Se mantiene la escucha en loopback. En VPS el proxy conserva Host y termina TLS.
@@ -100,11 +102,12 @@ function openBrowser(url) {
 
 // Escuchamos en IPv4 e IPv6 locales para que "localhost" funcione en
 // cualquier navegador, y nunca en la red: nadie más puede entrar.
+const servers = [];
 function listen(host) {
   return new Promise((resolve) => {
     const server = http.createServer(app);
     server.once('error', (err) => resolve(err));
-    server.listen(PORT, host, () => resolve(null));
+    server.listen(PORT, host, () => { servers.push(server); resolve(null); });
   });
 }
 
@@ -115,12 +118,17 @@ if (v4Error && v6Error) {
   process.exit(1);
 }
 
-// Limpieza periódica de sesiones caducadas.
-if (!migrationShadow) {
-  setInterval(() => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()), 60 * 60 * 1000).unref();
-  startOperationsSync();
-  startRuletaSync();
-}
+// A green HTTP instance can share the database without duplicating any worker.
+const backgroundJobs = startBackgroundJobs({ enabled: jobsEnabled, shadow: migrationShadow,
+  cleanupSessions: () => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()),
+  startOperations: startOperationsSync, startRuleta: startRuletaSync });
+const drain = createHttpDrain(servers, {
+  beforeClose: () => backgroundJobs.forEach(timer => clearInterval(timer)),
+  afterClose: () => db.close(),
+});
+for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => {
+  void drain().then(() => process.exit(0), () => process.exit(1));
+});
 
 console.log(`\n  CTP Manager funcionando en ${APP_ORIGIN}`);
 console.log('  Para cerrar la app, cierra esta ventana.\n');

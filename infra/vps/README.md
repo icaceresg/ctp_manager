@@ -85,6 +85,7 @@ CTP_OPERATIONS_TOKEN=<secreto dedicado del puente>
 CTP_SIGNING_SECRET=<otro secreto independiente del puente>
 CTP_ENABLE_WRITES=false
 CTP_SYNC_SECONDS=0
+MANAGER_BACKGROUND_JOBS_ENABLED=true
 OBS_ENABLE_CONTROL=false
 OPEN_BROWSER=0
 ```

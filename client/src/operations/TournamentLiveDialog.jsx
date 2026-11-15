@@ -6,9 +6,11 @@ import { LIVE_STATUS_TRANSITIONS, counts } from './tournamentLiveModel.js';
 import { ReasonConfirm, statusLabel, t, tournamentLiveError } from './tournamentLiveUi.jsx';
 import TournamentLiveBracket from './TournamentLiveBracket.jsx';
 import TournamentLiveMatchPanel from './TournamentLiveMatchPanel.jsx';
+import { useLiveRead } from './useLiveRead.js';
+import { LIVE_READ_INTERVALS } from './liveReadLoop.js';
 import './tournament-live.css';
 
-const POLL_MS = 10000;
+const POLL_MS = LIVE_READ_INTERVALS.tournament;
 const EMPTY = [];
 
 function competitionMatch(row) {
@@ -28,34 +30,23 @@ export function TournamentLivePanel({ tournament, onChanged, onParticipants, can
   const [busy, setBusy] = useState(false);
   const [selection, setSelection] = useState(null);
   const [statusOpen, setStatusOpen] = useState(false);
-  const serial = useRef(0), liveRef = useRef(null), busyRef = useRef(false);
+  const liveRef = useRef(null), busyRef = useRef(false);
   const base = `/operations/tournaments/${encodeURIComponent(tournament.id)}/live`;
-  const load = useCallback(async ({ quiet = false } = {}) => {
-    if (!canEdit) return;
-    const request = ++serial.current;
-    if (!quiet) setLoading(true);
-    try {
-      const value = await api.get(base);
-      if (request !== serial.current) return;
+  const { load, cancel } = useLiveRead(base, {
+    intervalMs: POLL_MS, enabled: canEdit, blocked: () => busyRef.current,
+    onReset: () => { liveRef.current = null; setLive(null); setError(''); setLoading(canEdit); setSelection(null); },
+    onValue: value => {
       if (value.revision !== liveRef.current?.revision
         || JSON.stringify(value.group_order) !== JSON.stringify(liveRef.current?.group_order)) {
         liveRef.current = value;
         setLive(value);
       }
-      setError('');
-    } catch (cause) {
-      if (request === serial.current && !quiet) setError(tournamentLiveError(cause));
-    } finally {
-      if (!quiet) setLoading(false);
-    }
-  }, [base, canEdit]);
+      setError(''); setLoading(false);
+    },
+    onError: cause => { if ([401, 403, 404].includes(cause?.status)) { liveRef.current = null; setLive(null); } setError(tournamentLiveError(cause)); setLoading(false); },
+  });
 
-  useEffect(() => { void load(); return () => { ++serial.current; }; }, [load, tournament.manager_version, refreshKey]);
-  useEffect(() => {
-    if (!canEdit) return undefined;
-    const timer = setInterval(() => { if (!document.hidden && !busyRef.current) void load({ quiet: true }); }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [canEdit, load]);
+  useEffect(() => { void load(); }, [load, tournament.manager_version, refreshKey]);
 
   const run = useCallback(async body => {
     if (busyRef.current) return t('error.busy');
@@ -63,7 +54,8 @@ export function TournamentLivePanel({ tournament, onChanged, onParticipants, can
     if (!current) return t('error.unavailable');
     busyRef.current = true;
     setBusy(true);
-    ++serial.current; // A refresh in flight must not overwrite the new state.
+    cancel(); // A refresh in flight must not overwrite the acknowledged action.
+    let conflict = false;
     try {
       const result = await api.post(base, { ...body, expected_revision: body.expected_revision ?? current.revision });
       liveRef.current = result;
@@ -72,13 +64,14 @@ export function TournamentLivePanel({ tournament, onChanged, onParticipants, can
       onChanged?.();
       return null;
     } catch (cause) {
-      if (cause?.status === 409 || cause?.message === 'manager.tournamentLive.error.conflict') void load({ quiet: true });
+      conflict = cause?.status === 409 || cause?.message === 'manager.tournamentLive.error.conflict';
       return tournamentLiveError(cause);
     } finally {
       busyRef.current = false;
       setBusy(false);
+      if (conflict) void load();
     }
-  }, [base, load, onChanged, toast]);
+  }, [base, load, cancel, onChanged, toast]);
 
   const fallback = useMemo(() => fallbackMatches.map(competitionMatch), [fallbackMatches]);
   const matches = live?.matches ?? fallback;

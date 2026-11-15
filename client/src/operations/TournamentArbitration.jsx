@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RefreshCw, Search, ShieldAlert } from 'lucide-react';
-import { api } from '../api.js';
+import { useLiveRead } from './useLiveRead.js';
+import { LIVE_READ_INTERVALS } from './liveReadLoop.js';
 import { getIntlLocale } from '../i18n/runtime.js';
 import { TournamentLiveMatch } from './TournamentLiveMatchPage.jsx';
 import { playoffRounds } from './tournamentLiveModel.js';
 import { StateBadge, entrantName, matchRoundLabel, t, tournamentLiveError, when } from './tournamentLiveUi.jsx';
 
-const POLL_MS = 10000;
+const POLL_MS = LIVE_READ_INTERVALS.arbitration;
 const a = (key, values) => t(`arbitration.${key}`, values);
 const requests = match => match.referee_requests ?? [];
 
@@ -16,35 +17,14 @@ export default function TournamentArbitration({ tournamentId, selectedMatchId, s
   const [requestsOnly, setRequestsOnly] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const read = useRef(null);
-  const load = useCallback(async ({ quiet = false } = {}) => {
-    read.current?.abort();
-    const controller = new AbortController();
-    read.current = controller;
-    if (!quiet) setLoading(true);
-    try {
-      const response = await api.get(`/operations/tournaments/${encodeURIComponent(tournamentId)}/live/arbitration`, { signal: controller.signal });
-      if (!controller.signal.aborted) {
-        setMatches(response.matches);
-        setError('');
-      }
-    } catch (cause) {
-      if (controller.signal.aborted) return;
-      if ([401, 403, 404].includes(cause?.status)) setMatches(null);
-      if (!quiet || [401, 403, 404].includes(cause?.status)) setError(tournamentLiveError(cause));
-    } finally {
-      if (!controller.signal.aborted) {
-        read.current = null;
-        setLoading(false);
-      }
-    }
-  }, [tournamentId]);
+  const { load } = useLiveRead(`/operations/tournaments/${encodeURIComponent(tournamentId)}/live/arbitration`, {
+    intervalMs: POLL_MS,
+    onReset: () => { setMatches(null); setError(''); setLoading(true); },
+    onValue: response => { setMatches(response.matches); setError(''); setLoading(false); },
+    onError: cause => { if ([401, 403, 404].includes(cause?.status)) setMatches(null); setError(tournamentLiveError(cause)); setLoading(false); },
+  });
   useEffect(() => {
     void load();
-    const timer = setInterval(() => {
-      if (!document.hidden && !read.current) void load({ quiet: true });
-    }, POLL_MS);
-    return () => { clearInterval(timer); read.current?.abort(); };
   }, [load, refreshKey]);
 
   const all = matches ?? [];
@@ -98,6 +78,6 @@ export default function TournamentArbitration({ tournamentId, selectedMatchId, s
       </ul>}
     </section>
     {selected ? <TournamentLiveMatch key={selected.id} tournamentId={tournamentId} matchId={selected.id} canWrite={canWrite}
-      onChanged={load} refreshKey={refreshKey} embedded /> : matches?.length > 0 && <p className="op-card op-live-empty">{a('chooseMatch')}</p>}
+      onChanged={load} refreshKey={refreshKey} fallbackRounds={rounds} embedded /> : matches?.length > 0 && <p className="op-card op-live-empty">{a('chooseMatch')}</p>}
   </div>;
 }

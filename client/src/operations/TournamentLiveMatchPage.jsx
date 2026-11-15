@@ -8,14 +8,16 @@ import { canEditVetoStep, currentStep, playoffRounds, scheduleLocked, stepChoice
 import { ReasonConfirm, StateBadge, clock, clockSeconds, entrantName, matchRoundLabel, statusLabel, t, tournamentLiveError, when } from './tournamentLiveUi.jsx';
 import { ResultForm, RevertForm, ScheduleForm } from './TournamentLiveMatchPanel.jsx';
 import TournamentMatchChat from './TournamentMatchChat.jsx';
+import { useLiveRead } from './useLiveRead.js';
+import { LIVE_READ_INTERVALS } from './liveReadLoop.js';
 import './operations.css';
 import './tournament-live.css';
 
-const MATCH_POLL_MS = 5000;
-const TOURNAMENT_POLL_MS = 15000;
+const MATCH_POLL_MS = LIVE_READ_INTERVALS.match;
 const p = (key, values) => t(`page.${key}`, values);
 const a = (key, values) => t(`arbitration.${key}`, values);
 const SIDES = ['a', 'b'];
+const EMPTY_ROUNDS = [];
 
 /**
  * Referee page for one tournament match: score and result actions, the pick &
@@ -24,77 +26,75 @@ const SIDES = ['a', 'b'];
  */
 export default function TournamentLiveMatchPage() {
   const { tournamentId, matchId } = useParams();
-  return <TournamentLiveMatch key={`${tournamentId}:${matchId}`} tournamentId={tournamentId} matchId={matchId} />;
+  const [rounds, setRounds] = useState(EMPTY_ROUNDS);
+  // Standalone links need round labels once, not the full editable tournament.
+  useLiveRead(`/operations/tournaments/${encodeURIComponent(tournamentId)}/live/arbitration`, {
+    onValue: value => setRounds(playoffRounds(value.matches ?? []).rounds), onReset: () => setRounds(EMPTY_ROUNDS),
+  });
+  return <TournamentLiveMatch key={`${tournamentId}:${matchId}`} tournamentId={tournamentId} matchId={matchId} fallbackRounds={rounds} />;
 }
 
-export function TournamentLiveMatch({ tournamentId, matchId, canWrite = true, onChanged, refreshKey, embedded = false }) {
+export function TournamentLiveMatch({ tournamentId, matchId, canWrite = true, onChanged, refreshKey, embedded = false, fallbackRounds = EMPTY_ROUNDS }) {
   const { toast } = useApp();
   const [detail, setDetail] = useState(null), [live, setLive] = useState(null);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [updatedAt, setUpdatedAt] = useState(null);
-  const busyRef = useRef(false), detailRef = useRef(null), liveRef = useRef(null), serial = useRef({ match: 0, live: 0 });
+  const busyRef = useRef(false), detailRef = useRef(null), liveRef = useRef(null);
   busyRef.current = busy; detailRef.current = detail; liveRef.current = live;
   const liveBase = `/operations/tournaments/${encodeURIComponent(tournamentId)}/live`;
   const matchBase = `${liveBase}/matches/${encodeURIComponent(matchId)}`;
 
-  const loadMatch = useCallback(async ({ quiet = false } = {}) => {
-    const request = ++serial.current.match;
-    try {
-      const value = await api.get(matchBase);
-      if (request !== serial.current.match) return;
-      setDetail(value); setUpdatedAt(new Date().toISOString()); setError('');
-    } catch (cause) {
-      if (request !== serial.current.match) return;
+  const { load: loadMatch, cancel: cancelMatch } = useLiveRead(matchBase, {
+    intervalMs: MATCH_POLL_MS, blocked: () => busyRef.current,
+    onReset: () => { detailRef.current = null; setDetail(null); setError(''); },
+    onValue: value => { detailRef.current = value; setDetail(value); setUpdatedAt(new Date().toISOString()); setError(''); },
+    onError: cause => {
       const denied = [401, 403, 404].includes(cause?.status);
-      if (denied) setDetail(null);
-      if (denied || !quiet) setError(tournamentLiveError(cause));
-    }
-  }, [matchBase]);
-  const loadLive = useCallback(async () => {
-    const request = ++serial.current.live;
-    try {
-      const value = await api.get(liveBase);
-      if (request === serial.current.live && value?.revision !== liveRef.current?.revision) setLive(value);
-    } catch { /* The bracket view only feeds the result forms; the match view reports errors. */ }
-  }, [liveBase]);
-  useEffect(() => {
-    if (!busyRef.current) { void loadMatch(); void loadLive(); }
-    return () => { ++serial.current.match; ++serial.current.live; };
-  }, [loadMatch, loadLive, refreshKey]);
-  useEffect(() => {
-    const quiet = () => !document.hidden && !busyRef.current;
-    const a = setInterval(() => { if (quiet()) void loadMatch({ quiet: true }); }, MATCH_POLL_MS);
-    const b = setInterval(() => { if (quiet()) void loadLive(); }, TOURNAMENT_POLL_MS);
-    return () => { clearInterval(a); clearInterval(b); };
-  }, [loadMatch, loadLive]);
+      if (denied) { detailRef.current = null; liveRef.current = null; setDetail(null); setLive(null); }
+      setError(tournamentLiveError(cause));
+    },
+  });
+  // Full bracket/participants are only needed when a correction is opened.
+  // match_get and arbitration_get already use bounded SQL projections (424).
+  const { load: loadLive, cancel: cancelLive } = useLiveRead(liveBase, {
+    initial: false, blocked: () => busyRef.current,
+    onReset: () => { liveRef.current = null; setLive(null); },
+    onValue: value => { liveRef.current = value; setLive(value); setError(''); },
+    onError: cause => { liveRef.current = null; setLive(null); setError(tournamentLiveError(cause)); },
+  });
+  useEffect(() => { void loadMatch(); }, [loadMatch, refreshKey]);
 
   /** Serialises writes; resolves to an error message or null. */
   const guard = useCallback(async (send, after) => {
     if (!canWrite) return t('error.writesDisabled');
     if (busyRef.current) return t('error.busy');
     setBusy(true); busyRef.current = true;
-    try { await send(); await after?.(); return null; }
+    cancelMatch(); cancelLive();
+    let problem = null, conflict = false;
+    try { await send(); }
     catch (cause) {
-      if (cause?.status === 409) { void loadMatch({ quiet: true }); void loadLive(); }
-      return tournamentLiveError(cause);
+      conflict = cause?.status === 409;
+      problem = tournamentLiveError(cause);
     } finally { setBusy(false); busyRef.current = false; }
-  }, [canWrite, loadMatch, loadLive]);
+    if (!problem) await after?.();
+    else if (conflict) { void loadMatch(); liveRef.current = null; setLive(null); }
+    return problem;
+  }, [canWrite, loadMatch, cancelMatch, cancelLive]);
   /** Pick & ban and chat go through the match endpoint with the match revision. */
   const matchAction = useCallback(body => guard(async () => {
-    ++serial.current.match;
     const value = await api.post(matchBase, body.action === 'chat_send' ? body : { ...body, expected_revision: detailRef.current?.revision });
-    setDetail(value); setUpdatedAt(new Date().toISOString());
+    detailRef.current = value; setDetail(value); setUpdatedAt(new Date().toISOString());
+    if (body.action !== 'chat_send') { liveRef.current = null; setLive(null); }
     if (body.action !== 'chat_send') toast(t('toast.applied'));
-  }, body.action === 'chat_send' ? undefined : () => Promise.all([loadLive(), onChanged?.({ quiet: true })])), [guard, matchBase, toast, loadLive, onChanged]);
+  }, body.action === 'chat_send' ? undefined : () => onChanged?.({ quiet: true })), [guard, matchBase, toast, onChanged]);
   /** Result and schedule corrections use the tournament endpoint (the bracket re-advances). */
   const liveAction = useCallback(body => guard(async () => {
     if (!liveRef.current) throw new Error(t('error.unavailable'));
-    ++serial.current.live;
     const value = await api.post(liveBase, { ...body, match_id: matchId, expected_revision: liveRef.current.revision });
-    setLive(value); toast(t('toast.applied'));
+    liveRef.current = value; setLive(value); toast(t('toast.applied'));
   }, () => Promise.all([loadMatch({ quiet: true }), onChanged?.({ quiet: true })])), [guard, liveBase, matchId, toast, loadMatch, onChanged]);
 
   const match = detail?.match;
-  const rounds = useMemo(() => playoffRounds(live?.matches || []).rounds, [live]);
+  const rounds = useMemo(() => live ? playoffRounds(live.matches).rounds : fallbackRounds, [live, fallbackRounds]);
   const liveMatch = live?.matches?.find(item => item.id === match?.id) || null;
   const label = match ? (match.phase === 'grupos' || match.is_third_place || rounds.length ? matchRoundLabel(match, rounds) : t('round.number', { round: match.round })) : '';
   const back = `/operaciones/torneos?tournament=${encodeURIComponent(tournamentId)}&tab=arbitration&arbitrationMatch=${encodeURIComponent(matchId)}`;
@@ -104,7 +104,7 @@ export function TournamentLiveMatch({ tournamentId, matchId, canWrite = true, on
   if (!detail) return <div className={className}>
     {!embedded && <Link className="btn ghost sm" to={back}><ArrowLeft size={15} aria-hidden="true" /> {p('back')}</Link>}
     {error ? <div className="op-arbitration-load-error"><p className="op-error" role="alert">{error}</p>
-      <button type="button" className="btn sm" onClick={() => { void loadMatch(); void loadLive(); }}><RefreshCw size={14} aria-hidden="true" />{t('refresh')}</button></div>
+      <button type="button" className="btn sm" onClick={() => void loadMatch()}><RefreshCw size={14} aria-hidden="true" />{t('refresh')}</button></div>
       : <p role="status" className="op-live-empty">{a('loadingMatch')}</p>}
   </div>;
 
@@ -118,7 +118,7 @@ export function TournamentLiveMatch({ tournamentId, matchId, canWrite = true, on
       <div className="op-live-head">
         <StateBadge match={match} />
         {updatedAt && <small className="op-live-updated">{t('live.updated', { time: clockSeconds(updatedAt) })}</small>}
-        <button type="button" className="btn sm" disabled={busy} onClick={() => { void loadMatch(); void loadLive(); }} aria-label={t('refresh')} title={t('refresh')}><RefreshCw size={14} /></button>
+        <button type="button" className="btn sm" disabled={busy} onClick={() => void loadMatch()} aria-label={t('refresh')} title={t('refresh')}><RefreshCw size={14} /></button>
       </div>
     </header>
     {error && <p className="op-error" role="alert">{error}</p>}
@@ -137,7 +137,8 @@ export function TournamentLiveMatch({ tournamentId, matchId, canWrite = true, on
       <MatchRosters match={match} roster={detail.roster} />
       <TournamentMatchChat match={match} messages={detail.messages} canWrite={canWrite} busy={busy} send={body => matchAction({ action: 'chat_send', body })} />
       <VetoBoard detail={detail} busy={busy || !canWrite} act={matchAction} />
-      {canWrite && <MatchCorrections match={liveMatch} matches={live?.matches || []} rounds={rounds} status={live?.tournament.status} busy={busy} act={liveAction} />}
+      {canWrite && <MatchCorrections key={`${match.id}:${detail.revision}`} match={liveMatch ?? match} matches={live?.matches || []} rounds={rounds}
+        status={live?.tournament.status ?? detail.tournament.status} busy={busy} act={liveAction} loadContext={loadLive} />}
     </div>
   </div>;
 }
@@ -233,8 +234,18 @@ function StepEditor({ step, choices, swaps, busy, onSubmit }) {
   </div>;
 }
 
-function MatchCorrections({ match, matches, rounds, status, busy, act }) {
+function MatchCorrections({ match, matches, rounds, status, busy, act, loadContext }) {
   const [open, setOpen] = useState(null);
+  const [preparing, setPreparing] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const select = async id => {
+    if (busy || preparing) return;
+    if (open === id) { setOpen(null); return; }
+    setOpen(null); setPreparing(true);
+    const ready = await loadContext();
+    if (alive.current) { setPreparing(false); if (ready) setOpen(id); }
+  };
   if (!match) return null;
   const actions = [
     ['result', Trophy, match.winner_id ? t('actions.result.rectify') : t('actions.result.title'), !match.entrant_a || !match.entrant_b ? t('actions.blocked.incomplete') : ''],
@@ -244,9 +255,10 @@ function MatchCorrections({ match, matches, rounds, status, busy, act }) {
   const done = async body => { const problem = await act(body); if (!problem) setOpen(null); return problem; };
   return <section className="op-card" aria-labelledby="op-live-corrections">
     <header className="op-section-title"><div><h2 id="op-live-corrections"><Trophy size={18} /> {p('corrections.title')}</h2><p>{p('corrections.help')}</p></div></header>
+    {preparing && <p role="status" className="op-live-empty">{t('loading')}</p>}
     <ul className="op-live-actions">
       {actions.map(([id, Icon, title, blocked]) => <li key={id} className={`${open === id ? 'is-open' : ''}${blocked ? ' is-blocked' : ''}`}>
-        <button type="button" className="op-live-action" aria-expanded={open === id} onClick={() => setOpen(open === id ? null : id)}>
+        <button type="button" className="op-live-action" aria-expanded={open === id} disabled={busy || preparing} onClick={() => void select(id)}>
           <Icon size={17} /><span><strong>{title}</strong><small>{blocked || t(`actions.${id}.help`)}</small></span>
         </button>
         {open === id && <div className="op-live-action-body">

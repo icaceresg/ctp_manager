@@ -27,6 +27,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 export const db = new DatabaseSync(process.env.DB_PATH || path.join(DATA_DIR, 'myredesmanager.db'));
 
 db.exec(`
+  PRAGMA busy_timeout = 5000;
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
 

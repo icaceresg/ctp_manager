@@ -128,6 +128,12 @@ const tournament = (id, offset, status) => ({ id, name: id, status, start_at: at
 const tournaments = [tournament('later', 40 * day, 'borrador'), tournament('next', 3 * day, 'inscripcion_abierta'),
   tournament('live', -5 * day, 'en_curso'), tournament('recent', -2 * day, 'finalizado'),
   ...Array.from({ length: 105 }, (_, i) => tournament(`old-${i}`, -(10 + i) * day, 'finalizado'))];
+const challengeId = '11111111-2222-4333-8444-555555555555';
+const challengeAuthor = '22222222-2222-4333-8444-555555555555';
+const challengeTicket = {
+  id: '33333333-2222-4333-8444-555555555555', challenge_id: challengeId, code: 'CTP-CHALLENGE', type: 'no_show',
+  status: 'resuelto', priority: 'alta', created_at: '2025-10-12T19:15:00.123456+00:00', author_name: 'Jugador', assigned_name: null,
+};
 async function api(method, route, body, session = cookie) {
   const response = await fetch(`http://localhost:${port}/api${route}`, { method, headers: { Cookie: session, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const setCookie = response.headers.get('set-cookie');
@@ -179,6 +185,26 @@ before(async () => {
       response.end(JSON.stringify({ ok: true, data: { ...statisticsFixture(parsed.period), secret: token } })); return;
     }
     if (parsed.action === 'ranked_lobby_detail') {const data=parsed.target_id===lobbyId?lobbyFixture():{schema_version:1,found:false,lobby_id:parsed.target_id};if(data.chat)data.chat.can_send=true;data.secret=token;response.end(JSON.stringify({ok:true,data}));return;}
+    if (parsed.action === 'challenge_workspace') {
+      const data = parsed.resource === 'statistics' ? {
+        observed_at: '2026-10-01T00:00:00Z', window_started_at: '2026-09-01T00:00:00Z', total_matches: 1, total_tickets: 0,
+        active_teams: 1, matches_by_status: { abierto: 1 }, tickets_by_status: {},
+      } : parsed.resource === 'matches' ? { rows: [{
+        id: challengeId, status: 'finalizado', scheduled_slot: challengeTicket.created_at, season: 1,
+        poster_team: { id: challengeAuthor, name: null }, accepter_team: null, winner_team_id: challengeAuthor, ticket_count: 1,
+      }], next_cursor: null } : { rows: [{ ...challengeTicket, private_token: token }], next_cursor: null };
+      response.end(JSON.stringify({ ok: true, data })); return;
+    }
+    if (parsed.action === 'case_query' && parsed.target_id === challengeTicket.id) {
+      response.end(JSON.stringify({ ok: true, data: { incident: { ...challengeTicket, kind: 'challenge',
+        match_id: challengeId, title: `${challengeTicket.code} · no_show`, manager_version: 1, reason: 'No se presentó el rival.' },
+      messages: [], next_cursor: null } })); return;
+    }
+    if (parsed.action === 'admin_service' && parsed.service === 'tickets' && parsed.payload.ticket_id === challengeTicket.id) {
+      response.end(JSON.stringify({ ok: true, data: { ticket: { ...challengeTicket, manager_version: 1,
+        description: 'No se presentó el rival.', author: { id: challengeAuthor, username: challengeTicket.author_name }, assigned: null },
+      messages: [], events: [] } })); return;
+    }
     if (parsed.action === 'club_candidates') { response.end(JSON.stringify({ ok: true, data: clubCandidates })); return; }
     if (parsed.action === 'competition' && parsed.resource === 'tournaments') {
       // Same order and cursor as CTP: start date, latest first.
@@ -314,7 +340,40 @@ test('conversación privada usa actor de sesión y solo expone campos permitidos
   const caster = (await api('POST', '/auth/login', { username: 'caster-context', password: 'caster-test-password' }, '')).cookie;
   const calls = observed.length;
   assert.equal((await api('GET', '/operations/incidents/incident-context/context', undefined, caster)).status, 403);
+  assert.equal((await api('GET', '/operations/challenges/tickets', undefined, caster)).status, 403);
   assert.equal(observed.length, calls);
+});
+
+test('the challenge workspace reads scoped metadata and opens a resolved ticket outside the mirrored feed', async () => {
+  const path = '/operations/challenges';
+  const calls = observed.length;
+  assert.equal((await api('GET', `${path}/tickets`, undefined, '')).status, 401);
+  for (const query of ['actor_id=forged', 'cursor=bad', 'status=finalizado', 'challenge_id=bad']) {
+    assert.equal((await api('GET', `${path}/tickets?${query}`)).status, 400);
+  }
+  assert.equal(observed.length, calls);
+  const tickets = await api('GET', `${path}/tickets?challenge_id=${challengeId}&status=resuelto`);
+  assert.equal(tickets.status, 200);
+  assert.deepEqual(tickets.data, { rows: [challengeTicket], next_cursor: null });
+  assert.deepEqual(observed.at(-1), { action: 'challenge_workspace', actor_id: operatorId, resource: 'tickets', challenge_id: challengeId, status: 'resuelto' });
+  const match = await api('GET', `${path}/matches?challenge_id=${challengeId}`);
+  assert.equal(match.status, 200);
+  assert.equal(match.data.rows[0].id, challengeId);
+  assert.equal(match.data.rows[0].ticket_count, 1);
+  const statistics = await api('GET', `${path}/statistics`);
+  assert.equal(statistics.status, 200);
+  assert.equal(statistics.data.matches_by_status.abierto, 1);
+  assert.equal(statistics.data.tickets_by_status.resuelto, 0);
+  assert.ok(!(await api('GET', '/operations/bootstrap?view=incidencias&state=all')).data.incidents.some(item => item.id === challengeTicket.id));
+  const detail = await api('GET', `/operations/incidents/${challengeTicket.id}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.data.incident.match_id, challengeId);
+  assert.equal(detail.data.incident.status, 'resolved');
+  assert.equal(observed.at(-1).action, 'case_query');
+  assert.equal(observed.at(-1).target_id, challengeTicket.id);
+  const thread = await api('GET', `/operations/tickets/${challengeTicket.id}`);
+  assert.equal(thread.status, 200);
+  assert.equal(thread.data.ticket.id, challengeTicket.id);
 });
 
 test('buscar líderes de club funciona por HTTP, filtra campos privados y controla respuestas inválidas', async () => {

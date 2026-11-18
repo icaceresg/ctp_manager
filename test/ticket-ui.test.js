@@ -67,6 +67,14 @@ test('official tickets expose their own assignment and internal priority instead
   assert.match(html,/Añadir nota/);
 });
 
+test('official challenge tickets open their exact challenge in the new workspace', () => {
+  const html = renderIncident({ id: ticketId, source: 'ctp', kind: 'challenge', match_id: matchId,
+    title: 'Disputa', status: 'resolved', priority: 'normal', created_at: '2026-09-20T10:00:00Z', version: 1 });
+  assert.match(html, new RegExp(`href="/retos\\?challenge_id=${matchId}"`));
+  assert.doesNotMatch(html, /href="\/operaciones\/partidos\//);
+  assert.match(html, /Chat con el jugador/);
+});
+
 test('Ranked disputes keep one result decision destination while internal and tournament cases retain their controls',()=>{
   const base={id:ticketId,title:'Disputa',status:'open',priority:'normal',created_at:'2026-10-26T10:00:00Z',version:1,match_id:matchId};
   const ranked=renderIncident({...base,source:'ctp',kind:'ranked'});

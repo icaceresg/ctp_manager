@@ -1,5 +1,6 @@
 import { OP_TABS } from './operations/model.js';
 import { metricsAllowedHost } from './pages/metricsModel.js';
+import { translate } from './i18n/runtime.js';
 
 const groups = {
   jornada: 'Trabajo diario', turnos: 'Trabajo diario', decisiones: 'Trabajo diario',
@@ -28,6 +29,13 @@ export function managerNavigation(can, isAdmin, staffManager = false, rankedStaf
     items.splice(competition < 0 ? items.length : competition, 0, { id: 'ranked-monitor', to: '/ranked/monitor', title: 'Ranked', group: 'Competición', keywords: 'ranked 8s colas simultáneas jugadores grupos esperas partidas mapas métricas monitorización disputas revisión' },
       { id: 'ranked-stats', to: '/ranked/estadisticas', title: 'Estadísticas Ranked', group: 'Competición', keywords: 'estadísticas métricas informe marcas patrocinadores sponsors audiencia alcance horas de juego partidas jugadores únicos interacciones edad plataforma dossier comercial' });
     items.push({ id: 'jugadores', to: '/jugadores', title: 'Jugadores', group: 'Trabajo diario', keywords: 'buscar nickname activision cuenta historial perfil tickets sanciones división xp' });
+  }
+  if (isAdmin || can('arbitraje')) {
+    const incidents = items.findIndex(item => item.id === 'incidencias');
+    items.splice(incidents < 0 ? items.length : incidents, 0, {
+      id: 'challenges', to: '/retos', matchDescendants: true, title: translate('manager.challenges.title'),
+      group: 'Competición', keywords: translate('manager.challenges.navigationKeywords'),
+    });
   }
   if (isAdmin) items.push(
     { id: 'publicacion', to: '/publicacion', title: 'Publicación web', group: 'Administración', keywords: 'publicar web pública mostrar ocultar anunciar anuncio lanzamiento torneos calendario fechas scrims entrenamientos equipos clubes team pass mercado secciones clasificado inscripción abrir iva impuestos zona país facturación oss vies ventanilla única' },

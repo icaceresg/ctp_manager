@@ -7,7 +7,8 @@ import { metricsAllowedHost } from '../client/src/pages/metricsModel.js';
 test('all permitted operational areas are discoverable without granting another role', () => {
   for (const section of ['arbitraje', 'casters', 'realizacion', 'clubes', 'comunicaciones', 'operaciones']) {
     const items = managerNavigation(value => value === section, false);
-    assert.deepEqual(items.map(item => item.id), OP_TABS.filter(tab => tab.menu !== false && tab.sections.includes(section)).map(tab => tab.id));
+    assert.deepEqual(items.filter(item => item.id !== 'challenges').map(item => item.id), OP_TABS.filter(tab => tab.menu !== false && tab.sections.includes(section)).map(tab => tab.id));
+    assert.equal(items.some(item => item.id === 'challenges'), section === 'arbitraje');
     assert.equal(items.some(item => ['usuarios', 'integracion'].includes(item.id)), false);
     assert(items.every(item => item.group && item.to.startsWith('/')));
   }
@@ -75,8 +76,8 @@ test('Inicio and Jugadores stay on top and every other allowed tool sits once in
   assert.deepEqual(split.primary.map(item=>item.id),['jornada','jugadores']);
   assert.equal(split.primary[0].title,'Inicio');
   const competition=split.groups.find(group=>group.title==='Competición');
-  assert.deepEqual(competition.items.map(item=>item.id),['ranked-monitor','ranked-stats','incidencias','torneos','arbitraje','sanciones','historico']);
-  assert.deepEqual(competition.items.slice(0,3).map(item=>item.title),['Ranked','Estadísticas Ranked','Tickets']);
+  assert.deepEqual(competition.items.map(item=>item.id),['ranked-monitor','ranked-stats','challenges','incidencias','torneos','arbitraje','sanciones','historico']);
+  assert.deepEqual(competition.items.slice(0,4).map(item=>item.title),['Ranked','Estadísticas Ranked','Retos','Tickets']);
   assert.equal(competition.daily,true,'Competición starts open because it holds Ranked and Tickets');
   assert.deepEqual(split.groups.filter(group=>group.daily).map(group=>group.title),['Competición']);
   const grouped=split.groups.flatMap(group=>group.items);
@@ -100,7 +101,7 @@ test('coordination receives only delegated user management in addition to its ow
 test('tool search matches accents and multiple words only within allowed tools', () => {
   const items = managerNavigation(value => value === 'arbitraje', false);
   assert.deepEqual(navigationSearch(items, 'HISTORICO').map(item => item.id), ['historico']);
-  assert.deepEqual(navigationSearch(items, 'estadisticas'), [], 'Estadísticas ya no está en el menú');
+  assert.deepEqual(navigationSearch(items, 'estadisticas').map(item => item.id), ['challenges']);
   assert.deepEqual(navigationSearch(items, 'competicion arbitraje').map(item => item.id), ['incidencias','arbitraje']);
   assert.deepEqual(navigationSearch(items, 'usuarios'), []);
 });
@@ -158,4 +159,11 @@ test('only a linked official Ranked case can open arbitration for its own lobby'
 test('referees can open Torneos', () => {
   assert.ok(managerNavigation(value => value === 'arbitraje', false).some(item => item.id === 'torneos'));
   assert.equal(managerNavigation(value => value === 'casters', false).some(item => item.id === 'torneos'), false);
+});
+
+test('challenge detail, tickets and statistics keep the referee workspace selected', async () => {
+  const { managerNavigationPathMatches } = await import('../client/src/navigation.js');
+  const item = managerNavigation(section => section === 'arbitraje', false).find(row => row.id === 'challenges');
+  for (const path of ['/retos', '/retos/tickets', '/retos/estadisticas']) assert.ok(managerNavigationPathMatches(item, path));
+  assert.equal(managerNavigationPathMatches(item, '/retos-publicos'), false);
 });

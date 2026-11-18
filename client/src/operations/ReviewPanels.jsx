@@ -12,7 +12,8 @@ import { elapsedLabel, incidentNextAction } from './staffModel.js';
 import { DecisionPanel } from './DecisionPanel.jsx';
 import { TicketChat } from './TicketChat.jsx';
 import { canManageRanked } from '../../../shared/access.js';
-import { rankedIncidentPath } from '../navigation.js';
+import { managerUserId, rankedIncidentPath } from '../navigation.js';
+import { translate } from '../i18n/runtime.js';
 import { selectedCaseContext } from './caseSelection.js';
 import { caseAssigneeLabel, caseReference, caseTitle, shortCaseReference } from './casePresentation.js';
 import './case-workspace.css';
@@ -45,6 +46,7 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
   const closed = ['resolved', 'closed', 'closed_internal', 'rejected', 'resolution_pending'].includes(incident?.status);
   const rankedPath = canManageRanked(me) ? rankedIncidentPath(incident, location.pathname + location.search) : null;
   const officialTicket = incident?.source === 'ctp' && incident.kind !== 'ranked';
+  const challengeId = officialTicket && incident.kind === 'challenge' && managerUserId(incident.match_id);
   const rankedIncident = incident?.source === 'ctp' && incident.kind === 'ranked';
   const reference = incident ? caseReference(incident) : '';
   const copyReference = async () => {
@@ -80,7 +82,11 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
         <div className="op-case-essentials"><Badge value={incident.status} />{incident.match_id && <MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} />}{incident.reporter_name && <span>Creada por <strong>{incident.reporter_name}</strong></span>}<span>{caseAssigneeLabel(incident, data.staff)}</span>{incident.awaiting_staff && <strong className="op-urgent">Respuesta pendiente</strong>}{incident.priority === 'urgent' && <strong className="op-urgent">Urgente</strong>}</div>
         <div className="op-case-next"><strong>{incidentNextAction(incident)}</strong><span>Abierto hace {elapsedLabel(incident.created_at)}</span></div>
         </>}
-        {officialTicket && incident.match_id && <div className="case-workspace__match"><span>Partido vinculado</span><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} /></div>}
+        {officialTicket && incident.match_id && <div className="case-workspace__match">
+          {challengeId
+            ? <Link to={`/retos?${new URLSearchParams({ challenge_id: challengeId })}`}>{translate('manager.challenges.linkedMatch')}</Link>
+            : <><span>Partido vinculado</span><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} /></>}
+        </div>}
         {incident.status === 'resolution_pending' && <p className="op-notice">Resolución preparada. Falta la confirmación de CTP para cerrar el expediente oficial.</p>}
         {!closed && !officialTicket && <div className="op-case-actions">{incident.assignee_id !== me.id && <ActionButton run={() => update({ status: 'investigating', assignee_id: me.id })}>Asumir caso</ActionButton>}{!rankedIncident && <button className="btn primary" onClick={() => openDialog('resolve')}><FileCheck2 size={15} /> Preparar resolución</button>}</div>}
         {incident.source === 'ctp' && incident.kind !== 'ranked' ? <TicketChat incident={incident} reload={reload} /> : <OfficialIncidentStatus incident={incident} data={data} reload={reload} mutate={mutate} />}

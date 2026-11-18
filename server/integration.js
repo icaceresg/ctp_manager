@@ -31,6 +31,7 @@ import {
 } from './discipline-contract.js';
 import { collectRegisteredPlayers } from './ruleta-contract.js';
 import {createPlayerWorkspaceReader} from './player-workspace-client.js';
+import { createChallengeWorkspaceReader } from './challenge-workspace-contract.js';
 import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
 import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {createRankedEventClient} from './ranked-event-client.js';
@@ -956,3 +957,4 @@ export function startOperationsSync() {
 
 // Read-only player context shares the authenticated caller and the HMAC bridge.
 export const getPlayerWorkspace=createPlayerWorkspaceReader({request,actorFor:user=>getOperatorIdentity(user.id)});
+export const getChallengeWorkspace = createChallengeWorkspaceReader({ request, actorFor: user => getOperatorIdentity(user.id) });

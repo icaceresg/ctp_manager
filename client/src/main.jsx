@@ -29,6 +29,7 @@ import RankedMonitorPage from './pages/RankedMonitorPage.jsx';
 import RankedLobbyPage from './pages/RankedLobbyPage.jsx';
 import TournamentLiveMatchPage from './operations/TournamentLiveMatchPage.jsx';
 import RankedStatisticsPage from './pages/RankedStatisticsPage.jsx';
+import ChallengeWorkspacePage from './pages/ChallengeWorkspacePage.jsx';
 import { RankedSeasonsPage } from './operations/RankedSeasonPanel.jsx';
 import PlayerWorkspacePage from './pages/PlayerWorkspacePage.jsx';
 import WebPublicationPage from './pages/WebPublicationPage.jsx';
@@ -141,6 +142,7 @@ function App() {
           <Route path="ranked/estadisticas" element={canManageRanked(me) ? <RankedStatisticsPage /> : <Navigate to={home} replace />} />
           <Route path="ranked/temporadas" element={me.is_admin ? <RankedSeasonsPage /> : <Navigate to={home} replace />} />
           <Route path="ranked/partidas/:lobbyId" element={canManageRanked(me) ? <RankedLobbyPage /> : <Navigate to={home} replace />} />
+          <Route path="retos/:view?" element={guard('arbitraje', <ChallengeWorkspacePage />)} />
           <Route path="crm" element={me.is_admin ? <Navigate to="/crm/resumen" replace /> : <Navigate to={home} replace />} />
           <Route path="crm/:section" element={me.is_admin ? <CrmPage /> : <Navigate to={home} replace />} />
           <Route path="crm/:section/:id" element={me.is_admin ? <CrmPage /> : <Navigate to={home} replace />} />

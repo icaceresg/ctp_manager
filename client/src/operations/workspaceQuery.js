@@ -1,7 +1,11 @@
+import { INCIDENT_CATEGORIES } from '../../../shared/incident-categories.js';
+
 const FILTERS=['q','state','bucket','order','scope','period','match','case','club','review','person','week','role','closed','coverage','include_closed','resource_type','resource_id'];
 export function workspaceRequest(view,matchId,params) {
   const query=new URLSearchParams({view:matchId?'partido':view,limit:'30'});
   for(const key of FILTERS){const value=params.get(key);if(value)query.set(key,value);}
+  const incidentCategory = params.get('category');
+  if (!matchId && view === 'incidencias' && INCIDENT_CATEGORIES.includes(incidentCategory)) query.set('category', incidentCategory);
   if(matchId)query.set('match',matchId);
   if(params.get('op_page'))query.set('page',params.get('op_page'));
   if(params.get('op_match_page'))query.set('match_page',params.get('op_match_page'));

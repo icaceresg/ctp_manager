@@ -12,10 +12,10 @@ import { elapsedLabel, incidentNextAction } from './staffModel.js';
 import { DecisionPanel } from './DecisionPanel.jsx';
 import { TicketChat } from './TicketChat.jsx';
 import { canManageRanked } from '../../../shared/access.js';
-import { managerUserId, rankedIncidentPath } from '../navigation.js';
-import { translate } from '../i18n/runtime.js';
+import { isChallengeResultTicketType } from '../../../shared/challenges.js';
+import { rankedIncidentPath } from '../navigation.js';
 import { selectedCaseContext } from './caseSelection.js';
-import { caseAssigneeLabel, caseReference, caseTitle, shortCaseReference } from './casePresentation.js';
+import { caseAssigneeLabel, caseReference, caseTitle, caseTypeKey, shortCaseReference } from './casePresentation.js';
 import './case-workspace.css';
 
 export function IncidentsPanel({ data, mutate, me, reload }) {
@@ -41,12 +41,12 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
     return () => { active = false; };
   }, [selected, data]);
   useEffect(() => { setInfoOpen(false); setCopied(false); setCopyError(''); }, [selected]);
-  const choose = (id) => { const next = new URLSearchParams(params); id ? next.set('case', id) : next.delete('case'); setParams(next); };
+  const choose = (id) => { const next = new URLSearchParams(params); next.delete('focus'); id ? next.set('case', id) : next.delete('case'); setParams(next); };
   const update = (body, base = incident) => mutate('patch', `/incidents/${encodeURIComponent(base.id)}`, { expected_version: base.version, ...body });
   const closed = ['resolved', 'closed', 'closed_internal', 'rejected', 'resolution_pending'].includes(incident?.status);
   const rankedPath = canManageRanked(me) ? rankedIncidentPath(incident, location.pathname + location.search) : null;
   const officialTicket = incident?.source === 'ctp' && incident.kind !== 'ranked';
-  const challengeId = officialTicket && incident.kind === 'challenge' && managerUserId(incident.match_id);
+  const challengeResultTicket = officialTicket && incident.kind === 'challenge' && isChallengeResultTicketType(caseTypeKey(incident));
   const rankedIncident = incident?.source === 'ctp' && incident.kind === 'ranked';
   const reference = incident ? caseReference(incident) : '';
   const copyReference = async () => {
@@ -71,7 +71,7 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
             {!closed && <details className="op-case-more case-workspace__menu"><summary>Otras gestiones</summary><div>
               <button className="btn" onClick={() => openDialog('note')}><LockKeyhole size={14} />Añadir nota interna</button>
               <button className="btn" onClick={() => openDialog('manage')}>{officialTicket ? 'Prioridad interna' : 'Cambiar seguimiento'}</button>
-              {officialTicket && <button className="btn case-workspace__proposal" onClick={() => openDialog('resolve')}><span>Preparar resolución<small>Propuesta pendiente de envío a CTP</small></span></button>}
+              {officialTicket && !challengeResultTicket && <button className="btn case-workspace__proposal" onClick={() => openDialog('resolve')}><span>Preparar resolución<small>Propuesta pendiente de envío a CTP</small></span></button>}
             </div></details>}
           </div>
         </header>
@@ -82,14 +82,12 @@ export function IncidentsPanel({ data, mutate, me, reload }) {
         <div className="op-case-essentials"><Badge value={incident.status} />{incident.match_id && <MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} />}{incident.reporter_name && <span>Creada por <strong>{incident.reporter_name}</strong></span>}<span>{caseAssigneeLabel(incident, data.staff)}</span>{incident.awaiting_staff && <strong className="op-urgent">Respuesta pendiente</strong>}{incident.priority === 'urgent' && <strong className="op-urgent">Urgente</strong>}</div>
         <div className="op-case-next"><strong>{incidentNextAction(incident)}</strong><span>Abierto hace {elapsedLabel(incident.created_at)}</span></div>
         </>}
-        {officialTicket && incident.match_id && <div className="case-workspace__match">
-          {challengeId
-            ? <Link to={`/retos?${new URLSearchParams({ challenge_id: challengeId })}`}>{translate('manager.challenges.linkedMatch')}</Link>
-            : <><span>Partido vinculado</span><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} /></>}
+        {officialTicket && incident.kind !== 'challenge' && incident.match_id && <div className="case-workspace__match">
+          <span>Partido vinculado</span><MatchLink id={incident.match_id} match={data.matches.find((m) => m.id === incident.match_id)} />
         </div>}
         {incident.status === 'resolution_pending' && <p className="op-notice">Resolución preparada. Falta la confirmación de CTP para cerrar el expediente oficial.</p>}
         {!closed && !officialTicket && <div className="op-case-actions">{incident.assignee_id !== me.id && <ActionButton run={() => update({ status: 'investigating', assignee_id: me.id })}>Asumir caso</ActionButton>}{!rankedIncident && <button className="btn primary" onClick={() => openDialog('resolve')}><FileCheck2 size={15} /> Preparar resolución</button>}</div>}
-        {incident.source === 'ctp' && incident.kind !== 'ranked' ? <TicketChat incident={incident} reload={reload} /> : <OfficialIncidentStatus incident={incident} data={data} reload={reload} mutate={mutate} />}
+        {incident.source === 'ctp' && incident.kind !== 'ranked' ? <TicketChat incident={incident} reload={reload} mutate={mutate} /> : <OfficialIncidentStatus incident={incident} data={data} reload={reload} mutate={mutate} />}
         <DecisionPanel data={data} reload={reload} resourceType="incident" resourceId={incident.id} />
         {incident.resolution && <details className="op-case-panel"><summary>Resolución registrada</summary><blockquote className="op-quote">{incident.resolution}</blockquote></details>}
         {incident.source === 'ctp' && incident.kind === 'ranked' && <details className="op-case-panel"><summary>Conversación con jugadores</summary><CaseConversation key={incident.id} incident={incident} configured={data.connection?.configured} /></details>}
@@ -138,14 +136,13 @@ function CaseConversation({ incident, configured }) {
 
 function ResolutionDialog({ incident, match, mutate, onClose }) {
   const local = incident.source === 'manager';
-  const competitive = !local && ['challenge', 'ranked', 'tournament'].includes(incident.kind);
+  const competitive = !local && ['ranked', 'tournament'].includes(incident.kind);
   const ticketProposal = !local && !competitive;
   const [decision, setDecision] = useState(competitive ? 'award' : 'close');
   const submit = (body) => {
     const payload = { decision: body.decision, resolution: body.resolution, expected_version: incident.version };
     if (decision === 'award') {
       if (incident.kind === 'tournament') { payload.maps_a = Number(body.maps_a); payload.maps_b = Number(body.maps_b); }
-      if (incident.kind === 'challenge') payload.winner_team_id = body.winner_team_id;
       if (incident.kind === 'ranked') payload.winner_side = body.winner_side;
     }
     return mutate('post', `/incidents/${encodeURIComponent(incident.id)}/resolve`, payload, local ? 'Expediente interno cerrado. El partido no se ha modificado.' : 'Resolución preparada. Pendiente de aplicar en CTP.');
@@ -153,7 +150,6 @@ function ResolutionDialog({ incident, match, mutate, onClose }) {
   return <FormDialog title={local ? 'Cerrar expediente interno' : 'Preparar resolución'} submitLabel={local ? 'Cerrar expediente interno' : 'Guardar propuesta de resolución'} onClose={onClose} submit={submit} help={local ? 'Este expediente es interno del Manager. Su cierre no cambia resultados, puntos ni incidencias oficiales de CTP.' : ticketProposal ? 'Esta opción guarda una propuesta de cierre con resolución. El ticket solo cambia cuando un administrador envía la propuesta y CTP confirma su aplicación. Para un cambio directo, utiliza Estado en la conversación.' : 'CTP comprobará los permisos, la vinculación del árbitro y el estado actual antes de aplicar la decisión.'}>
     <Field label="Decisión"><select name="decision" value={decision} onChange={(e) => setDecision(e.target.value)}>{!competitive && <option value="close">Cerrar expediente sin alterar resultado</option>}{competitive && <option value="award">Resolver resultado en disputa</option>}{competitive && incident.kind !== 'tournament' && <option value="cancel">Cancelar encuentro disputado</option>}</select></Field>
     {decision === 'award' && incident.kind === 'tournament' && <div className="op-form-grid"><Field label={`Mapas de ${match?.team_a?.name || 'equipo A'}`}><input name="maps_a" type="number" min={0} max={20} required /></Field><Field label={`Mapas de ${match?.team_b?.name || 'equipo B'}`}><input name="maps_b" type="number" min={0} max={20} required /></Field></div>}
-    {decision === 'award' && incident.kind === 'challenge' && <Field label="Equipo ganador"><select name="winner_team_id" required><option value="">Seleccionar equipo</option>{[match?.team_a, match?.team_b].filter((t) => t?.id).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>}
     {decision === 'award' && incident.kind === 'ranked' && <Field label="Equipo ganador"><select name="winner_side" required><option value="">Seleccionar equipo</option><option value="a">Equipo A</option><option value="b">Equipo B</option></select></Field>}
     <Field label="Motivo y decisión comunicable"><textarea name="resolution" required minLength={10} maxLength={2000} rows={5} /></Field>
   </FormDialog>;

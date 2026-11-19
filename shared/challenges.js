@@ -16,3 +16,12 @@ export const CHALLENGE_LIST_STATUSES = Object.freeze({
   matches: CHALLENGE_MATCH_STATUSES,
   tickets: CHALLENGE_TICKET_STATUSES,
 });
+
+export function isChallengeResultTicketType(type) {
+  return type === 'disputa_resultado' || type === 'resultado_incorrecto';
+}
+
+export function isOpenChallengeResultTicket(ticket) {
+  return ['abierto', 'en_revision', 'esperando_respuesta'].includes(ticket.status)
+    && isChallengeResultTicketType(ticket.type);
+}

@@ -1,4 +1,6 @@
 import { ArrowRight, ArrowUpDown, Clock3, Inbox, MessageCircle, Search, UserRound } from 'lucide-react';
+import { INCIDENT_CATEGORIES, incidentCategory } from '../../../shared/incident-categories.js';
+import { getIntlLocale, translate } from '../i18n/runtime.js';
 import { Badge } from './ui.jsx';
 import { dateTime } from './model.js';
 import { CLOSED_INCIDENTS, elapsedLabel, hasIncidentAssignee, incidentNextAction } from './staffModel.js';
@@ -8,9 +10,12 @@ import { workspaceFirstPageParams } from './workspaceQuery.js';
 import './incident-inbox.css';
 
 export function IncidentInbox({ data, me, params, setParams, choose }) {
-  const state = ['active', 'resolved', 'all'].includes(params.get('state')) ? params.get('state') : 'active';
+  const state = ['active', 'resolved', 'all'].includes(params.get('state')) ? params.get('state') : 'all';
   const bucket = ['mine', 'unassigned', 'urgent'].includes(params.get('bucket')) ? params.get('bucket') : 'all';
   const order = ['oldest', 'newest', 'priority'].includes(params.get('order')) ? params.get('order') : 'priority';
+  const category = INCIDENT_CATEGORIES.includes(params.get('category')) ? params.get('category') : '';
+  const categoryLabel = value => translate(`manager.tickets.category.${value || 'all'}`);
+  const number = new Intl.NumberFormat(getIntlLocale());
   const query = params.get('q') || '';
   const [search, setSearch] = useWorkspaceSearch(params, setParams);
   const counts = inboxCounts(data, me.id), shown = data.incidents || [];
@@ -28,12 +33,12 @@ export function IncidentInbox({ data, me, params, setParams, choose }) {
     const next = workspaceFirstPageParams(params);
     next.delete('case'); next.set('bucket', value); next.set('state', 'active'); setParams(next);
   };
-  const filtered = query || bucket !== 'all' || state !== 'active' || order !== 'priority';
+  const filtered = query || category || bucket !== 'all' || state !== 'all' || order !== 'priority';
   return <section className="case-inbox" aria-label="Bandeja de tickets">
     <div className="case-inbox-shortcuts">
       <nav className="case-inbox-buckets" aria-label="Bandejas de tickets abiertos">{filters.map(filter => <button key={filter.id} type="button"
         className={bucket === filter.id && state === 'active' ? 'is-selected' : ''} aria-pressed={bucket === filter.id && state === 'active'} onClick={() => selectBucket(filter.id)}>
-        <span>{filter.title}</span><strong>{filter.count}</strong>
+        <span>{filter.title}</span><strong>{number.format(filter.count)}</strong>
       </button>)}</nav>
       <span className="case-inbox-count-scope">{counts.scope === 'query' ? 'Totales de tickets abiertos' : 'Contadores de esta página'}</span>
     </div>
@@ -42,8 +47,14 @@ export function IncidentInbox({ data, me, params, setParams, choose }) {
       <label className="case-inbox-search"><Search size={17} aria-hidden="true" />
         <input type="search" aria-label="Buscar ticket" maxLength={120} placeholder="Buscar por jugador, código o responsable" value={search} onChange={event => setSearch(event.target.value)} />
       </label>
+      <label className="case-inbox-select"><span>{translate('manager.tickets.categoryFilter')}</span>
+        <select value={category} onChange={event => setFilter('category', event.target.value)}>
+          <option value="">{categoryLabel('all')}</option>
+          {INCIDENT_CATEGORIES.map(value => <option key={value} value={value}>{categoryLabel(value)}</option>)}
+        </select>
+      </label>
       <label className="case-inbox-select"><span>Estado</span><select aria-label="Estado de tickets" value={state} onChange={event => setFilter('state', event.target.value)}>
-        <option value="active">Abiertos</option><option value="resolved">Finalizados</option><option value="all">Todos</option>
+        <option value="all">{translate('manager.tickets.allStatuses')}</option><option value="active">Abiertos</option><option value="resolved">Finalizados</option>
       </select></label>
       <label className="case-inbox-select"><span><ArrowUpDown size={12} aria-hidden="true" /> Orden</span><select aria-label="Orden de tickets" value={order} onChange={event => setFilter('order', event.target.value)}>
         <option value="priority">Urgencia y antigüedad</option><option value="oldest">Más antiguos</option><option value="newest">Más recientes</option>
@@ -51,7 +62,7 @@ export function IncidentInbox({ data, me, params, setParams, choose }) {
       {filtered && <button type="button" className="case-inbox-clear" onClick={() => setParams({})}>Restablecer</button>}
     </div>
 
-    <div className="case-inbox-results" role="status"><span>{inboxResultLabel(data)}</span><span>{state === 'resolved' ? 'Finalizados' : state === 'all' ? 'Todos los estados' : 'Abiertos'}{bucket !== 'all' ? ` · ${filters.find(filter => filter.id === bucket).title}` : ''}</span></div>
+    <div className="case-inbox-results" role="status"><span>{inboxResultLabel(data)}</span><span>{state === 'resolved' ? 'Finalizados' : state === 'all' ? translate('manager.tickets.allStatuses') : 'Abiertos'}{bucket !== 'all' ? ` · ${filters.find(filter => filter.id === bucket).title}` : ''}</span></div>
 
     {shown.length ? <div className="case-inbox-collection">
       <div className="case-inbox-columns" aria-hidden="true"><span>Ticket</span><span>Jugador</span><span>Estado</span><span>Responsable</span><span>Antigüedad</span><span /></div>
@@ -61,7 +72,7 @@ export function IncidentInbox({ data, me, params, setParams, choose }) {
         return <li key={incident.id} className={`case-inbox-row${incident.priority === 'urgent' ? ' is-urgent' : ''}${replyPending ? ' needs-reply' : ''}`}>
           <button type="button" className="case-inbox-open" onClick={() => choose(incident.id)} aria-label={`Abrir ${title}, ${reference}${incident.reporter_name ? `, de ${incident.reporter_name}` : ''}`}>
             <span className="case-inbox-subject"><span className="case-inbox-subject-heading"><strong>{title}</strong>{incident.priority === 'urgent' && <span className="case-inbox-urgent">Urgente</span>}</span>
-              <span className="case-inbox-reference" title={caseReference(incident)}>{reference}</span>
+              <span className="case-inbox-subject-heading"><span className="case-inbox-reference" title={caseReference(incident)}>{reference}</span><span className="case-inbox-category">{categoryLabel(incidentCategory(incident))}</span></span>
               <span className="case-inbox-next">{replyPending && <MessageCircle size={12} aria-hidden="true" />}{incidentNextAction(incident)}</span>
             </span>
             <span className="case-inbox-player"><UserRound size={14} aria-hidden="true" />{incident.reporter_name || 'Sin identificar'}</span>

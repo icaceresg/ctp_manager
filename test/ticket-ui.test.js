@@ -5,7 +5,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {MemoryRouter} from 'react-router-dom';
 import {createServer} from 'vite';
 
-let vite, tickets, incidents, AppProvider;
+let vite, tickets, incidents, challengeTickets, AppProvider;
 const ticketId='10000000-0000-4000-8000-000000000001';
 const authorId='20000000-0000-4000-8000-000000000002';
 const staffId='30000000-0000-4000-8000-000000000003';
@@ -24,6 +24,7 @@ before(async()=>{
   vite=await createServer({server:{middlewareMode:true,watch:null,hmr:false},optimizeDeps:{noDiscovery:true,include:[]},appType:'custom',logLevel:'error'});
   tickets=await vite.ssrLoadModule('/src/operations/TicketChat.jsx');
   incidents=await vite.ssrLoadModule('/src/operations/ReviewPanels.jsx');
+  challengeTickets=await vite.ssrLoadModule('/src/operations/LinkedChallengeTicket.jsx');
   ({AppProvider}=await vite.ssrLoadModule('/src/context.jsx'));
 });
 after(async()=>{await vite?.close();});
@@ -73,6 +74,29 @@ test('official challenge tickets open their exact challenge in the new workspace
   assert.match(html, new RegExp(`href="/retos\\?challenge_id=${matchId}"`));
   assert.doesNotMatch(html, /href="\/operaciones\/partidos\//);
   assert.match(html, /Chat con el jugador/);
+});
+
+test('linked challenge results use the real dispute, grant and teams, while technical tickets keep the normal proposal', () => {
+  const incident = { id: ticketId, source: 'ctp', kind: 'challenge', match_id: matchId,
+    title: 'CTP-ABC · disputa_resultado', status: 'open', priority: 'normal', created_at: '2026-09-20T10:00:00Z', version: 1 };
+  const current = { can_change_status: true, ticket: { id: ticketId, challenge_id: matchId, type: 'disputa_resultado', status: 'abierto' } };
+  const match = { id: matchId, status: 'en_disputa', poster_team: { id: authorId, name: 'Club A' }, accepter_team: { id: staffId, name: 'Club B' } };
+  assert.equal(challengeTickets.canProposeChallengeResult(incident, current, match), true);
+  for (const [item, ticket, challenge] of [
+    [incident, { ...current, can_change_status: false }, match],
+    [incident, { ...current, ticket: { ...current.ticket, type: 'tecnico' } }, match],
+    [incident, { ...current, ticket: { ...current.ticket, status: 'resuelto' } }, match],
+    [{ ...incident, status: 'resolution_pending' }, current, match],
+    [incident, current, { ...match, id: authorId }],
+    [incident, current, { ...match, status: 'finalizado' }],
+  ]) assert.equal(challengeTickets.canProposeChallengeResult(item, ticket, challenge), false);
+  const html = renderToStaticMarkup(createElement(challengeTickets.ChallengeResultDialog, { incident, match, mutate: noop, onClose: noop }));
+  assert.match(html, /Resolver resultado/);
+  assert.match(html, new RegExp(`<option value="${authorId}">Club A</option>`));
+  assert.match(html, new RegExp(`<option value="${staffId}">Club B</option>`));
+  assert.match(html, /Un administrador debe enviar la propuesta/);
+  assert.doesNotMatch(renderIncident(incident), /Preparar resolución/);
+  assert.match(renderIncident({ ...incident, title: 'CTP-DEF · tecnico' }), /Preparar resolución/);
 });
 
 test('Ranked disputes keep one result decision destination while internal and tournament cases retain their controls',()=>{

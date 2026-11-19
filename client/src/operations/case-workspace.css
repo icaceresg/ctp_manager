@@ -22,6 +22,9 @@
 .case-workspace__copy-result { color:var(--success); font-size:12px; }
 .case-workspace__match { display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:12px; }
 .case-workspace__match > span { color:var(--muted); }
+.case-workspace__match-details { display:flex; flex-wrap:wrap; gap:12px 24px; margin:0; }
+.case-workspace__match-details dt { color:var(--muted); font-size:12px; }
+.case-workspace__match-details dd { margin:4px 0 0; }
 .case-workspace__staff-notes > summary { display:flex; align-items:center; gap:8px; }
 .case-workspace__staff-notes[open] > summary { margin-bottom:16px; }
 .case-workspace .op-case-panel > summary:focus-visible,.case-workspace summary:focus-visible { outline:2px solid var(--accent); outline-offset:5px; border-radius:3px; }

@@ -33,6 +33,7 @@
 .case-inbox-subject-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .case-inbox-subject-heading > strong { color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .case-inbox-reference { color: var(--muted); font-size: 10px; font-family: var(--font-mono); }
+.case-inbox-category { color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 10px; }
 .case-inbox-next { display: inline-flex; gap: 5px; align-items: center; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .needs-reply .case-inbox-next { color: var(--accent-text); }
 .case-inbox-player { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }

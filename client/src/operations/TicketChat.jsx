@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
-import { playerWorkspacePath } from '../navigation.js';
+import { managerUserId, playerWorkspacePath } from '../navigation.js';
 import { canManageRanked } from '../../../shared/access.js';
 import { ticketProofUrl } from '../../../shared/ticket-proof.js';
 import { dateTime } from './model.js';
 import { createTicketActionState } from './ticketActionState.js';
 import { createVisibleReadController } from '../visibleReadController.js';
+import { LinkedChallengeTicket } from './LinkedChallengeTicket.jsx';
 import { ArrowUpRight, Check, Link2, MessageSquare, RefreshCw, Send, ShieldCheck, UserRound } from 'lucide-react';
 import './ticket-chat.css';
 
@@ -15,7 +16,7 @@ const STATUS = { abierto: 'Abierto', en_revision: 'En revisión', esperando_resp
 const CLOSED = ['resuelto', 'rechazado', 'cerrado'];
 
 /** Direct CTP ticket chat: messages, assignment and status apply at once and notify the player. */
-export function TicketChat({ incident, reload }) {
+export function TicketChat({ incident, reload, mutate }) {
   const { me } = useApp(), location = useLocation();
   const [thread, setThread] = useState(null), [threadScope, setThreadScope] = useState(null), [text, setText] = useState(''), [error, setError] = useState(''), [readError, setReadError] = useState(''), [busy, setBusy] = useState(false);
   const requestScope = JSON.stringify([me?.id, me?.ctp_user_id, me?.auth_mode, me?.ctp_role, me?.is_admin, me?.sections, incident.id]);
@@ -61,8 +62,15 @@ export function TicketChat({ incident, reload }) {
     finally { if (lock.current === token) { lock.current = null; setBusy(false); } }
   }
   async function send(event) { event.preventDefault(); if (text.trim() && await act('message', text.trim())) setText(''); }
-  if (!thread || threadScope !== requestScope || thread.ticket.id !== incident.id) return <section className="ticket-thread-loading"><h3>Chat con el jugador</h3>{readError || error ? <><p className="op-error" role="alert">{readError || error}</p><button className="btn sm" type="button" onClick={load}><RefreshCw size={14} aria-hidden="true" /> Reintentar lectura</button></> : <p className="muted" role="status">Cargando conversación…</p>}</section>;
-  return <TicketThreadView thread={thread} me={me} returnTo={location.pathname + location.search} busy={busy} error={error} readError={readError} text={text} onReload={load} onAction={act} onSend={send} onTextChange={setText}/>;
+  const currentThread = threadScope === requestScope && thread?.ticket.id === incident.id ? thread : null;
+  const challengeId = managerUserId(currentThread ? currentThread.ticket.challenge_id : incident.kind === 'challenge' ? incident.match_id : null);
+  const focusResult = new URLSearchParams(location.search).get('focus') === 'result';
+  return <>
+    {challengeId && <LinkedChallengeTicket key={`${requestScope}:${challengeId}`} challengeId={challengeId} incident={incident}
+      thread={currentThread} focus={focusResult} mutate={mutate} />}
+    {currentThread ? <TicketThreadView thread={currentThread} me={me} returnTo={location.pathname + location.search} busy={busy} error={error} readError={readError} text={text} onReload={load} onAction={act} onSend={send} onTextChange={setText}/>
+      : <section className="ticket-thread-loading"><h3>Chat con el jugador</h3>{readError || error ? <><p className="op-error" role="alert">{readError || error}</p><button className="btn sm" type="button" onClick={load}><RefreshCw size={14} aria-hidden="true" /> Reintentar lectura</button></> : <p className="muted" role="status">Cargando conversación…</p>}</section>}
+  </>;
 }
 
 const URL_TOKEN = /https?:\/\/[^\s<>"']+/giu;

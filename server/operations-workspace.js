@@ -3,6 +3,7 @@ import { db, tx } from './db.js';
 import { CTP_AUTH_ENABLED, HttpError } from './auth.js';
 import { getIntegrationStatus } from './operations.js';
 import { SECTION_IDS, STAFF_KINDS } from '../shared/access.js';
+import { INCIDENT_CATEGORIES } from '../shared/incident-categories.js';
 
 const can=(user,...sections)=>Boolean(user?.is_admin||sections.some(section=>user?.sections?.includes(section)));
 const CLOSED=['resolved','closed','closed_internal','rejected'];
@@ -22,8 +23,8 @@ const col=(key,alias='r')=>`json_extract(${alias}.data,'$.${key}')`;
 const incidentAssignee = (alias='r') => `COALESCE(${col('assignee_id',alias)},(SELECT id FROM users WHERE ctp_user_id=${col('assignee_ctp_id',alias)} LIMIT 1))`;
 const incidentUnassigned = (alias='r') => `(${incidentAssignee(alias)} IS NULL AND NULLIF(trim(${col('assigned_name',alias)}),'') IS NULL AND NULLIF(${col('assignee_ctp_id',alias)},'') IS NULL)`;
 const visible=alias=>`COALESCE(${col('in_feed',alias)},1)=1`;
-// Tickets lists only CTP tickets. Match disputes (Ranked, tournament, challenge) and internal match cases stay with their match.
-const ticketOnly=(alias='r')=>`${alias}.source='ctp' AND ${col('match_id',alias)} IS NULL`;
+const incidentCategory = `CASE WHEN r.source='manager' THEN 'internal'
+  WHEN ${col('kind')} IN ('challenge','ranked','tournament') THEN ${col('kind')} ELSE 'support' END`;
 const jsonProjection=(kind,alias='r')=>`json_object(${[...fields[kind],'source_version'].map(key=>`'${key}',${kind==='incident'&&key==='assignee_id'?incidentAssignee(alias):col(key,alias)}`).join(',')}${kind==='stat'?`, 'player_count',COALESCE(json_array_length(${alias}.data,'$.players'),0)`:''}) AS data`;
 const projection=(kind,alias='r')=>`${alias}.id,${jsonProjection(kind,alias)},${alias}.version,${alias}.source,${alias}.updated_at`;
 const unpack=row=>{const value={...JSON.parse(row.data),id:row.id,version:row.version,source:row.source,updated_at:row.updated_at};for(const key of ['confirmed','verified','pass_active','official','awaiting_staff'])if(key in value)value[key]=Boolean(value[key]);if(value.official&&value.status!=='revoked')value.status=Date.parse(value.ends_at)<=Date.now()?'expired':Date.parse(value.starts_at)>Date.now()?'scheduled':'active';return value;};
@@ -52,6 +53,9 @@ function parameters(query={}) {
   if((query.q||'').length>120||['match','case','club','review','resource_type','resource_id'].some(key=>(query[key]||'').length>160))throw new HttpError(400,'Filtro de operaciones demasiado largo.');
   if(query.week&&(!/^\d{4}-\d{2}-\d{2}$/.test(query.week)||!Number.isFinite(Date.parse(`${query.week}T12:00:00Z`))))throw new HttpError(400,'Semana no válida.');
   if(query.role&&!['all','referee','caster','producer'].includes(query.role))throw new HttpError(400,'Función no válida.');
+  if (view === 'incidencias' && query.category && !['all', ...INCIDENT_CATEGORIES].includes(query.category)) {
+    throw new HttpError(400, 'manager.tickets.invalidCategory');
+  }
   return {...query,view,page,matchPage,limit,...(view==='turnos'?{week:monday(query.week||madridDayFormatter.format(Date.now()))}:{})};
 }
 function permittedKinds(user) {
@@ -70,6 +74,14 @@ function recordPage(kind,where=[],args=[],{page=0,limit=30,order=''}={}) {
   return{items,total,page,limit,has_more:(page+1)*limit<total};
 }
 function search(where,args,query,expressions) {if(query){where.push(`ctp_contains(${expressions.join("||' '||")},?)=1`);args.push(query);}}
+function incidentOrder({ view, state, order }) {
+  const created = `ctp_time(${col('created_at')}) ${order === 'newest' ? 'DESC' : 'ASC'}`;
+  if (order === 'oldest' || order === 'newest') return created;
+  const activeFirst = view === 'incidencias' && (!state || state === 'all');
+  const priority = `CASE WHEN ${col('priority')}='urgent' THEN 0 ELSE 1 END`;
+  const closedLast = `CASE WHEN ${col('status')} IN (${CLOSED.map(status => `'${status}'`).join(',')}) THEN 1 ELSE 0 END`;
+  return [activeFirst && closedLast, priority, created].filter(Boolean).join(',');
+}
 function conditions(kind,p,user) {
   const where=[],args=[];
   if(kind==='match') {
@@ -85,9 +97,12 @@ function conditions(kind,p,user) {
     if(p.view==='turnos'&&p.coverage==='missing')where.push("NOT EXISTS(SELECT 1 FROM operation_assignments a WHERE a.match_id=r.id AND a.role='referee' AND a.status='confirmed')");
   }
   if(kind==='incident') {
-    const state=p.view==='overview'?'all':p.view==='incidencias'?(p.state||'active'):'active';
+    const state=p.view==='overview'?'all':p.view==='incidencias'?(p.state||'all'):'active';
     if(state!=='all'){where.push(`${col('status')} ${state==='resolved'?'IN':'NOT IN'} (${marks(CLOSED)})`);args.push(...CLOSED);}
-    if(p.view==='incidencias')where.push(ticketOnly());
+    if (p.view === 'incidencias' && p.category && p.category !== 'all') {
+      where.push(`(${incidentCategory})=?`);
+      args.push(p.category);
+    }
     if(p.bucket==='mine')where.push(`${incidentAssignee()}=?`),args.push(user.id);
     if(p.bucket==='unassigned')where.push(incidentUnassigned());
     if(p.bucket==='urgent')where.push(`${col('priority')}='urgent'`);
@@ -163,7 +178,7 @@ export function operationsWorkspace(user,query={}) {
     if(p.view==='estadisticas'&&p.match)include.delete('stats'); // Official per-match revisions use the existing detail query.
     for(const [collection,[kind,...sections]]of Object.entries(KINDS))if(include.has(collection)&&can(user,...sections)) {
       const filters=conditions(kind,p,user);
-      const order=kind==='match'?`COALESCE(${col('scheduled_at')},'9999')`:kind==='incident'?`${p.order==='priority'||!p.order?`CASE WHEN ${col('priority')}='urgent' THEN 0 ELSE 1 END,`:''}ctp_time(${col('created_at')}) ${p.order==='newest'?'DESC':'ASC'}`:'';
+      const order=kind==='match'?`COALESCE(${col('scheduled_at')},'9999')`:kind==='incident'?incidentOrder(p):'';
       const page=recordPage(kind,filters.where,filters.args,{page:collection===primary?p.page:p.view==='turnos'&&collection==='matches'?p.matchPage:0,limit:collection===primary?p.limit:30,order});
       data[collection]=page.items;data.pages[collection]={...page,items:undefined};
       if(p.view==='turnos'&&collection==='matches')data.match_page_ids=page.items.map(item=>item.id);
@@ -192,7 +207,15 @@ export function operationsWorkspace(user,query={}) {
     if(can(user,'operaciones','arbitraje','casters','realizacion','comunicaciones')&&matchIds.length){const existing=new Set(data.matches.map(item=>item.id));const related=db.prepare(`SELECT ${projection('match')} FROM operation_records r WHERE r.kind='match' AND ${visible('r')} AND r.id IN(${marks(matchIds)})`).all(...matchIds).map(unpack).filter(item=>!existing.has(item.id));if(primary==='matches')data.context_matches=related;else data.matches.push(...related);}
     if(can(user,'operaciones','casters','realizacion')&&['jornada','turnos','realizacion','partido'].includes(p.view)&&data.matches.length){const ids=data.matches.map(item=>item.id);data.production=db.prepare(`SELECT match_id,rundown_id,state,scene,note,version,updated_by,updated_at FROM operation_production WHERE match_id IN(${marks(ids)})`).all(...ids);}
     if(can(user,'operaciones','arbitraje','casters','realizacion')&&data.matches.length){const ids=data.matches.map(item=>item.id);data.coverage={};for(const row of db.prepare(`SELECT match_id,role,COUNT(1) assigned,SUM(CASE WHEN status='confirmed' THEN 1 ELSE 0 END) confirmed FROM operation_assignments WHERE match_id IN(${marks(ids)}) AND status IN('pending','assigned','confirmed') GROUP BY match_id,role`).all(...ids)){data.coverage[row.match_id]||={};data.coverage[row.match_id][row.role]={assigned:row.assigned,confirmed:row.confirmed};}}
-    if(can(user,'arbitraje')&&p.view==='incidencias')data.incident_counts=db.prepare(`SELECT COUNT(1) all_open,COALESCE(SUM(CASE WHEN ${incidentAssignee()}=? THEN 1 ELSE 0 END),0) mine,COALESCE(SUM(CASE WHEN ${incidentUnassigned()} THEN 1 ELSE 0 END),0) unassigned,COALESCE(SUM(CASE WHEN ${col('priority')}='urgent' THEN 1 ELSE 0 END),0) urgent FROM operation_records r WHERE r.kind='incident' AND ${visible('r')} AND ${ticketOnly()} AND ${col('status')} NOT IN(${marks(CLOSED)})`).get(user.id,...CLOSED);
+    if (can(user,'arbitraje') && p.view === 'incidencias') {
+      const category = p.category && p.category !== 'all' ? p.category : null;
+      data.incident_counts = db.prepare(`SELECT COUNT(1) all_open,
+        COALESCE(SUM(CASE WHEN ${incidentAssignee()}=? THEN 1 ELSE 0 END),0) mine,
+        COALESCE(SUM(CASE WHEN ${incidentUnassigned()} THEN 1 ELSE 0 END),0) unassigned,
+        COALESCE(SUM(CASE WHEN ${col('priority')}='urgent' THEN 1 ELSE 0 END),0) urgent
+        FROM operation_records r WHERE r.kind='incident' AND ${visible('r')} AND ${col('status')} NOT IN(${marks(CLOSED)})
+        ${category ? `AND (${incidentCategory})=?` : ''}`).get(user.id, ...CLOSED, ...(category ? [category] : []));
+    }
     if(p.view==='jornada'){
       data.summary={};
       if(can(user,'operaciones'))data.summary.uncovered_matches=db.prepare(`SELECT COUNT(1) total FROM operation_records r WHERE r.kind='match' AND ${visible('r')} AND COALESCE(${col('confirmed')},0)=0 AND COALESCE(${col('status')},'') NOT IN(${marks(DONE)}) AND NOT EXISTS(SELECT 1 FROM operation_assignments a WHERE a.match_id=r.id AND a.role='referee' AND a.status='confirmed')`).get(...DONE).total;

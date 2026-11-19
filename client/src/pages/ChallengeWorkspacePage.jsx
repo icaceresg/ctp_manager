@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, LoaderCircle, RefreshCw } from 'lucide-react';
-import { CHALLENGE_LIST_STATUSES } from '../../../shared/challenges.js';
+import { CHALLENGE_LIST_STATUSES, isOpenChallengeResultTicket } from '../../../shared/challenges.js';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { getIntlLocale, translate } from '../i18n/runtime.js';
@@ -52,6 +52,12 @@ function MatchTicketsLink({ row, className }) {
   </Link>;
 }
 
+function MatchResultLink({ row, className }) {
+  return <Link className={className} to={challengeLink('/retos/tickets', { challenge_id: row.id, focus: 'result' })}>
+    {label('result.resolve')}
+  </Link>;
+}
+
 function MatchDetail({ row }) {
   return <>
     <div className="op-section-title"><div><h2>{fixture(row)}</h2><p>{row.id}</p></div>
@@ -62,6 +68,14 @@ function MatchDetail({ row }) {
       <div className="op-metric"><span>{label('scheduled')}</span><b>{competitionDateTime(row.scheduled_slot)}</b></div>
       <div className="op-metric"><span>{label('season')}</span><b>{number(row.season)}</b></div>
       <div className="op-metric"><span>{label('winner')}</span><b>{winningClub(row)}</b></div>
+    </div>
+    <div className="op-section-title">
+      <div>
+        <h3>{label('result.heading')}</h3>
+        <p>{row.status === 'en_disputa' ? label('result.pickTicket')
+          : row.status === 'finalizado' ? label('result.finalized') : label('result.waitForDispute')}</p>
+      </div>
+      {row.status === 'en_disputa' && <MatchResultLink row={row} className="btn primary" />}
     </div>
   </>;
 }
@@ -76,17 +90,22 @@ function MatchTable({ rows }) {
       { key: 'scheduled_slot', title: label('scheduled'), render: row => competitionDateTime(row.scheduled_slot) },
       { key: 'season', title: label('season'), render: row => number(row.season) },
       { key: 'status', title: label('status'), render: row => <Badge value={badgeTone[row.status]}>{statusLabel('matches', row.status)}</Badge> },
-      { key: 'winner', title: label('winner'), render: winningClub },
+      { key: 'winner', title: label('result.heading'), render: row => row.status === 'en_disputa' ? <MatchResultLink row={row} /> : winningClub(row) },
       { key: 'tickets', title: label('tickets'), render: row => <MatchTicketsLink row={row} /> },
     ]} />;
 }
 
-function TicketTable({ rows }) {
+function TicketTable({ rows, resolvingResult }) {
   return <DataTable rows={rows} empty={label('tickets.empty')} emptyDetail="" regionLabel={label('tickets')}
     columns={[
-      { key: 'code', title: label('ticket'), render: row => <Link to={challengeLink('/operaciones/incidencias', { case: row.id, state: 'all' })}>
-        {row.code} <ArrowRight size={14} aria-hidden="true" />
-      </Link> },
+      { key: 'code', title: label('ticket'), render: row => {
+        const canOpenResolution = resolvingResult && isOpenChallengeResultTicket(row);
+        const ticket = { case: row.id, state: 'all' };
+        if (canOpenResolution) ticket.focus = 'result';
+        return <Link to={challengeLink('/operaciones/incidencias', ticket)}>
+          {row.code} {canOpenResolution && <small>{label('result.resolve')}</small>} <ArrowRight size={14} aria-hidden="true" />
+        </Link>;
+      } },
       { key: 'challenge_id', title: label('match'), render: row => <Link to={challengeLink('/retos', { challenge_id: row.challenge_id })}>
         {matchReference(row.challenge_id)}
       </Link> },
@@ -127,7 +146,7 @@ function ChallengeStatistics({ data }) {
   </>;
 }
 
-function ChallengeData({ tab, query, status, challengeId, cursor, onStatus, onPage }) {
+function ChallengeData({ tab, query, status, challengeId, cursor, resolvingResult, onStatus, onPage }) {
   const [attempt, setAttempt] = useState(0);
   const [read, setRead] = useState({ attempt: -1, data: null, error: null });
   const { resource } = tab;
@@ -170,7 +189,11 @@ function ChallengeData({ tab, query, status, challengeId, cursor, onStatus, onPa
       : resource === 'statistics' ? <ChallengeStatistics data={data} />
       : <>
         {resource === 'matches' && (exactMatch && data.rows.length ? <MatchDetail row={data.rows[0]} /> : <MatchTable rows={data.rows} />)}
-        {resource === 'tickets' && <TicketTable rows={data.rows} />}
+        {resource === 'tickets' && <>
+          {resolvingResult && <p className="op-notice">{data.rows.some(isOpenChallengeResultTicket)
+            ? label('result.pickTicket') : label('result.noDisputeTickets')}</p>}
+          <TicketTable rows={data.rows} resolvingResult={resolvingResult} />
+        </>}
         {(cursor || data.next_cursor) && <nav className="op-actions" aria-label={label('pagination')}>
           {cursor && <button type="button" className="btn" onClick={() => onPage('')}>{label('firstPage')}</button>}
           {data.next_cursor && <button type="button" className="btn" onClick={() => onPage(data.next_cursor)}>{label('nextPage')}</button>}
@@ -189,6 +212,7 @@ export default function ChallengeWorkspacePage() {
   const statuses = CHALLENGE_LIST_STATUSES[tab.resource];
   const challengeId = statuses ? managerUserId(params.get('challenge_id')) : null;
   const exactMatch = tab.resource === 'matches' && challengeId;
+  const resolvingResult = tab.resource === 'tickets' && Boolean(challengeId) && params.get('focus') === 'result';
   const status = !exactMatch && statuses?.includes(params.get('status')) ? params.get('status') : '';
   const cursor = !exactMatch && statuses ? params.get('cursor') || '' : '';
   const filters = new URLSearchParams();
@@ -197,17 +221,22 @@ export default function ChallengeWorkspacePage() {
   if (cursor) filters.set('cursor', cursor);
   const query = filters.toString();
 
+  function updateFilters() {
+    if (resolvingResult) filters.set('focus', 'result');
+    setParams(filters);
+  }
+
   function onStatus(value) {
     filters.delete('cursor');
     if (value) filters.set('status', value);
     else filters.delete('status');
-    setParams(filters);
+    updateFilters();
   }
 
   function onPage(value) {
     if (value) filters.set('cursor', value);
     else filters.delete('cursor');
-    setParams(filters);
+    updateFilters();
   }
 
   return <div className="page wide op-page">
@@ -216,6 +245,6 @@ export default function ChallengeWorkspacePage() {
       {tabs.map(item => <NavLink key={item.resource} to={item.path} end>{label(item.resource)}</NavLink>)}
     </nav>
     <ChallengeData key={JSON.stringify([me.id, me.ctp_user_id, me.ctp_role, tab.resource, query])}
-      tab={tab} query={query} status={status} challengeId={challengeId} cursor={cursor} onStatus={onStatus} onPage={onPage} />
+      tab={tab} query={query} status={status} challengeId={challengeId} cursor={cursor} resolvingResult={resolvingResult} onStatus={onStatus} onPage={onPage} />
   </div>;
 }

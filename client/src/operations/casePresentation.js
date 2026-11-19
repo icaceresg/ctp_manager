@@ -10,9 +10,10 @@ const TYPES = Object.freeze({
 const clean = value => typeof value === 'string' ? value.trim() : '';
 const codedTitle = record => /^(CTP-[A-Z0-9-]+)\s*[·:]\s*(.+)$/i.exec(clean(record?.title));
 const typeKeys = record => [record?.type, record?.ticket_type, codedTitle(record)?.[2]].map(clean);
+export const caseTypeKey = record => typeKeys(record).find(key => Object.hasOwn(TYPES, key));
 
 export function caseTypeLabel(record) {
-  const known = typeKeys(record).find(key => Object.hasOwn(TYPES, key));
+  const known = caseTypeKey(record);
   return known ? TYPES[known] : 'Ticket';
 }
 export function caseTitle(record) {

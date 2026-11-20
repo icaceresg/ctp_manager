@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, LoaderCircle, RefreshCw } from 'lucide-react';
-import { CHALLENGE_LIST_STATUSES, isOpenChallengeResultTicket } from '../../../shared/challenges.js';
+import { CHALLENGE_LIST_STATUSES, isOpenChallengeTicket, isStaffResolvableChallenge } from '../../../shared/challenges.js';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { getIntlLocale, translate } from '../i18n/runtime.js';
 import { managerUserId } from '../navigation.js';
 import { competitionDateTime } from '../operations/competitionTime.js';
 import { Badge, DataTable, Field } from '../operations/ui.jsx';
+import { ChallengeResultDialog } from '../operations/LinkedChallengeTicket.jsx';
 import '../operations/operations.css';
 
 const tabs = [
@@ -53,12 +54,17 @@ function MatchTicketsLink({ row, className }) {
 }
 
 function MatchResultLink({ row, className }) {
-  return <Link className={className} to={challengeLink('/retos/tickets', { challenge_id: row.id, focus: 'result' })}>
+  return <Link className={className} to={challengeLink('/retos', { challenge_id: row.id })}>
     {label('result.resolve')}
   </Link>;
 }
 
-function MatchDetail({ row }) {
+const canDecide = row => isStaffResolvableChallenge(row) && Number.isSafeInteger(row.version);
+
+function MatchDetail({ row, onChanged }) {
+  const [dialog, setDialog] = useState(false);
+  const [resolved, setResolved] = useState(null);
+  const decidable = !resolved && canDecide(row);
   return <>
     <div className="op-section-title"><div><h2>{fixture(row)}</h2><p>{row.id}</p></div>
       <MatchTicketsLink row={row} className="btn" />
@@ -72,11 +78,14 @@ function MatchDetail({ row }) {
     <div className="op-section-title">
       <div>
         <h3>{label('result.heading')}</h3>
-        <p>{row.status === 'en_disputa' ? label('result.pickTicket')
-          : row.status === 'finalizado' ? label('result.finalized') : label('result.waitForDispute')}</p>
+        <p>{decidable ? label('result.staffCanDecide')
+          : row.status === 'finalizado' ? label('result.finalized') : label('result.notDecidable')}</p>
       </div>
-      {row.status === 'en_disputa' && <MatchResultLink row={row} className="btn primary" />}
+      {decidable && <button type="button" className="btn primary" onClick={() => setDialog(true)}>{label('result.resolve')}</button>}
     </div>
+    {resolved && <p className="op-notice" role="status">{label(resolved.status === 'cancelado' ? 'result.cancelledDone' : 'result.awardedDone')}</p>}
+    {dialog && decidable && <ChallengeResultDialog match={row} onClose={() => setDialog(false)}
+      onResolved={result => { setResolved(result); onChanged?.(); }} />}
   </>;
 }
 
@@ -90,7 +99,7 @@ function MatchTable({ rows }) {
       { key: 'scheduled_slot', title: label('scheduled'), render: row => competitionDateTime(row.scheduled_slot) },
       { key: 'season', title: label('season'), render: row => number(row.season) },
       { key: 'status', title: label('status'), render: row => <Badge value={badgeTone[row.status]}>{statusLabel('matches', row.status)}</Badge> },
-      { key: 'winner', title: label('result.heading'), render: row => row.status === 'en_disputa' ? <MatchResultLink row={row} /> : winningClub(row) },
+      { key: 'winner', title: label('result.heading'), render: row => canDecide(row) ? <MatchResultLink row={row} /> : winningClub(row) },
       { key: 'tickets', title: label('tickets'), render: row => <MatchTicketsLink row={row} /> },
     ]} />;
 }
@@ -99,7 +108,7 @@ function TicketTable({ rows, resolvingResult }) {
   return <DataTable rows={rows} empty={label('tickets.empty')} emptyDetail="" regionLabel={label('tickets')}
     columns={[
       { key: 'code', title: label('ticket'), render: row => {
-        const canOpenResolution = resolvingResult && isOpenChallengeResultTicket(row);
+        const canOpenResolution = resolvingResult && isOpenChallengeTicket(row);
         const ticket = { case: row.id, state: 'all' };
         if (canOpenResolution) ticket.focus = 'result';
         return <Link to={challengeLink('/operaciones/incidencias', ticket)}>
@@ -188,9 +197,9 @@ function ChallengeData({ tab, query, status, challengeId, cursor, resolvingResul
       : error ? <p className="op-error" role="alert">{label(error.status === 403 ? 'forbidden' : 'loadError')}</p>
       : resource === 'statistics' ? <ChallengeStatistics data={data} />
       : <>
-        {resource === 'matches' && (exactMatch && data.rows.length ? <MatchDetail row={data.rows[0]} /> : <MatchTable rows={data.rows} />)}
+        {resource === 'matches' && (exactMatch && data.rows.length ? <MatchDetail row={data.rows[0]} onChanged={() => setAttempt(value => value + 1)} /> : <MatchTable rows={data.rows} />)}
         {resource === 'tickets' && <>
-          {resolvingResult && <p className="op-notice">{data.rows.some(isOpenChallengeResultTicket)
+          {resolvingResult && <p className="op-notice">{data.rows.some(isOpenChallengeTicket)
             ? label('result.pickTicket') : label('result.noDisputeTickets')}</p>}
           <TicketTable rows={data.rows} resolvingResult={resolvingResult} />
         </>}

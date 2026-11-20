@@ -76,25 +76,36 @@ test('official challenge tickets open their exact challenge in the new workspace
   assert.match(html, /Chat con el jugador/);
 });
 
-test('linked challenge results use the real dispute, grant and teams, while technical tickets keep the normal proposal', () => {
+test('any open ticket of a decidable challenge resolves it at once with the real teams', () => {
   const incident = { id: ticketId, source: 'ctp', kind: 'challenge', match_id: matchId,
     title: 'CTP-ABC · disputa_resultado', status: 'open', priority: 'normal', created_at: '2026-09-20T10:00:00Z', version: 1 };
-  const current = { can_change_status: true, ticket: { id: ticketId, challenge_id: matchId, type: 'disputa_resultado', status: 'abierto' } };
-  const match = { id: matchId, status: 'en_disputa', poster_team: { id: authorId, name: 'Club A' }, accepter_team: { id: staffId, name: 'Club B' } };
-  assert.equal(challengeTickets.canProposeChallengeResult(incident, current, match), true);
+  const current = { can_change_status: true, ticket: { id: ticketId, challenge_id: matchId, type: 'disputa_resultado', status: 'abierto', manager_version: 3 } };
+  const match = { id: matchId, status: 'en_disputa', scheduled_slot: '2026-09-20T10:00:00Z', version: 7,
+    poster_team: { id: authorId, name: 'Club A' }, accepter_team: { id: staffId, name: 'Club B' } };
+  const now = Date.parse('2026-09-20T12:00:00Z');
+  for (const [ticket, challenge] of [
+    [current, match],
+    [{ ...current, ticket: { ...current.ticket, type: 'tecnico' } }, match],
+    [current, { ...match, status: 'pendiente_resultado' }],
+    [current, { ...match, status: 'aceptado' }],
+  ]) assert.equal(challengeTickets.canProposeChallengeResult(incident, ticket, challenge, now), true);
   for (const [item, ticket, challenge] of [
     [incident, { ...current, can_change_status: false }, match],
-    [incident, { ...current, ticket: { ...current.ticket, type: 'tecnico' } }, match],
     [incident, { ...current, ticket: { ...current.ticket, status: 'resuelto' } }, match],
+    [incident, { ...current, ticket: { ...current.ticket, manager_version: undefined } }, match],
     [{ ...incident, status: 'resolution_pending' }, current, match],
     [incident, current, { ...match, id: authorId }],
     [incident, current, { ...match, status: 'finalizado' }],
-  ]) assert.equal(challengeTickets.canProposeChallengeResult(item, ticket, challenge), false);
-  const html = renderToStaticMarkup(createElement(challengeTickets.ChallengeResultDialog, { incident, match, mutate: noop, onClose: noop }));
+    [incident, current, { ...match, status: 'aceptado', scheduled_slot: '2026-09-20T11:50:00Z' }],
+    [incident, current, { ...match, accepter_team: null }],
+  ]) assert.equal(challengeTickets.canProposeChallengeResult(item, ticket, challenge, now), false);
+  const html = renderToStaticMarkup(createElement(challengeTickets.ChallengeResultDialog, { match, ticket: current.ticket, onClose: noop }));
   assert.match(html, /Resolver resultado/);
   assert.match(html, new RegExp(`<option value="${authorId}">Club A</option>`));
   assert.match(html, new RegExp(`<option value="${staffId}">Club B</option>`));
-  assert.match(html, /Un administrador debe enviar la propuesta/);
+  assert.match(html, /CTP aplica la decisión al momento/);
+  assert.match(html, /Aplicar decisión/);
+  assert.doesNotMatch(html, /propuesta/i);
   assert.doesNotMatch(renderIncident(incident), /Preparar resolución/);
   assert.match(renderIncident({ ...incident, title: 'CTP-DEF · tecnico' }), /Preparar resolución/);
 });

@@ -45,6 +45,8 @@ function match(row) {
     scheduled_slot: date(row.scheduled_slot), season: count(row.season),
     poster_team: team(row.poster_team), accepter_team: row.accepter_team === null ? null : team(row.accepter_team),
     winner_team_id: row.winner_team_id === null ? null : id(row.winner_team_id), ticket_count: count(row.ticket_count),
+    // Present from CTP migration 443; older backends omit it and direct resolution stays hidden.
+    version: row.version === undefined || row.version === null ? null : Number.isSafeInteger(row.version) && row.version > 0 ? row.version : invalidResponse(),
   };
 }
 

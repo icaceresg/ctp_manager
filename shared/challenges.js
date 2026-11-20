@@ -25,3 +25,22 @@ export function isOpenChallengeResultTicket(ticket) {
   return ['abierto', 'en_revision', 'esperando_respuesta'].includes(ticket.status)
     && isChallengeResultTicketType(ticket.type);
 }
+
+export const OPEN_CHALLENGE_TICKET_STATUSES = Object.freeze(['abierto', 'en_revision', 'esperando_respuesta']);
+
+export function isOpenChallengeTicket(ticket) {
+  return OPEN_CHALLENGE_TICKET_STATUSES.includes(ticket?.status);
+}
+
+/** Results open 25 minutes after the slot starts, as in CTP. */
+export const CHALLENGE_RESULT_DELAY_MS = 25 * 60_000;
+
+/**
+ * Staff may decide a challenge that is disputed, waiting for the rival's
+ * confirmation, or accepted and already played (CTP migration 443).
+ */
+export function isStaffResolvableChallenge(match, now = Date.now()) {
+  if (!match?.accepter_team?.id) return false;
+  if (match.status === 'en_disputa' || match.status === 'pendiente_resultado') return true;
+  return match.status === 'aceptado' && now >= Date.parse(match.scheduled_slot) + CHALLENGE_RESULT_DELAY_MS;
+}

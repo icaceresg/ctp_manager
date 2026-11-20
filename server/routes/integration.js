@@ -6,7 +6,7 @@ import { getCommand, prepareGuardCommand, prepareRankedCommand, prepareManualClu
 import { PRO_VIEW_ACTION } from '../pro-view-contract.js';
 import { GUARD_ACTIONS, guardReadOptions } from '../guard-contract.js';
 import { HttpError } from '../auth.js';
-import { getChallengeWorkspace, getPlayerWorkspace } from '../integration.js';
+import { getChallengeWorkspace, getPlayerWorkspace, resolveChallenge } from '../integration.js';
 import { getCaseData,getOfficialIncident,getTicketThread,ticketAction,getDisciplineOverview,getDisciplineUsers,getDisciplineHistory,writeDiscipline } from '../integration.js';
 import { prepareCaseCommand } from '../operations.js';
 import { tournamentArbitrationService, tournamentLiveMatchService, tournamentLiveService, tournamentRegistrationRoster, tournamentScenarioService } from '../integration.js';
@@ -33,6 +33,10 @@ integrationRouter.get('/operations/matches/:id',requireAuth,allow('operaciones',
 integrationRouter.get('/operations/cases',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getCaseData(req.user,req.query)));
 integrationRouter.get('/operations/challenges/:resource', requireAuth, allow('arbitraje'), async (req, res) => {
   res.json(await getChallengeWorkspace(req.user, req.params.resource, req.query));
+});
+// Staff challenge decisions apply at once in CTP for admins and referees.
+integrationRouter.post('/operations/challenges/:id/resolve', requireAuth, allow('arbitraje'), async (req, res) => {
+  res.json(await resolveChallenge(req.user, req.params.id, req.body || {}));
 });
 integrationRouter.get('/operations/incidents/:id',requireAuth,allow('arbitraje'),async(req,res)=>res.json(await getOfficialIncident(req.user,req.params.id)));
 // Live tournament corrections apply at once in CTP for admins and referees.

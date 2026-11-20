@@ -32,6 +32,7 @@ import {
 import { collectRegisteredPlayers } from './ruleta-contract.js';
 import {createPlayerWorkspaceReader} from './player-workspace-client.js';
 import { createChallengeWorkspaceReader } from './challenge-workspace-contract.js';
+import { challengeResolutionRequest, challengeResolutionResponse } from './challenge-resolution-contract.js';
 import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
 import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {createRankedEventClient} from './ranked-event-client.js';
@@ -958,3 +959,21 @@ export function startOperationsSync() {
 // Read-only player context shares the authenticated caller and the HMAC bridge.
 export const getPlayerWorkspace=createPlayerWorkspaceReader({request,actorFor:user=>getOperatorIdentity(user.id)});
 export const getChallengeWorkspace = createChallengeWorkspaceReader({ request, actorFor: user => getOperatorIdentity(user.id) });
+
+/**
+ * Staff decides a challenge (award or cancel) from one of its tickets or from the
+ * challenge workspace. CTP applies it at once and closes the challenge's open
+ * tickets; there is no pending proposal to send afterwards.
+ */
+export async function resolveChallenge(user, challengeId, body) {
+  if (!canReferee(user)) throw integrationError(403, 'manager.challenges.resolution.forbidden');
+  if (!config.writes) throw integrationError(403, 'manager.challenges.resolution.writesDisabled');
+  const command = challengeResolutionRequest(challengeId, body);
+  const result = challengeResolutionResponse(await request({
+    action: 'command', actor_id: getOperatorIdentity(user.id), command_id: command.command_id,
+    type: 'incident.resolve', target_id: command.target_id, expected_version: command.expected_version, payload: command.payload,
+  }), command);
+  auditDirectDecision('challenge', command.challenge_id, `challenge.${command.decision}`, user,
+    { command_id: command.command_id, target_id: command.target_id, status: result.status });
+  return result;
+}

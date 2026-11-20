@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { isOpenChallengeResultTicket } from '../../../shared/challenges.js';
+import { isOpenChallengeTicket, isStaffResolvableChallenge } from '../../../shared/challenges.js';
 import { api } from '../api.js';
 import { translate } from '../i18n/runtime.js';
 import { competitionDateTime } from './competitionTime.js';
@@ -10,27 +10,44 @@ const label = key => translate(`manager.tickets.challenge.${key}`);
 const teamName = (team, empty = 'missingOpponent') => team?.name || translate(`manager.challenges.${team ? 'unknownClub' : empty}`);
 const lockedCases = ['resolved', 'rejected', 'closed', 'closed_internal', 'resolution_pending'];
 
-export function canProposeChallengeResult(incident, thread, match) {
+/** Any open ticket of a challenge the staff may decide (disputed, unconfirmed or played). */
+export function canProposeChallengeResult(incident, thread, match, now = Date.now()) {
   return Boolean(incident.source === 'ctp' && thread?.can_change_status && thread.ticket.id === incident.id && thread.ticket.challenge_id
-    && match?.id === thread.ticket.challenge_id && match.status === 'en_disputa'
-    && !lockedCases.includes(incident.status) && isOpenChallengeResultTicket(thread.ticket));
+    && match?.id === thread.ticket.challenge_id && isStaffResolvableChallenge(match, now)
+    && !lockedCases.includes(incident.status) && isOpenChallengeTicket(thread.ticket)
+    && Number.isSafeInteger(thread.ticket.manager_version));
 }
 
-export function ChallengeResultDialog({ incident, match, mutate, onClose, onQueued }) {
+function newCommandId() {
+  return globalThis.crypto?.randomUUID?.() ?? '';
+}
+
+/**
+ * Award or cancel a challenge. CTP applies the decision at once and closes the
+ * challenge's open tickets. Without a ticket, the challenge itself is the target.
+ */
+export function ChallengeResultDialog({ match, ticket = null, onClose, onResolved }) {
   const teams = [match.poster_team, match.accepter_team].filter(team => team?.id && team.name);
   const [decision, setDecision] = useState(teams.length ? 'award' : 'cancel');
+  // One id per dialog: a retried submit after a lost answer is not applied twice.
+  const [commandId] = useState(newCommandId);
   async function submit(body) {
-    const payload = { decision, resolution: body.resolution, expected_version: incident.version };
+    const payload = {
+      command_id: commandId, decision, resolution: body.resolution,
+      expected_version: ticket ? ticket.manager_version : match.version,
+    };
+    if (ticket) payload.ticket_id = ticket.id;
     if (decision === 'award') payload.winner_team_id = body.winner_team_id;
     try {
-      await mutate('post', `/incidents/${encodeURIComponent(incident.id)}/resolve`, payload, label('proposalQueued'));
-      onQueued();
+      const result = await api.post(`/operations/challenges/${encodeURIComponent(match.id)}/resolve`, payload);
+      onResolved?.(result);
     } catch (problem) {
-      throw new Error(label(problem.status === 409 ? 'proposalConflict' : 'proposalFailed'));
+      throw new Error(label(problem.status === 409 ? 'resolutionConflict'
+        : problem.status === 403 ? 'resolutionForbidden' : 'resolutionFailed'));
     }
   }
-  return <FormDialog title={label('resolve')} submitLabel={label('prepareProposal')} cancelLabel={label('cancel')}
-    closeLabel={label('close')} help={label('proposalHelp')} onClose={onClose} submit={submit}>
+  return <FormDialog title={label('resolve')} submitLabel={label('applyDecision')} cancelLabel={label('cancel')}
+    closeLabel={label('close')} help={label('decisionHelp')} danger={decision === 'cancel'} onClose={onClose} submit={submit}>
     <Field label={label('decision')}><select value={decision} onChange={event => setDecision(event.target.value)}>
       {teams.length > 0 && <option value="award">{label('award')}</option>}
       <option value="cancel">{label('cancelMatch')}</option>
@@ -41,6 +58,7 @@ export function ChallengeResultDialog({ incident, match, mutate, onClose, onQueu
         {teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
       </select>
     </Field>}
+    <p className="op-help">{label(decision === 'award' ? 'awardEffect' : 'cancelEffect')}</p>
     <Field label={label('reason')}><textarea name="resolution" required minLength={10} maxLength={2000} rows={5} /></Field>
   </FormDialog>;
 }
@@ -49,7 +67,7 @@ export function LinkedChallengeTicket({ challengeId, incident, thread, focus, mu
   const [read, setRead] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [dialog, setDialog] = useState(false);
-  const [queuedVersion, setQueuedVersion] = useState(null);
+  const [resolved, setResolved] = useState(null);
   const panel = useRef(null);
   const query = new URLSearchParams({ challenge_id: challengeId });
   useEffect(() => {
@@ -69,7 +87,7 @@ export function LinkedChallengeTicket({ challengeId, incident, thread, focus, mu
     panel.current?.scrollIntoView({ block: 'nearest' });
   }, [focus, match]);
 
-  const canResolve = queuedVersion !== incident.version && typeof mutate === 'function' && canProposeChallengeResult(incident, thread, match);
+  const canResolve = !resolved && typeof mutate === 'function' && canProposeChallengeResult(incident, thread, match);
   const winner = match?.winner_team_id && [match.poster_team, match.accepter_team].find(team => team?.id === match.winner_team_id);
   return <section className="op-card" ref={panel} tabIndex={-1} aria-labelledby="ticket-challenge-heading">
     <div className="op-section-title">
@@ -82,6 +100,7 @@ export function LinkedChallengeTicket({ challengeId, incident, thread, focus, mu
         {canResolve && <button type="button" className="btn primary sm" onClick={() => setDialog(true)}>{label('resolve')}</button>}
       </div>
     </div>
+    {resolved && <p className="op-notice" role="status">{label(resolved.status === 'cancelado' ? 'cancelledDone' : 'awardedDone')}</p>}
     {!read && <p className="muted" role="status">{label('loading')}</p>}
     {read?.failed && <div className="op-actions"><p role="alert">{label('unavailable')}</p>
       <button type="button" className="btn sm" onClick={() => { setRead(null); setAttempt(value => value + 1); }}>{label('retry')}</button>
@@ -92,7 +111,8 @@ export function LinkedChallengeTicket({ challengeId, incident, thread, focus, mu
       <div><dt>{translate('manager.challenges.scheduled')}</dt><dd><time dateTime={match.scheduled_slot}>{competitionDateTime(match.scheduled_slot)}</time></dd></div>
       {match.winner_team_id && <div><dt>{translate('manager.challenges.winner')}</dt><dd>{teamName(winner, 'unknownClub')}</dd></div>}
     </dl>}
-    {dialog && canResolve && <ChallengeResultDialog incident={incident} match={match} mutate={mutate}
-      onClose={() => setDialog(false)} onQueued={() => setQueuedVersion(incident.version)} />}
+    {dialog && canResolve && <ChallengeResultDialog match={match} ticket={thread.ticket}
+      onClose={() => setDialog(false)}
+      onResolved={result => { setResolved(result); setRead(null); setAttempt(value => value + 1); }} />}
   </section>;
 }

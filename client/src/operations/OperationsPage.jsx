@@ -92,8 +92,11 @@ export function OperationsPage() {
   if (!matchId && view !== 'integracion' && !tabs.some((t) => t.id === view)) return <Navigate to={`/operaciones/${tabs[0]?.id || 'jornada'}`} replace />;
   if (view === 'integracion' && !me.is_admin) return <Navigate to="/operaciones/jornada" replace />;
   const connection = data?.connection || {};
-  const lastSync = connection.last_sync_at || connection.last_success_at;
-  const stale = !connection.configured || Boolean(connection.last_error) || !lastSync || Date.now() - new Date(lastSync).getTime() > 120000;
+  const usesIncidentClock = connection.snapshot_on_demand && !matchId
+    && ['incidencias', 'torneos', 'historico', 'arbitraje', 'sanciones'].includes(view);
+  const lastSync = usesIncidentClock ? connection.last_incident_sync_at : connection.last_sync_at || connection.last_success_at;
+  const syncError = usesIncidentClock ? null : connection.last_error;
+  const stale = !connection.configured || Boolean(syncError) || !lastSync || Date.now() - new Date(lastSync).getTime() > 120000;
   const currentTitle = matchId ? 'Ficha de partido' : view === 'integracion' ? 'Conexión CTP' : view === 'jornada' ? 'Inicio' : tabs.find((tab) => tab.id === view)?.title || 'Mi jornada';
   const props = { data, mutate, reload, can, me };
   return <div className="page wide op-page">
@@ -107,7 +110,7 @@ export function OperationsPage() {
         {(me.is_admin || can('operaciones')) && <button className="btn" onClick={sync} disabled={busy || loading || !connection.configured}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Actualizar</button>}
       </div>
     </header>
-    {connectionOpen && <Modal title="Estado de CTP" onClose={() => setConnectionOpen(false)}><div className="op-connection-detail"><p><strong>Última lectura:</strong> {lastSync ? dateTime(lastSync) : 'Aún sin sincronizar'}</p><p><strong>Estado:</strong> {!connection.configured ? 'Conexión pendiente' : connection.last_error ? `Error: ${connection.last_error}` : stale ? 'Datos desactualizados' : 'Datos actualizados'}</p><p><strong>Cambios oficiales:</strong> {connection.write_enabled ? 'Envío manual habilitado' : 'Envío desactivado'}</p>{connection.local_test_mode && <p><strong>Entorno:</strong> QA local. Esta instancia no está conectada a Supabase PRE.</p>}{me.is_admin && <Link className="btn" onClick={() => setConnectionOpen(false)} to="/operaciones/integracion"><Settings2 size={16} /> Configurar conexión</Link>}</div></Modal>}
+    {connectionOpen && <Modal title="Estado de CTP" onClose={() => setConnectionOpen(false)}><div className="op-connection-detail"><p><strong>Última lectura:</strong> {lastSync ? dateTime(lastSync) : 'Aún sin sincronizar'}</p><p><strong>Estado:</strong> {!connection.configured ? 'Conexión pendiente' : syncError ? `Error: ${syncError}` : stale ? 'Datos desactualizados' : 'Datos actualizados'}</p><p><strong>Cambios oficiales:</strong> {connection.write_enabled ? 'Envío manual habilitado' : 'Envío desactivado'}</p>{connection.local_test_mode && <p><strong>Entorno:</strong> QA local. Esta instancia no está conectada a Supabase PRE.</p>}{me.is_admin && <Link className="btn" onClick={() => setConnectionOpen(false)} to="/operaciones/integracion"><Settings2 size={16} /> Configurar conexión</Link>}</div></Modal>}
     {connection.possibly_truncated && <p className="op-notice">CTP ha devuelto una consulta parcial. Puede haber más registros fuera de esta selección; los totales corresponden solo a los datos recibidos.</p>}
 
     {error && <div className="op-error" role="alert"><CircleAlert size={18} /><span>{error === 'manager.tickets.invalidCategory' ? translate(error) : error}{data ? ' Se conserva la última consulta.' : ''}</span><button className="btn" onClick={()=>params.has('op_page')||params.has('op_match_page')?setParams(workspaceFirstPageParams,{replace:true}):reload()}>{params.has('op_page')||params.has('op_match_page')?'Volver a la primera página':'Reintentar'}</button></div>}

@@ -157,11 +157,46 @@ function commandPage(user,p,focusedId) {
   });return{items,total,page,limit,has_more:(page+1)*limit<total};
 }
 
-export function operationsWorkspace(user,query={}) {
+function workspaceParameters(user, query) {
   if(!user?.id)throw new HttpError(401,'Necesitas iniciar sesión.');
   if(!can(user,'operaciones','arbitraje','casters','realizacion','clubes','comunicaciones'))throw new HttpError(403,'No tienes permiso para esta operación.');
-  const p=parameters(query),primary=VIEWS[p.view];
+  const p=parameters(query);
   if(['administration','integracion'].includes(p.view)&&!user.is_admin)throw new HttpError(403,'Solo administración puede acceder a esta vista.');
+  return p;
+}
+
+function workspaceCollections(p) {
+  const include=new Set([VIEWS[p.view]]);
+  if(p.view==='overview')for(const key of Object.keys(KINDS))include.add(key);
+  if(p.view==='jornada')for(const key of ['incidents','stats','clubs','deliveries'])include.add(key);
+  if(p.view==='disciplina')include.add('incidents');
+  if(['turnos','partido','realizacion','estadisticas','incidencias'].includes(p.view))include.add('matches');
+  if(p.view==='estadisticas'&&p.match)include.delete('stats'); // Official per-match revisions use the existing detail query.
+  return include;
+}
+
+function needsOperationsSnapshot(user, p, include) {
+  // Preserve the revision of subsequent pages. The inbox has its own feed;
+  // the match projection is useful when a referee opens a specific case.
+  if (p.page || p.matchPage || (p.view === 'incidencias' && (!p.case || !can(user, 'arbitraje')))) return false;
+  if (p.view === 'decisiones') return !p.resource_type || permittedKinds(user).includes(p.resource_type);
+  return [...include].some(key => key !== 'incidents' && KINDS[key] && can(user, ...KINDS[key].slice(1)));
+}
+
+export function operationsWorkspace(user, query = {}) {
+  const p = workspaceParameters(user, query);
+  return readWorkspace(user, p, workspaceCollections(p));
+}
+
+export async function loadOperationsWorkspace(user, query, refreshSnapshot) {
+  const p = workspaceParameters(user, query);
+  const include = workspaceCollections(p);
+  if (needsOperationsSnapshot(user, p, include)) await refreshSnapshot();
+  return readWorkspace(user, p, include);
+}
+
+function readWorkspace(user, p, include) {
+  const primary=VIEWS[p.view];
   return tx(()=>{
     const revision=createHash('sha256').update(JSON.stringify([
       db.prepare('SELECT COUNT(1) n,COALESCE(SUM(version),0) v FROM operation_records').get(),
@@ -170,12 +205,6 @@ export function operationsWorkspace(user,query={}) {
     ])).digest('hex');
     if((p.page>0||p.matchPage>0)&&p.revision&&p.revision!==revision)throw new HttpError(409,'Los datos han cambiado durante la consulta. Vuelve a la primera página para continuar.');
     const data={matches:[],context_matches:[],incidents:[],assignments:[],staff:[],stats:[],clubs:[],deliveries:[],sanctions:[],production:[],audit:[],commands:[],rundowns:[],connection:getIntegrationStatus(),pages:{},view:p.view};
-    const include=new Set([primary]);
-    if(p.view==='overview')for(const key of Object.keys(KINDS))include.add(key);
-    if(p.view==='jornada')for(const key of ['incidents','stats','clubs','deliveries'])include.add(key);
-    if(p.view==='disciplina')include.add('incidents');
-    if(['turnos','partido','realizacion','estadisticas','incidencias'].includes(p.view))include.add('matches');
-    if(p.view==='estadisticas'&&p.match)include.delete('stats'); // Official per-match revisions use the existing detail query.
     for(const [collection,[kind,...sections]]of Object.entries(KINDS))if(include.has(collection)&&can(user,...sections)) {
       const filters=conditions(kind,p,user);
       const order=kind==='match'?`COALESCE(${col('scheduled_at')},'9999')`:kind==='incident'?incidentOrder(p):'';

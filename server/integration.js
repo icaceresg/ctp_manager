@@ -103,7 +103,8 @@ export function integrationConfig(env = process.env) {
   }
   const seconds = Number(env.CTP_SYNC_SECONDS || 0);
   if (!Number.isInteger(seconds) || (seconds !== 0 && seconds < 30) || seconds > 86400) throw new Error('CTP_SYNC_SECONDS debe ser 0 o entre 30 y 86400.');
-  return { configured: true, writes, localTestMode: loopback && env.CTP_ALLOW_LOCAL_WRITES === 'true', url: url.href, token, signingSecret, pollMs: seconds * 1000 };
+  const snapshotOnDemand = env.CTP_OPERATIONS_SNAPSHOT_ON_DEMAND === 'true';
+  return { configured: true, writes, localTestMode: loopback && env.CTP_ALLOW_LOCAL_WRITES === 'true', url: url.href, token, signingSecret, pollMs: seconds * 1000, snapshotOnDemand };
 }
 
 export function webOrigin(env = process.env) {
@@ -359,6 +360,8 @@ export function officialPayload(type, payload = {}) {
 }
 
 let activeSync = null;
+let activeIncidentSync = null;
+let lastSnapshotAttemptAt = 0;
 const sending = new Set();
 const config = integrationConfig();
 const request = createOperationsTransport(config);
@@ -368,7 +371,7 @@ const staffAlertsService=createStaffAlertsClient({request,actorFor:user=>getOper
 export const rankedEventService=createRankedEventClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const webPublicationService=createWebPublicationClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const siteNoticeService=createSiteNoticeClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
-setIntegrationStatus({ configured: config.configured, write_enabled: config.configured && config.writes, local_test_mode: config.localTestMode === true, web_origin: webOrigin() });
+setIntegrationStatus({ configured: config.configured, write_enabled: config.configured && config.writes, local_test_mode: config.localTestMode === true, web_origin: webOrigin(), snapshot_on_demand: config.snapshotOnDemand === true });
 
 export function integrationStatus() {
   const stored = getIntegrationStatus();
@@ -376,7 +379,7 @@ export function integrationStatus() {
     configured: config.configured,
     local_test_mode: config.localTestMode === true,
     write_enabled: config.configured && config.writes,
-    syncing: Boolean(activeSync),
+    syncing: Boolean(activeSync || activeIncidentSync),
     last_sync_at: stored.last_sync_at || null,
     last_incident_sync_at: stored.last_incident_sync_at || null,
     last_error: stored.last_error || null,
@@ -385,22 +388,29 @@ export function integrationStatus() {
     possibly_truncated: stored.possibly_truncated === true,
     competition_cutover_enabled: typeof stored.competition_cutover_enabled === 'boolean' ? stored.competition_cutover_enabled : null,
     poll_seconds: config.pollMs / 1000,
+    snapshot_on_demand: config.snapshotOnDemand === true,
   };
 }
 
-export async function syncOperations() {
-  if (activeSync) throw integrationError(409, 'Ya hay una sincronización en curso.');
+function syncIncidents() {
+  if (activeIncidentSync) return activeIncidentSync;
+  const observedBefore = Date.now();
+  activeIncidentSync = request({ action: 'incidents_snapshot' }).then(snapshot => {
+    const complete = snapshot?.collection_complete?.incidents;
+    if (!Array.isArray(snapshot?.incidents) || !Number.isFinite(Date.parse(snapshot.generated_at))
+      || typeof complete !== 'boolean') return false;
+    ingestSnapshot({ generated_at: snapshot.generated_at, incidents: snapshot.incidents,
+      collection_complete: { incidents: complete } }, { observedBefore });
+    setIntegrationStatus({ last_incident_sync_at: new Date().toISOString() });
+    return true;
+  }).catch(() => false).finally(() => { activeIncidentSync = null; });
+  return activeIncidentSync;
+}
+
+function startOperationsSnapshot(incidents) {
+  const observedBefore = Date.now();
+  lastSnapshotAttemptAt = observedBefore;
   activeSync = (async () => {
-    const observedBefore = Date.now();
-    const incidents = request({ action: 'incidents_snapshot' }).then(snapshot => {
-      const complete = snapshot?.collection_complete?.incidents;
-      if (!Array.isArray(snapshot?.incidents) || !Number.isFinite(Date.parse(snapshot.generated_at))
-        || typeof complete !== 'boolean') return false;
-      ingestSnapshot({ generated_at: snapshot.generated_at, incidents: snapshot.incidents,
-        collection_complete: { incidents: complete } }, { observedBefore });
-      setIntegrationStatus({ last_incident_sync_at: new Date().toISOString() });
-      return true;
-    }).catch(() => false);
     try {
       const snapshot = await request({ action: 'snapshot' });
       if (['matches', 'incidents', 'stats', 'clubs', 'deliveries'].some((key) => !Array.isArray(snapshot[key]))) {
@@ -419,9 +429,24 @@ export async function syncOperations() {
     } finally {
       await incidents;
     }
-  })();
-  try { await activeSync; } finally { activeSync = null; }
+  })().finally(() => { activeSync = null; });
+  return activeSync;
+}
+
+export async function syncOperations() {
+  if (activeSync) throw integrationError(409, 'Ya hay una sincronización en curso.');
+  await startOperationsSnapshot(syncIncidents());
   return integrationStatus();
+}
+
+export async function refreshOperationsOnDemand() {
+  if (!config.snapshotOnDemand) return;
+  if (!activeSync) {
+    const lastSuccess = Date.parse(getIntegrationStatus().last_sync_at) || 0;
+    const lastAttempt = Math.max(lastSuccess, lastSnapshotAttemptAt);
+    if (lastAttempt && Date.now() - lastAttempt < (config.pollMs || 60_000)) return;
+  }
+  await (activeSync ?? startOperationsSnapshot(syncIncidents())).catch(() => {});
 }
 
 export async function sendOperationCommand(id) {
@@ -461,7 +486,12 @@ export async function sendOperationCommand(id) {
     acknowledgeCommand(command.id, { confirmed: true, external_id: result.external_id || result.command_id || result.commandId, source_version: type === PRO_VIEW_ACTION ? result.revision : result.source_version ?? result.version, revision_id: result.revision_id });
     let sync_pending = false;
     if (['stats.correct','incident.status','match.resolve','match.revert'].includes(type)) {
-      try { await syncOperations(); } catch { sync_pending = true; }
+      try {
+        // A demand refresh can have started before CTP applied the command.
+        if (config.snapshotOnDemand && activeSync) await activeSync.catch(() => {});
+        if (config.snapshotOnDemand && activeSync) await activeSync;
+        else await syncOperations();
+      } catch { sync_pending = true; }
     }
     return { ok: true, confirmed: true, command_id: command.id, sync_pending };
   } catch (error) {
@@ -949,9 +979,19 @@ export async function deleteCtpUser(user, id, body) {
 }
 
 /** Optional read polling only; writes always require a deliberate authenticated request. */
-export function startOperationsSync() {
+export function startOperationsSync({ interval = setInterval } = {}) {
   if (!config.configured || !config.pollMs) return null;
-  const timer = setInterval(() => { if (!activeSync) syncOperations().catch(() => {}); }, config.pollMs);
+  const poll = async () => {
+    if (!config.snapshotOnDemand || !getIntegrationStatus().last_sync_at) {
+      if (!activeSync) await syncOperations();
+      return;
+    }
+    const incidents = syncIncidents();
+    if (!(await incidents) && !activeSync) await startOperationsSnapshot(incidents);
+  };
+  // Load capabilities once at startup. Subsequent idle polls fetch only incidents.
+  if (config.snapshotOnDemand && !activeSync) void syncOperations().catch(() => {});
+  const timer = interval(() => poll().catch(() => {}), config.pollMs);
   timer.unref();
   return timer;
 }

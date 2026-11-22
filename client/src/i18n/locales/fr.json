@@ -247,6 +247,7 @@
   "manager.tournamentLive.groups.wins": "V",
   "manager.tournamentLive.groups.losses": "D",
   "manager.tournamentLive.groups.maps": "Cartes",
+  "manager.tournamentLive.groups.mapDifference": "Diff. de cartes",
   "manager.tournamentLive.round.quarter": "Quarts de finale",
   "manager.tournamentLive.round.ofN": "Tour de {size}",
   "manager.tournamentLive.round.group": "Groupe {group}",

@@ -173,9 +173,14 @@ export function tournamentLiveResponse(value, payload) {
       if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !['team', 'user'].includes(row.entrant_kind)
         || typeof row.entrant_id !== 'string' || !UUID.test(row.entrant_id) || (row.name != null && !text(row.name))
         || !Array.isArray(row.roster) || row.roster.length > 64 || row.roster.some(name => !text(name))) fail(502, 'unavailable');
-      return { id: row.id.toLowerCase(), entrant_kind: row.entrant_kind, entrant_id: row.entrant_id.toLowerCase(), name: row.name ?? null,
+      const participant = { id: row.id.toLowerCase(), entrant_kind: row.entrant_kind, entrant_id: row.entrant_id.toLowerCase(), name: row.name ?? null,
         seed: Number.isInteger(row.seed) ? row.seed : null, roster: row.roster, access: registrationAccess(row.access),
         roster_ready: typeof row.roster_ready === 'boolean' ? row.roster_ready : null, can_edit_roster: row.can_edit_roster === true };
+      // A null final seed can invalidate a stale value from the tournament detail.
+      if (Object.hasOwn(row, 'final_seed')) {
+        participant.final_seed = Number.isSafeInteger(row.final_seed) && row.final_seed > 0 ? row.final_seed : null;
+      }
+      return participant;
     }),
     eligible_teams: eligibleTeams.map(eligibleTeam),
     group_order: Object.fromEntries(Object.entries(groupOrder).map(([group, ids]) => [group, ids.map(id => id.toLowerCase())])),

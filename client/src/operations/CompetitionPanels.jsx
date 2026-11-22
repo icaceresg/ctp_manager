@@ -224,7 +224,8 @@ export function CompetitionPanel({ data, reload, can, me }) {
           <TournamentFormatPreview preview={result.format_preview} grouped={tournament.has_group_stage} />
           {manage && <TournamentScheduleScenarios key={tournament.id} tournament={tournament} entrantCount={participants.length}
             canWrite={Boolean(me?.is_admin && data.connection?.write_enabled)} />}
-          <TournamentLivePanel key={tournament.id} tournament={tournament} fallbackMatches={matches} fallbackGroupOrder={result.group_order} refreshKey={refreshKey}
+          <TournamentLivePanel key={tournament.id} tournament={tournament} fallbackMatches={matches} fallbackParticipants={participants}
+            fallbackGroupOrder={result.group_order} refreshKey={refreshKey}
             canEdit={liveControl} canWrite={Boolean(data.connection?.write_enabled)} onChanged={load} onParticipants={() => switchTab('teams')} />
         </section>}
         {tab === 'arbitration' && <TournamentArbitration key={tournament.id} tournamentId={tournament.id}

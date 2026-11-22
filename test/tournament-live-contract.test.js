@@ -66,6 +66,27 @@ test('the response DTO keeps public names and drops anything else', () => {
   assert.deepEqual(lineup, { members: [{ id: participant, name: 'Captain', selected: true, available: true }] });
 });
 
+test('the live participant DTO preserves the distinction between absent and cleared final seeds', () => {
+  const payload = tournamentLiveRead(tournament);
+  const view = live();
+  const [row] = view.participants;
+  const [legacy] = tournamentLiveResponse(view, payload).participants;
+  assert.equal(Object.hasOwn(legacy, 'final_seed'), false);
+
+  const projectSeed = final_seed => tournamentLiveResponse({
+    ...view, participants: [{ ...row, final_seed }],
+  }, payload).participants[0];
+  const qualified = projectSeed(8);
+  assert.equal(qualified.seed, 1);
+  assert.equal(qualified.final_seed, 8);
+
+  for (const value of [null, 0, -1, 1.5, '8', Number.MAX_SAFE_INTEGER + 1]) {
+    const projected = projectSeed(value);
+    assert.equal(Object.hasOwn(projected, 'final_seed'), true);
+    assert.equal(projected.final_seed, null);
+  }
+});
+
 test('only fixed CTP codes become translated problems, in every catalogue', () => {
   assert.equal(tournamentLiveProblem('tournament_live_own_match'), 'manager.tournamentLive.error.ownMatch');
   assert.equal(tournamentLiveProblem('constructor'), null);

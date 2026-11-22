@@ -50,6 +50,26 @@ export function validScores(bestOf) {
 }
 export const scoreValid = (bestOf, a, b) => validScores(bestOf).some(([x, y]) => x === a && y === b);
 
+export function bracketSeedReader(participants, fallbackParticipants = [], hasGroupStage) {
+  const entrantKey = (kind, id) => `${kind}:${id}`;
+  const byEntrant = rows => new Map(rows.map(row => [entrantKey(row.entrant_kind, row.entrant_id), row]));
+  const fallback = byEntrant(fallbackParticipants);
+  const current = participants ? byEntrant(participants) : fallback;
+  const positiveSeed = value => Number.isSafeInteger(value) && value > 0 ? value : null;
+
+  return (entrant, phase) => {
+    if (!entrant) return null;
+    const key = entrantKey(entrant.kind, entrant.id);
+    const row = current.get(key);
+    if (!row) return null;
+    const initialSeed = positiveSeed(row.seed);
+    if (phase === 'grupos') return initialSeed;
+    // Older live responses omit the field entirely. A real null clears a stale seed.
+    const finalSeed = positiveSeed(Object.hasOwn(row, 'final_seed') ? row.final_seed : fallback.get(key)?.final_seed);
+    return finalSeed ?? (hasGroupStage ? null : initialSeed);
+  };
+}
+
 /**
  * Single-elimination rounds, earliest first, named from the final backwards so
  * byes or partial brackets keep correct names: final, semi, quarter, then
@@ -90,7 +110,7 @@ export function groupStage(matches = [], standingsOrder = {}) {
     };
     for (const match of items) {
       const a = match.entrant_a && row(match.entrant_a), b = match.entrant_b && row(match.entrant_b);
-      if (!a || !b || !match.winner_id) continue;
+      if (!a || !b || !match.winner_id || matchState(match) !== 'confirmed') continue;
       a.played++; b.played++;
       a.mapsFor += match.score_a ?? 0; a.mapsAgainst += match.score_b ?? 0;
       b.mapsFor += match.score_b ?? 0; b.mapsAgainst += match.score_a ?? 0;
@@ -98,10 +118,11 @@ export function groupStage(matches = [], standingsOrder = {}) {
     }
     const order = Array.isArray(standingsOrder?.[label]) ? standingsOrder[label] : [];
     const positions = new Map(order.map((id, index) => [id, index]));
-    const standings = [...table.values()].sort((x, y) =>
-      (positions.get(x.entrant.id) ?? Infinity) - (positions.get(y.entrant.id) ?? Infinity)
-      || y.wins - x.wins || (y.mapsFor - y.mapsAgainst) - (x.mapsFor - x.mapsAgainst)
-      || String(x.entrant.name).localeCompare(String(y.entrant.name)));
+    const standings = [...table.values()]
+      .map(row => ({ ...row, mapDifference: row.mapsFor - row.mapsAgainst }))
+      .sort((x, y) => (positions.get(x.entrant.id) ?? Infinity) - (positions.get(y.entrant.id) ?? Infinity)
+        || y.wins - x.wins || y.mapDifference - x.mapDifference
+        || String(x.entrant.name).localeCompare(String(y.entrant.name)));
     return { label, rounds, standings, matches: items };
   });
 }

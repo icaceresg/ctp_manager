@@ -22,7 +22,7 @@ function competitionMatch(row) {
   return { ...row, entrant_a: side('a'), entrant_b: side('b') };
 }
 
-export function TournamentLivePanel({ tournament, onChanged, onParticipants, canEdit = false, canWrite = true, fallbackMatches = EMPTY, fallbackGroupOrder, refreshKey }) {
+export function TournamentLivePanel({ tournament, onChanged, onParticipants, canEdit = false, canWrite = true, fallbackMatches = EMPTY, fallbackParticipants = EMPTY, fallbackGroupOrder, refreshKey }) {
   const { toast } = useApp();
   const [live, setLive] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -36,8 +36,14 @@ export function TournamentLivePanel({ tournament, onChanged, onParticipants, can
     intervalMs: POLL_MS, enabled: canEdit, blocked: () => busyRef.current,
     onReset: () => { liveRef.current = null; setLive(null); setError(''); setLoading(canEdit); setSelection(null); },
     onValue: value => {
-      if (value.revision !== liveRef.current?.revision
-        || JSON.stringify(value.group_order) !== JSON.stringify(liveRef.current?.group_order)) {
+      const previous = liveRef.current;
+      if (value.revision !== previous?.revision
+        || JSON.stringify(value.group_order) !== JSON.stringify(previous.group_order)
+        || value.participants.length !== previous.participants.length
+        || value.participants.some((row, i) => {
+          const old = previous.participants[i];
+          return row.id !== old.id || row.seed !== old.seed || row.final_seed !== old.final_seed;
+        })) {
         liveRef.current = value;
         setLive(value);
       }
@@ -94,7 +100,8 @@ export function TournamentLivePanel({ tournament, onChanged, onParticipants, can
     {loading && !live && !matches.length && <p role="status" className="op-live-empty">{t('loading')}</p>}
     {error && <p className="op-error" role="alert">{error}</p>}
     {(!loading || matches.length > 0) && <div className={`op-live-split${selected ? ' has-panel' : ''}`}>
-      <TournamentLiveBracket matches={matches} participants={live?.participants} standingsOrder={live?.group_order ?? fallbackGroupOrder} totals={totals} selectedId={selection?.id} onSelect={select}
+      <TournamentLiveBracket matches={matches} participants={live?.participants} fallbackParticipants={fallbackParticipants}
+        hasGroupStage={tournament.has_group_stage} standingsOrder={live?.group_order ?? fallbackGroupOrder} totals={totals} selectedId={selection?.id} onSelect={select}
         run={edit} revision={live?.revision} busy={busy} status={status}
         canPlaceGroups={live?.tournament.can_add_registration === true && Date.now() < Date.parse(live.tournament.start_at)}
         onParticipants={onParticipants} />

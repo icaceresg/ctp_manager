@@ -1,15 +1,17 @@
 import { playoffTree } from './playoffTree.js';
 import { useMemo, useRef, useState } from 'react';
 import { CalendarClock, ChevronRight, GripVertical, Info } from 'lucide-react';
-import { groupStage, isLive, needsAttention, playoffRounds, scheduleLocked, slotsLocked } from './tournamentLiveModel.js';
+import { bracketSeedReader, groupStage, isLive, needsAttention, playoffRounds, scheduleLocked, slotsLocked } from './tournamentLiveModel.js';
 import { competitionDateTime } from './competitionTime.js';
+import { getIntlLocale } from '../i18n/runtime.js';
 import { ReasonConfirm, StateBadge, entrantName, roundTitle, t } from './tournamentLiveUi.jsx';
 
 const FILTERS = ['all', 'attention', 'live'];
+const NO_PARTICIPANTS = [];
 const matchesFilter = (match, filter) => filter === 'all' || (filter === 'attention' ? needsAttention(match) : isLive(match));
 
 /** Graphical bracket and groups. Selecting a match opens its panel beside the bracket. */
-export default function TournamentLiveBracket({ matches, participants, standingsOrder, totals, selectedId, onSelect, run, revision, busy, status, canPlaceGroups, onParticipants }) {
+export default function TournamentLiveBracket({ matches, participants, fallbackParticipants = NO_PARTICIPANTS, hasGroupStage, standingsOrder, totals, selectedId, onSelect, run, revision, busy, status, canPlaceGroups, onParticipants }) {
   const groups = useMemo(() => groupStage(matches, standingsOrder), [matches, standingsOrder]);
   const playoffs = useMemo(() => playoffRounds(matches), [matches]);
   const hasPlayoffs = playoffs.rounds.length > 0;
@@ -25,6 +27,13 @@ export default function TournamentLiveBracket({ matches, participants, standings
   const firstRound = playoffs.rounds[0]?.matches.length || 0;
   const compact = compactChoice ?? firstRound > 16;
   const shown = groups.length && (!hasPlayoffs || (stage ?? (playoffStarted ? 'playoffs' : 'groups')) === 'groups') ? 'groups' : 'playoffs';
+  const seedFor = useMemo(() => bracketSeedReader(participants, fallbackParticipants, hasGroupStage || groups.length > 0),
+    [participants, fallbackParticipants, hasGroupStage, groups.length]);
+  const number = new Intl.NumberFormat(getIntlLocale());
+  const seedLabel = (entrant, phase) => {
+    const seed = seedFor(entrant, phase);
+    return seed === null ? null : number.format(seed);
+  };
   const canEdit = Boolean(run) && !['cancelado', 'finalizado'].includes(status);
   const canSwap = canEdit && !busy && !pending && !placement;
   const participantIds = useMemo(() => new Map(participants?.map(person => [`${person.entrant_kind}:${person.entrant_id}`, person.id])), [participants]);
@@ -117,9 +126,9 @@ export default function TournamentLiveBracket({ matches, participants, standings
     {shown === 'groups' && assignable && !canExpandFive && !groups.some(group => group.standings.length === 4) &&
       <p className="op-live-why">{t('error.groupFull')}</p>}
     {shown === 'groups'
-      ? <GroupsView groups={groups} filter={filter} selectedId={selectedId} onSelect={onSelect} groupSlot={groupSlot} canEdit={canEdit}
+      ? <GroupsView groups={groups} filter={filter} selectedId={selectedId} onSelect={onSelect} groupSlot={groupSlot} canEdit={canEdit} seedLabel={seedLabel}
         onPlace={assignable ? label => { setSource(null); setPlacement({ label, revision }); } : undefined} canExpandFive={canExpandFive} busy={busy} />
-      : <PlayoffView playoffs={playoffs} filter={filter} compact={compact} selectedId={selectedId} onSelect={onSelect} playoffSlot={playoffSlot} canEdit={canEdit} />}
+      : <PlayoffView playoffs={playoffs} filter={filter} compact={compact} selectedId={selectedId} onSelect={onSelect} playoffSlot={playoffSlot} canEdit={canEdit} seedLabel={seedLabel} />}
     <Legend />
   </div>;
 }
@@ -147,7 +156,7 @@ function PlaceInGroup({ placement, participants, busy, blocked, run, onClose, on
   </section>;
 }
 
-function PlayoffView({ playoffs, filter, compact, selectedId, onSelect, playoffSlot, canEdit }) {
+function PlayoffView({ playoffs, filter, compact, selectedId, onSelect, playoffSlot, canEdit, seedLabel }) {
   const { rounds, third } = playoffs;
   if (!rounds.length) return <p className="op-live-empty">{t('bracket.noPlayoffs')}</p>;
   const tree = playoffTree(rounds.flatMap(round => round.matches));
@@ -159,7 +168,7 @@ function PlayoffView({ playoffs, filter, compact, selectedId, onSelect, playoffS
         <header><strong>{roundTitle(round)}</strong><small>{t('bracket.roundMeta', { count: round.matches.length })}</small></header>
         <div className="bracket-geometry-body" style={{ height: bracketY(tree.rows) }}>
           {column.nodes.map(match => <div className="bracket-position" style={{ top: bracketY(match.center) }} key={match.id}>
-            <MatchCard match={match} dim={!matchesFilter(match, filter)} selected={match.id === selectedId} onSelect={onSelect} compact={compact} renderSlot={playoffSlot} canEdit={canEdit} />
+            <MatchCard match={match} dim={!matchesFilter(match, filter)} selected={match.id === selectedId} onSelect={onSelect} compact={compact} renderSlot={playoffSlot} canEdit={canEdit} seedLabel={seedLabel} />
           </div>)}
           {column.joins.map(join => <div key={join.id} aria-hidden="true" className="bracket-join">
               {join.starts.map(center => <i key={center} className="bracket-join-from" style={{ top: bracketY(center) }} />)}
@@ -172,19 +181,31 @@ function PlayoffView({ playoffs, filter, compact, selectedId, onSelect, playoffS
     {third && <div className="op-live-col" key="third">
       <header><strong>{t('round.third')}</strong><small>{t('bracket.roundMeta', { count: 1 })}</small></header>
       <div className="op-live-col-body"><div className="op-live-cell">
-        <MatchCard match={third} dim={!matchesFilter(third, filter)} selected={third.id === selectedId} onSelect={onSelect} compact={compact} canEdit={canEdit} />
+        <MatchCard match={third} dim={!matchesFilter(third, filter)} selected={third.id === selectedId} onSelect={onSelect} compact={compact} canEdit={canEdit} seedLabel={seedLabel} />
       </div></div>
     </div>}
   </div>;
 }
 
-function GroupsView({ groups, filter, selectedId, onSelect, groupSlot, canEdit, onPlace, canExpandFive, busy }) {
+function GroupsView({ groups, filter, selectedId, onSelect, groupSlot, canEdit, onPlace, canExpandFive, busy, seedLabel }) {
+  const difference = new Intl.NumberFormat(getIntlLocale(), { signDisplay: 'exceptZero' });
   return <div className="op-live-groups">
     {groups.map(group => <section className="op-live-group" key={group.label} aria-label={t('round.group', { group: group.label })}>
       <header><strong>{t('round.group', { group: group.label })}</strong><small>{t('bracket.groupMeta', { done: group.matches.filter(match => match.winner_id).length, total: group.matches.length })}</small></header>
       {group.standings.length > 0 && <table className="op-live-table">
-        <thead><tr><th scope="col">#</th><th scope="col">{t('groups.entrant')}</th><th scope="col">{t('groups.wins')}</th><th scope="col">{t('groups.losses')}</th><th scope="col">{t('groups.maps')}</th></tr></thead>
-        <tbody>{group.standings.map((row, index) => <tr key={`${row.entrant.kind}:${row.entrant.id}`}><td>{index + 1}</td><td>{groupSlot(group, row.entrant, <span className="op-live-name">{entrantName(row.entrant)}</span>)}</td><td>{row.wins}</td><td>{row.losses}</td><td>{row.mapsFor}–{row.mapsAgainst}</td></tr>)}</tbody>
+        <thead><tr>
+          <th scope="col">#</th><th scope="col">{t('groups.entrant')}</th><th scope="col">{t('groups.wins')}</th>
+          <th scope="col">{t('groups.losses')}</th><th scope="col">{t('groups.maps')}</th>
+          <th scope="col" className="op-live-map-difference">{t('groups.mapDifference')}</th>
+        </tr></thead>
+        <tbody>{group.standings.map((row, index) => <tr key={`${row.entrant.kind}:${row.entrant.id}`}>
+          <td>{index + 1}</td><td><span className="op-live-entrant">
+            <SeedBadge seed={seedLabel(row.entrant, 'grupos')} />
+            {groupSlot(group, row.entrant, <span className="op-live-name">{entrantName(row.entrant)}</span>)}
+          </span></td>
+          <td>{row.wins}</td><td>{row.losses}</td><td>{row.mapsFor}–{row.mapsAgainst}</td>
+          <td className="op-live-map-difference">{difference.format(row.mapDifference)}</td>
+        </tr>)}</tbody>
       </table>}
       {onPlace && (group.standings.length === 4 || canExpandFive) && <button type="button" className="btn sm" disabled={busy} onClick={() => onPlace(group.label)}>{t('bracket.placeGroup')}</button>}
       <details open={filter !== 'all' || group.matches.some(match => match.id === selectedId) || undefined}>
@@ -199,7 +220,7 @@ function GroupsView({ groups, filter, selectedId, onSelect, groupSlot, canEdit, 
               <h4>{t('round.matchday', { round: round.round })}</h4>
               {rest && <small>{t('round.resting', { name: entrantName(rest) })}</small>}
             </div>
-            {round.matches.map(match => <MatchCard key={match.id} match={match} row dim={!matchesFilter(match, filter)} selected={match.id === selectedId} onSelect={onSelect} canEdit={canEdit} />)}
+            {round.matches.map(match => <MatchCard key={match.id} match={match} row dim={!matchesFilter(match, filter)} selected={match.id === selectedId} onSelect={onSelect} canEdit={canEdit} seedLabel={seedLabel} />)}
           </div>;
         })}
       </details>
@@ -207,7 +228,15 @@ function GroupsView({ groups, filter, selectedId, onSelect, groupSlot, canEdit, 
   </div>;
 }
 
-function MatchCard({ match, selected, dim, onSelect, compact = false, row = false, renderSlot, canEdit }) {
+function SeedBadge({ seed }) {
+  if (seed === null) return null;
+  const label = t('participants.seed', { seed });
+  return <span className="op-live-seed" title={label}>
+    <span aria-hidden="true">{seed}</span><span className="op-live-seed-label">{label}</span>
+  </span>;
+}
+
+function MatchCard({ match, selected, dim, onSelect, compact = false, row = false, renderSlot, canEdit, seedLabel }) {
   const sides = [['a', match.entrant_a, match.score_a], ['b', match.entrant_b, match.score_b]];
   const label = t('bracket.openMatch', { a: entrantName(match.entrant_a), b: entrantName(match.entrant_b) });
   const time = match.scheduled_at ? competitionDateTime(match.scheduled_at) : t('match.unscheduled');
@@ -216,7 +245,10 @@ function MatchCard({ match, selected, dim, onSelect, compact = false, row = fals
     {sides.map(([side, entrant, score]) => {
       const name = <span className="op-live-name">{entrantName(entrant)}</span>;
       return <span key={side} className={`op-live-side${entrant && match.winner_id === entrant.id ? ' is-winner' : ''}${!entrant ? ' is-empty' : ''}`}>
-        {renderSlot ? renderSlot(match, side, entrant, name) : name}<strong>{score ?? ''}</strong>
+        <span className="op-live-entrant">
+          <SeedBadge seed={seedLabel(entrant, match.phase)} />
+          {renderSlot ? renderSlot(match, side, entrant, name) : name}
+        </span><strong>{score ?? ''}</strong>
       </span>;
     })}
     <div className="op-live-foot">

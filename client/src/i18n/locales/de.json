@@ -247,6 +247,7 @@
   "manager.tournamentLive.groups.wins": "S",
   "manager.tournamentLive.groups.losses": "N",
   "manager.tournamentLive.groups.maps": "Maps",
+  "manager.tournamentLive.groups.mapDifference": "Map-Diff.",
   "manager.tournamentLive.round.quarter": "Viertelfinale",
   "manager.tournamentLive.round.ofN": "Runde der letzten {size}",
   "manager.tournamentLive.round.group": "Gruppe {group}",

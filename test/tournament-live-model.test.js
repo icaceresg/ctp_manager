@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoFill, counts, dependentMatches, groupStage, matchState, nextMatches, playoffRounds, reasonCheck, rowTimes, scheduleChanges, scheduleRows, scoreValid, toLocalInput, validScores } from '../client/src/operations/tournamentLiveModel.js';
+import { autoFill, bracketSeedReader, counts, dependentMatches, groupStage, matchState, nextMatches, playoffRounds, reasonCheck, rowTimes, scheduleChanges, scheduleRows, scoreValid, toLocalInput, validScores } from '../client/src/operations/tournamentLiveModel.js';
 
 const team = name => ({ kind: 'team', id: `id-${name}`, name });
 const match = (id, round, position, extra = {}) => ({ id, phase: 'eliminatoria', group_label: null, round, position, is_third_place: false, best_of: 3,
@@ -61,15 +61,44 @@ test('winners advance to round+1 at ceil(position/2) and later results depend on
 });
 
 test('groups build matchdays and a won/lost table from firm results only', () => {
-  const a = team('Alpha'), b = team('Beta'), c = team('Gamma');
+  const a = team('Alpha'), b = team('Beta'), c = team('Gamma'), d = team('Delta');
   const g = (id, round, position, extra) => match(id, round, position, { phase: 'grupos', group_label: 'A', ...extra });
-  const [group] = groupStage([
+  const fixtures = [
     g('g1', 1, 1, { entrant_a: a, entrant_b: b, winner_id: a.id, score_a: 2, score_b: 0, result_status: 'confirmed' }),
     g('g2', 2, 1, { entrant_a: b, entrant_b: c, winner_id: c.id, score_a: 1, score_b: 2, result_status: 'confirmed' }),
     g('g3', 3, 1, { entrant_a: a, entrant_b: c, result_status: 'pending' }),
-  ]);
+    g('g4', 3, 2, { entrant_a: d, entrant_b: b, winner_id: d.id, score_a: 2, score_b: 0, result_status: 'disputed' }),
+  ];
+  const [group] = groupStage(fixtures);
   assert.equal(group.rounds.length, 3);
-  assert.deepEqual(group.standings.map(row => [row.entrant.name, row.wins, row.losses]), [['Alpha', 1, 0], ['Gamma', 1, 0], ['Beta', 0, 2]]);
+  assert.deepEqual(group.standings.map(row => [row.entrant.name, row.wins, row.losses, row.mapDifference]),
+    [['Alpha', 1, 0, 2], ['Gamma', 1, 0, 1], ['Delta', 0, 0, 0], ['Beta', 0, 2, -3]]);
+  const [official] = groupStage(fixtures, { A: [c.id, a.id, b.id, d.id] });
+  assert.deepEqual(official.standings.map(row => row.mapDifference), [1, 2, -3, 0]);
+});
+
+test('the bracket reads the seed for each phase and respects live clears', () => {
+  const entrant = team('Alpha');
+  const player = { ...entrant, kind: 'user' };
+  const collected = [
+    { entrant_kind: 'team', entrant_id: entrant.id, seed: 7, final_seed: 1 },
+    { entrant_kind: 'user', entrant_id: entrant.id, seed: 9, final_seed: 2 },
+  ];
+  const readOnly = bracketSeedReader(undefined, collected, true);
+  assert.equal(readOnly(entrant, 'grupos'), 7);
+  assert.equal(readOnly(entrant, 'eliminacion'), 1);
+  assert.equal(readOnly(player, 'eliminacion'), 2);
+  assert.equal(readOnly(null, 'eliminacion'), null);
+
+  const live = bracketSeedReader([{ ...collected[0], seed: 8, final_seed: null }], collected, true);
+  assert.equal(live(entrant, 'grupos'), 8);
+  assert.equal(live(entrant, 'eliminacion'), null);
+  assert.equal(live(player, 'eliminacion'), null);
+
+  const olderLive = [{ entrant_kind: 'team', entrant_id: entrant.id, seed: 7 }];
+  assert.equal(bracketSeedReader(olderLive, collected, true)(entrant, 'eliminacion'), 1);
+  assert.equal(bracketSeedReader(olderLive, [], true)(entrant, 'eliminacion'), null);
+  assert.equal(bracketSeedReader(olderLive, [], false)(entrant, 'eliminacion'), 7);
 });
 
 test('timetable rows follow group matchdays and playoff rounds; changes skip played matches', () => {

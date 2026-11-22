@@ -247,6 +247,7 @@
   "manager.tournamentLive.groups.wins": "V",
   "manager.tournamentLive.groups.losses": "P",
   "manager.tournamentLive.groups.maps": "Mappe",
+  "manager.tournamentLive.groups.mapDifference": "Diff. mappe",
   "manager.tournamentLive.round.quarter": "Quarti di finale",
   "manager.tournamentLive.round.ofN": "Turno a {size}",
   "manager.tournamentLive.round.group": "Girone {group}",

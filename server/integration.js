@@ -981,16 +981,34 @@ export async function deleteCtpUser(user, id, body) {
 /** Optional read polling only; writes always require a deliberate authenticated request. */
 export function startOperationsSync({ interval = setInterval } = {}) {
   if (!config.configured || !config.pollMs) return null;
+  const needsBootstrap = () => {
+    const stored = getIntegrationStatus();
+    return !Number.isFinite(Date.parse(stored.last_sync_at)) || !supportedActions(stored.supported_actions).length;
+  };
+  let retrySnapshotAt = 0;
+  const refreshInBackground = async (incidents) => {
+    if (activeSync || Date.now() < retrySnapshotAt) return;
+    try {
+      await startOperationsSnapshot(incidents);
+      if (!needsBootstrap()) {
+        retrySnapshotAt = 0;
+        return;
+      }
+    } catch { /* The last usable copy stays in SQLite. */ }
+    // Keep polling incidents even when the larger fallback fails to recover data.
+    retrySnapshotAt = Date.now() + 2 * config.pollMs;
+  };
   const poll = async () => {
-    if (!config.snapshotOnDemand || !getIntegrationStatus().last_sync_at) {
+    if (!config.snapshotOnDemand) {
       if (!activeSync) await syncOperations();
       return;
     }
     const incidents = syncIncidents();
-    if (!(await incidents) && !activeSync) await startOperationsSnapshot(incidents);
+    if (needsBootstrap()) await refreshInBackground(incidents);
+    else if (!(await incidents)) await refreshInBackground(incidents);
+    else retrySnapshotAt = 0;
   };
-  // Load capabilities once at startup. Subsequent idle polls fetch only incidents.
-  if (config.snapshotOnDemand && !activeSync) void syncOperations().catch(() => {});
+  if (config.snapshotOnDemand && needsBootstrap()) void poll().catch(() => {});
   const timer = interval(() => poll().catch(() => {}), config.pollMs);
   timer.unref();
   return timer;

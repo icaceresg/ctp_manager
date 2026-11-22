@@ -110,11 +110,14 @@ agente OBS como consecuencia de instalar este servicio.
 
 Para validar en PRE, activar `CTP_OPERATIONS_SNAPSHOT_ON_DEMAND=true` y
 mantener `CTP_SYNC_SECONDS=60`. El servidor carga las capacidades al arrancar
-y sondea las incidencias con esa frecuencia. El resto de las colecciones se
-actualiza cuando se abre una vista que las usa y la copia local ha vencido,
+si SQLite carece de una copia utilizable y sondea las incidencias cada minuto.
+El resto de las colecciones se actualiza cuando se abre una vista que las usa
+y la copia local ha vencido,
 al actualizar manualmente o cuando un comando confirmado requiere refrescar
 el estado. Si el puente de incidencias falla se recupera mediante la
-instantánea general. `CTP_SYNC_SECONDS=0` desactiva el sondeo periódico.
+instantánea general. Si esta también falla, el siguiente intento general
+espera dos intervalos y los intentos de incidencias siguen a su ritmo.
+`CTP_SYNC_SECONDS=0` desactiva el sondeo periódico.
 
 Al validar, contar llamadas al puente tras el arranque con la interfaz
 cerrada. Abrir dos sesiones en Turnos con la copia local vencida debe causar

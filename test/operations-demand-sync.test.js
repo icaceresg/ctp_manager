@@ -184,17 +184,52 @@ test('on-demand operations sync keeps the incident worker and official command r
   assert.equal(count(), 7);
   assert.equal((await load(referee, 'incidencias')).incidents.find(row => row.id === ticketId).status, 'closed');
 
-  delete process.env.CTP_OPERATIONS_SNAPSHOT_ON_DEMAND;
-  const legacy = await import('../server/integration.js?legacy');
-  legacy.startOperationsSync({ interval: callback => {
+  // Restart against the same SQLite image, then simulate both readers failing.
+  const restarted = await import('../server/integration.js?restart');
+  const beforeRestart = count('incidents_snapshot');
+  const capturePoll = callback => {
     poll = callback;
     return { unref() {} };
-  } });
-  t.mock.timers.tick(60_000);
-  await legacy.refreshOperationsOnDemand();
+  };
+  restarted.startOperationsSync({ interval: capturePoll });
   assert.equal(count(), 7);
-  const previousIncidentReads = count('incidents_snapshot');
+  assert.equal(count('incidents_snapshot'), beforeRestart);
+  t.mock.timers.tick(60_000);
+  await poll();
+  assert.equal(count(), 7);
+  assert.equal(count('incidents_snapshot'), beforeRestart + 1);
+  incidentFailure = true;
+  snapshotFailure = true;
+  t.mock.timers.tick(60_000);
   await poll();
   assert.equal(count(), 8);
+  t.mock.timers.tick(60_000);
+  await poll();
+  assert.equal(count(), 8);
+  assert.equal(count('incidents_snapshot'), beforeRestart + 3);
+  snapshotFailure = false;
+  ticket = { ...ticket, version: 5, status: 'en_revision' };
+  t.mock.timers.tick(60_000);
+  await poll();
+  assert.equal(count(), 9);
+  assert.equal((await load(referee, 'incidencias')).incidents.find(row => row.id === ticketId).status, 'investigating');
+
+  incidentFailure = false;
+  operations.setIntegrationStatus({ supported_actions: [] });
+  const withoutCapabilities = await import('../server/integration.js?no-capabilities');
+  withoutCapabilities.startOperationsSync({ interval: capturePoll });
+  await withoutCapabilities.refreshOperationsOnDemand();
+  assert.equal(count(), 10);
+  assert.deepEqual(withoutCapabilities.integrationStatus().supported_actions, ['incident.status']);
+
+  delete process.env.CTP_OPERATIONS_SNAPSHOT_ON_DEMAND;
+  const legacy = await import('../server/integration.js?legacy');
+  legacy.startOperationsSync({ interval: capturePoll });
+  t.mock.timers.tick(60_000);
+  await legacy.refreshOperationsOnDemand();
+  assert.equal(count(), 10);
+  const previousIncidentReads = count('incidents_snapshot');
+  await poll();
+  assert.equal(count(), 11);
   assert.equal(count('incidents_snapshot'), previousIncidentReads + 1);
 });

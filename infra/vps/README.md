@@ -208,6 +208,17 @@ mismas comprobaciones de rol. En ese host solo responden la página, el login y
 participantes la carga un administrador CTP la primera vez que abre la ruleta
 (por el puente ya configurado; no requiere migraciones ni cambios en CTP).
 
+Para validar en PRE la modalidad bajo demanda, configurar
+`MANAGER_RULETA_REFRESH_MODE=on-demand` en el entorno del servicio de Manager
+PRE y reiniciarlo tras publicar una versión compatible. El modo predeterminado
+`background` refresca cada minuto. Bajo demanda, la primera consulta tras un
+minuto comparte una recarga entre las peticiones en curso. Si CTP falla, la
+lista muestra la última copia con un aviso. Un sorteo con la copia caducada
+espera el intento de recarga y puede usar la última copia si CTP no responde.
+Para sortear durante una caída tiene que existir una copia previa.
+La sincronización de Operaciones y la limpieza de sesiones conservan su horario.
+Para volver al modo periódico, usar `background` y reiniciar el servicio PRE.
+
 Comprobación sin sesión:
 
 ```sh

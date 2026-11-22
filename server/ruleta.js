@@ -3,9 +3,9 @@
 // criptográfico; el navegador solo lo anima. Cada sorteo queda guardado.
 //
 // Fuente de participantes:
-//  - Con el puente CTP configurado: usuarios registrados en CTP. El servidor la
-//    recarga solo cada minuto (no hace falta que entre nadie ni pulsar nada) y
-//    la guarda aquí; si CTP falla, se sigue sorteando con la última copia.
+//  - Con el puente CTP configurado: usuarios registrados en CTP. Por defecto
+//    la copia se refresca cada minuto. La modalidad bajo demanda la refresca
+//    al consultar la lista y antes de sortear si la copia ha caducado.
 //    Quién sale como staff se calcula en cada lectura con el mismo criterio de
 //    acceso a Manager: rol CTP o permiso de la página de staff (que se apunta
 //    aquí en cuanto se cambia), salvo que Manager desactive a la persona o le
@@ -44,6 +44,9 @@ for (const [column, definition] of [['staff_kind', "TEXT NOT NULL DEFAULT ''"], 
 }
 
 const REFRESH_MS = 60 * 1000;
+const refreshMode = process.env.MANAGER_RULETA_REFRESH_MODE ?? 'background';
+if (refreshMode !== 'background' && refreshMode !== 'on-demand') throw new Error('manager_ruleta_refresh_mode_invalid');
+const STALE_WARNING = 'No se pudo actualizar desde CTP; se usa la última lista guardada.';
 const setting = (key) => db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value ?? null;
 const saveSetting = (key, value) => db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
 const byName = (a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
@@ -129,9 +132,9 @@ function refreshFromCtp() {
   return refreshing;
 }
 
-/** Recarga periódica en segundo plano: la lista está al día aunque nadie tenga la ruleta abierta. */
+/** Mantiene la copia actualizada en la modalidad periódica. */
 export function startRuletaSync() {
-  if (!ctpBridgeConfigured()) return null;
+  if (refreshMode !== 'background' || !ctpBridgeConfigured()) return null;
   refreshFromCtp().catch(() => {});
   const timer = setInterval(() => refreshFromCtp().catch(() => {}), REFRESH_MS);
   timer.unref();
@@ -144,19 +147,20 @@ export async function listParticipants() {
     return { source: 'manager', people: localPeople(), refreshed_at: Date.now(), truncated: false };
   }
   const refreshedAt = Number(setting('ruleta_refreshed_at')) || 0;
+  const age = Date.now() - refreshedAt;
   let warning = null;
-  if (!refreshedAt) {
-    // Sin ninguna copia todavía: hay que esperar a la primera lectura.
+  if (!refreshedAt || (refreshMode === 'on-demand' && age >= REFRESH_MS)) {
     try {
       await refreshFromCtp();
     } catch (error) {
-      throw error instanceof HttpError ? error : new HttpError(503, 'No se pudo cargar la lista de CTP.');
+      if (!refreshedAt) throw error instanceof HttpError ? error : new HttpError(503, 'No se pudo cargar la lista de CTP.');
+      warning = STALE_WARNING;
     }
-  } else if (Date.now() - refreshedAt > REFRESH_MS) {
+  } else if (age > REFRESH_MS) {
     // Con copia, se responde ya y se pone al día por detrás. Una caída de CTP
     // no borra la última lista buena; si dura, se avisa.
     refreshFromCtp().catch(() => {});
-    if (Date.now() - refreshedAt > 5 * REFRESH_MS) warning = 'No se pudo actualizar desde CTP; se usa la última lista guardada.';
+    if (age > 5 * REFRESH_MS) warning = STALE_WARNING;
   }
   const people = cachedPeople();
   if (!people.length) throw new HttpError(409, 'CTP no ha devuelto ninguna persona registrada.');

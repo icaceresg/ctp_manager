@@ -12,6 +12,7 @@ const admin = '20000000-0000-4000-8000-000000000001';
 const coordinator = '20000000-0000-4000-8000-000000000002';
 const caster = '20000000-0000-4000-8000-000000000003';
 const target = '20000000-0000-4000-8000-000000000004';
+const newPlayer = '20000000-0000-4000-8000-000000000005';
 const bridgeToken = 'fixture-staff-bridge-token-independent-0123456789';
 const bridgeSigning = 'fixture-staff-signing-key-independent-0123456789';
 Object.assign(process.env, {
@@ -21,14 +22,17 @@ Object.assign(process.env, {
   CTP_AUTH_ANON_KEY: `e30.${Buffer.from('{"role":"anon","exp":4102444800}').toString('base64url')}.fixture`,
   CTP_OPERATIONS_URL: 'https://pre.playctp.com/functions/v1/manager-operations', CTP_OPERATIONS_TOKEN: bridgeToken,
   CTP_SIGNING_SECRET: bridgeSigning, CTP_ENABLE_WRITES: 'true', CTP_SYNC_SECONDS: '0',
+  MANAGER_RULETA_REFRESH_MODE: 'on-demand',
 });
 const originalFetch = globalThis.fetch;
 const roles = new Map([[admin, 'admin'], [coordinator, 'operations'], [caster, 'caster'], [target, null]]);
 const grants = new Map();
 const observed = [];
 let targetConfirmed = false;
+let directoryIds = [admin, target];
+let readDirectory = null;
 const row = id => ({
-  id, username: id === admin ? 'Protected Admin' : id === coordinator ? 'Coordinator' : id === caster ? 'Caster' : 'Registered player',
+  id, username: id === admin ? 'Protected Admin' : id === coordinator ? 'Coordinator' : id === caster ? 'Caster' : id === newPlayer ? 'Recent player' : 'Registered player',
   avatar: null, role: roles.get(id) === 'admin' ? 'admin' : roles.get(id) === 'referee' ? 'referee' : 'player',
   staff_kind: grants.get(id) ?? null, staff_enabled: grants.has(id), staff_updated_at: grants.has(id) ? '2026-10-20T12:00:00Z' : null,
   email_confirmed: id !== target || targetConfirmed,
@@ -59,8 +63,9 @@ globalThis.fetch = async (url, init) => {
   const actor = body.actor_id.replace('ctp:', '');
   if (!['admin', 'operations'].includes(roles.get(actor))) return Response.json({}, { status: 403 });
   if (body.payload.action === 'list') {
+    if (readDirectory && !await readDirectory()) return Response.json({}, { status: 503 });
     const { offset, limit } = body.payload;
-    return Response.json({ ok: true, data: { items: [row(admin), row(target)], total: 2, offset, limit } });
+    return Response.json({ ok: true, data: { items: directoryIds.map(row), total: directoryIds.length, offset, limit } });
   }
   if (body.payload.user_id === admin) return Response.json({ secret: 'fixture-private' }, { status: 403 });
   const { user_id, staff_kind, enabled } = body.payload;
@@ -72,6 +77,7 @@ globalThis.fetch = async (url, init) => {
 const auth = await import('../server/auth.js');
 const { db } = await import('../server/db.js');
 const { adminRouter } = await import('../server/routes/admin.js');
+const { ruletaRouter } = await import('../server/routes/ruleta.js');
 const { getAdministrationService } = await import('../server/integration.js');
 const { STAFF_KINDS } = await import('../shared/access.js');
 const { staffDirectoryQuery, staffAccessPayload, staffDirectoryResponse, staffAccessResponse } = await import('../server/staff-access-contract.js');
@@ -80,6 +86,7 @@ before(async () => {
   const app = express();
   app.use(express.json());
   app.use('/api', adminRouter);
+  app.use('/api', ruletaRouter);
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }));
   server = http.createServer(app);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -223,5 +230,70 @@ test('the roulette tags everyone with Manager access and follows staff changes a
   } finally {
     db.prepare('UPDATE users SET active=1 WHERE ctp_user_id=?').run(admin);
     targetConfirmed = false;
+  }
+});
+
+test('on-demand roulette shares one fresh lookup, including for a draw with exclusions', async () => {
+  const { startRuletaSync } = await import('../server/ruleta.js');
+  const session = await signIn('admin');
+  const draws = () => db.prepare('SELECT count(*) AS count FROM ruleta_draws').get().count;
+  const expire = () => db.prepare("UPDATE settings SET value = ? WHERE key = 'ruleta_refreshed_at'").run(String(Date.now() - 120_000));
+  const lookups = () => observed.filter(request => request.payload.action === 'list').length;
+  const before = lookups();
+  assert.equal(startRuletaSync(), null);
+  assert.equal((await api(null, 'GET', '/ruleta/participants')).status, 401);
+  assert.equal((await api(null, 'POST', '/ruleta/draw', {})).status, 401);
+  assert.equal(lookups(), before);
+
+  const baseline = await api(session, 'GET', '/ruleta/participants');
+  assert.equal(baseline.status, 200);
+  assert.deepEqual(baseline.data.people.map(p => p.key).sort(), [admin, target]);
+  expire();
+  directoryIds = [admin, target, newPlayer];
+  let release, entered;
+  const gate = new Promise(resolve => { release = resolve; });
+  const firstLookup = new Promise(resolve => { entered = resolve; });
+  readDirectory = () => { entered(); return gate; };
+  const readsBefore = lookups(), drawsBefore = draws();
+  try {
+    const left = api(session, 'GET', '/ruleta/participants');
+    const right = api(session, 'GET', '/ruleta/participants');
+    const drawing = api(session, 'POST', '/ruleta/draw', { excluded: [admin, target] });
+    await firstLookup;
+    assert.equal(lookups(), readsBefore + 1);
+    assert.equal(draws(), drawsBefore);
+    release(true);
+    const [a, b, winner] = await Promise.all([left, right, drawing]);
+    assert.equal(a.status, 200);
+    assert.deepEqual(a, b);
+    assert.deepEqual(a.data.people.map(p => p.key).sort(), [admin, target, newPlayer]);
+    assert.equal(winner.status, 201);
+    assert.equal(winner.data.winner.key, newPlayer);
+    assert.equal(winner.data.participant_count, 1);
+    assert.equal(draws(), drawsBefore + 1);
+    assert.equal(lookups(), readsBefore + 1);
+
+    expire();
+    readDirectory = async () => false;
+    const fallback = await api(session, 'GET', '/ruleta/participants');
+    assert.equal(fallback.status, 200);
+    assert.deepEqual(fallback.data.people, a.data.people);
+    assert.match(fallback.data.warning, /última lista guardada/);
+    const fallbackDraw = await api(session, 'POST', '/ruleta/draw', { excluded: [admin, target] });
+    assert.equal(fallbackDraw.status, 201);
+    assert.equal(fallbackDraw.data.winner.key, newPlayer);
+    assert.equal(fallbackDraw.data.participant_count, 1);
+    assert.equal(draws(), drawsBefore + 2);
+    assert.equal(lookups(), readsBefore + 3);
+
+    db.exec("DELETE FROM ruleta_people; DELETE FROM settings WHERE key LIKE 'ruleta_%'");
+    const noCache = await api(session, 'POST', '/ruleta/draw', { excluded: [admin, target] });
+    assert.equal(noCache.status, 502);
+    assert.equal(draws(), drawsBefore + 2);
+    assert.equal(lookups(), readsBefore + 4);
+  } finally {
+    release(true);
+    directoryIds = [admin, target];
+    readDirectory = null;
   }
 });

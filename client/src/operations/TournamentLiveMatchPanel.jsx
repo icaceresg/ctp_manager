@@ -4,7 +4,8 @@ import { ArrowUpRight, CalendarClock, ChevronDown, Layers, Repeat, Trophy, Undo2
 import { BEST_OF, dependentMatches, isComplete, needsAttention, nextMatches, playoffRounds, scheduleLocked, slotsLocked, validScores, winsNeeded } from './tournamentLiveModel.js';
 import { competitionDateInput, competitionDateToIso } from './competitionTime.js';
 import { translate } from '../i18n/runtime.js';
-import { ReasonConfirm, StateBadge, entrantName, matchRoundLabel, t, when } from './tournamentLiveUi.jsx';
+import { MatchScore, ReasonConfirm, StateBadge, entrantName, matchRoundLabel, t, when } from './tournamentLiveUi.jsx';
+import { useLiveRead } from './useLiveRead.js';
 
 /**
  * Everything staff can do with one match, one action at a time. Each action
@@ -16,6 +17,7 @@ export default function TournamentLiveMatchPanel({ tournamentId, match, matches,
   const { rounds } = playoffRounds(matches);
   const label = matchRoundLabel(match, rounds);
   const complete = isComplete(match);
+  const attention = needsAttention(match);
   const closed = ['cancelado', 'finalizado'].includes(status);
   const placement = canAssignOpening && match.phase !== 'grupos' && match.round === 1 && !match.is_third_place && !complete;
   const actions = run ? [
@@ -42,15 +44,14 @@ export default function TournamentLiveMatchPanel({ tournamentId, match, matches,
       <div><small>{label} · {t('panel.position', { position: match.position })}</small><StateBadge match={match} /></div>
       <button type="button" className="btn ghost icon sm" onClick={onClose} aria-label={t('panel.close')}><X size={16} /></button>
     </header>
-    <div className="op-live-score">
-      {[['a', match.entrant_a, match.score_a], ['b', match.entrant_b, match.score_b]].map(([side, entrant, score]) =>
-        <div key={side} className={`op-live-score-side${entrant && entrant.id === match.winner_id ? ' is-winner' : ''}`}><span>{entrantName(entrant)}</span><strong>{score ?? '–'}</strong></div>)}
-    </div>
+    {attention && canOpenMatch
+      ? <ReportedPanelScore key={match.result_status} tournamentId={tournamentId} match={match} />
+      : <MatchScore match={match} />}
     <p className="op-live-meta">{t('match.bestOf', { count: match.best_of })} · {match.scheduled_at ? when(match.scheduled_at) : t('match.unscheduled')} · {t(`veto.${['running', 'done', 'ready'].includes(match.pick_ban_status) ? match.pick_ban_status : 'none'}`)}</p>
 
     {canOpenMatch && <Link className="btn op-live-open" to={`/operaciones/torneos?tournament=${encodeURIComponent(tournamentId)}&tab=arbitration&arbitrationMatch=${encodeURIComponent(match.id)}`}>
       {t('panel.openPage')} <ArrowUpRight size={15} /></Link>}
-    {needsAttention(match) && <p className="op-notice">{t(match.result_status === 'disputed' ? 'panel.disputed' : 'panel.reported')}</p>}
+    {attention && <p className="op-notice">{t(match.result_status === 'disputed' ? 'panel.disputed' : 'panel.reported')}</p>}
 
     {actions.length > 0 && <h3 className="op-live-panel-title">{t('panel.actions')}</h3>}
     <ul className="op-live-actions">
@@ -73,6 +74,16 @@ export default function TournamentLiveMatchPanel({ tournamentId, match, matches,
       })}
     </ul>
   </aside>;
+}
+
+function ReportedPanelScore({ tournamentId, match }) {
+  const [reports, setReports] = useState(null);
+  useLiveRead(`/operations/tournaments/${encodeURIComponent(tournamentId)}/live/matches/${encodeURIComponent(match.id)}`, {
+    onReset: () => setReports(null),
+    onValue: value => setReports(value.reports ?? []),
+    onError: () => setReports([]),
+  });
+  return <MatchScore match={match} reports={reports ?? []} loading={reports === null} />;
 }
 
 function Consequences({ match, matches, rounds, winner }) {

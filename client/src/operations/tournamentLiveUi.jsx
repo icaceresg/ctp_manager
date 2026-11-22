@@ -48,6 +48,36 @@ export function StateBadge({ match }) {
   return <span className={`op-live-state is-${matchState(match)}`}>{stateLabel(match)}</span>;
 }
 
+function ScoreRows({ match, scoreA, scoreB, official = false }) {
+  const number = new Intl.NumberFormat(getIntlLocale());
+  return <div className="op-live-score">
+    {[['a', match.entrant_a, scoreA], ['b', match.entrant_b, scoreB]].map(([side, entrant, score]) =>
+      <div key={side} className={`op-live-score-side${official && entrant && entrant.id === match.winner_id ? ' is-winner' : ''}`}>
+        <span>{entrantName(entrant)}</span><strong>{score == null ? '–' : number.format(score)}</strong>
+      </div>)}
+  </div>;
+}
+
+export function MatchScore({ match, reports, loading = false }) {
+  if (reports?.length) return <div className="op-live-reports">
+    <strong>{t('reportedScore.title')}</strong>
+    {reports.map(report => {
+      const team = entrantName(report.side === 'a' ? match.entrant_a : match.entrant_b);
+      return <div key={report.side} className="op-live-report">
+        <p className="op-live-meta">{report.author_name
+          ? t('reportedScore.author', { team, name: report.author_name })
+          : t('reportedScore.unknownAuthor', { team })}</p>
+        <ScoreRows match={match} scoreA={report.maps_a} scoreB={report.maps_b} />
+      </div>;
+    })}
+  </div>;
+
+  return <div className="op-live-score">
+    <ScoreRows match={match} scoreA={match.score_a} scoreB={match.score_b} official />
+    {reports && <p className="op-live-meta" role="status">{t(loading ? 'reportedScore.loading' : 'reportedScore.unavailable')}</p>}
+  </div>;
+}
+
 /**
  * The reason travels with every action: it lives next to the confirm button,
  * offers ready-made sentences, counts what is missing and says why the button

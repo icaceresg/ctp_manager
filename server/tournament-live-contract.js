@@ -291,7 +291,20 @@ function matchRoster(rows) {
   });
 }
 
-/** Explicit DTO for one match: public names, veto sequence, pool and chat. */
+function matchReports(rows) {
+  if (!Array.isArray(rows) || rows.length > SIDES.length) fail(502, 'unavailable');
+  const sides = new Set();
+  return rows.map(row => {
+    if (!object(row) || !SIDES.includes(row.side) || sides.has(row.side)
+      || (row.author_name != null && !text(row.author_name))) fail(502, 'unavailable');
+    const maps_a = optionalInt(row.maps_a), maps_b = optionalInt(row.maps_b);
+    if (maps_a === null || maps_b === null) fail(502, 'unavailable');
+    sides.add(row.side);
+    return { side: row.side, author_name: row.author_name ?? null, maps_a, maps_b };
+  });
+}
+
+/** Explicit DTO for one match, including open reports, veto, pool and chat. */
 export function tournamentLiveMatchResponse(value, payload) {
   if (!object(value)) fail(502, 'unavailable');
   const t = value.tournament, m = value.match;
@@ -308,6 +321,7 @@ export function tournamentLiveMatchResponse(value, payload) {
       pick_ban_started_at: optionalDate(m.pick_ban_started_at), pick_ban_role_choice: ['A', 'B'].includes(m.pick_ban_role_choice) ? m.pick_ban_role_choice : null,
       pick_ban_manual_referee: m.pick_ban_manual_referee === true,
     },
+    reports: ['pending', 'disputed'].includes(m.result_status) ? matchReports(value.reports ?? []) : [],
     steps: value.steps.map(row => {
       if (!object(row) || typeof row.id !== 'string' || !UUID.test(row.id) || !Number.isInteger(row.step_index) || !Number.isInteger(row.map_slot)
         || !STEP_ACTIONS.includes(row.action) || !SIDES.includes(row.actor_side) || !text(row.mode, 80)

@@ -123,6 +123,10 @@ button.op-live-time:hover, .op-live-open-match:hover { background: var(--accent-
 .op-live-score-side { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: 8px; background: var(--surface); font-size: 15px; }
 .op-live-score-side strong { font-size: 18px; }
 .op-live-score-side.is-winner { color: var(--accent-text); box-shadow: inset 3px 0 0 var(--accent); }
+.op-live-reports { display: grid; gap: 12px; }
+.op-live-reports > strong { font-size: 14px; }
+.op-live-report { display: grid; gap: 6px; }
+.op-live-report .op-live-meta, .op-live-report .op-live-score-side span { overflow-wrap: anywhere; }
 .op-live-meta { margin: 0; font-size: 12px; color: var(--text-2); }
 .op-live-open { justify-content: center; text-decoration: none; }
 .op-live-panel-title { margin: 6px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); }

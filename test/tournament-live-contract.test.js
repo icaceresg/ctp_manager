@@ -163,3 +163,28 @@ test('the match DTO keeps the veto, pool and chat but drops ids and unsafe image
   const routes = fs.readFileSync(new URL('../server/routes/integration.js', import.meta.url), 'utf8');
   assert.match(routes, /'\/operations\/tournaments\/:id\/live\/matches\/:matchId',requireAuth,allow\('arbitraje'\)/);
 });
+
+test('the match DTO exposes submitted maps and authors for open reports', () => {
+  const payload = tournamentLiveMatchRead(tournament, match);
+  const view = matchView();
+  const pending = { ...view, match: { ...view.match, result_status: 'pending' } };
+  const reportA = { side: 'a', author_name: 'Álpha', maps_a: 2, maps_b: 0 };
+  const reportB = { side: 'b', author_name: 'Bravo', maps_a: 1, maps_b: 2 };
+  const submitted = tournamentLiveMatchResponse({
+    ...pending, reports: [{ ...reportA, reported_by: participant, note: 'private', proof_url: 'private' }],
+  }, payload);
+  assert.deepEqual(submitted.reports, [reportA]);
+  assert.equal(submitted.match.score_a, null);
+  assert.equal(submitted.match.score_b, null);
+  assert.deepEqual(tournamentLiveMatchResponse(pending, payload).reports, []);
+  assert.deepEqual(tournamentLiveMatchResponse({
+    ...view, match: { ...view.match, result_status: 'disputed' }, reports: [reportA, reportB],
+  }, payload).reports, [reportA, reportB]);
+  assert.deepEqual(tournamentLiveMatchResponse({
+    ...view, match: { ...view.match, result_status: 'confirmed' }, reports: [reportA],
+  }, payload).reports, []);
+  assert.throws(() => tournamentLiveMatchResponse({ ...pending, reports: [reportA, reportA] }, payload), { status: 502 });
+  assert.throws(() => tournamentLiveMatchResponse({
+    ...pending, reports: [{ ...reportA, maps_b: '0' }],
+  }, payload), { status: 502 });
+});

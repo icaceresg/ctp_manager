@@ -4,8 +4,8 @@ import { ArrowLeft, ArrowUpRight, Clock3, Pencil, RefreshCw, ShieldAlert, Swords
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { getIntlLocale } from '../i18n/runtime.js';
-import { canEditVetoStep, currentStep, playoffRounds, scheduleLocked, stepChoices, stepSwapChoices, vetoActions, vetoBlocked, vetoSlots, vetoTooEarly } from './tournamentLiveModel.js';
-import { ReasonConfirm, StateBadge, clock, clockSeconds, entrantName, matchRoundLabel, statusLabel, t, tournamentLiveError, when } from './tournamentLiveUi.jsx';
+import { canEditVetoStep, currentStep, needsAttention, playoffRounds, scheduleLocked, stepChoices, stepSwapChoices, vetoActions, vetoBlocked, vetoSlots, vetoTooEarly } from './tournamentLiveModel.js';
+import { MatchScore, ReasonConfirm, StateBadge, clock, clockSeconds, entrantName, matchRoundLabel, statusLabel, t, tournamentLiveError, when } from './tournamentLiveUi.jsx';
 import { ResultForm, RevertForm, ScheduleForm } from './TournamentLiveMatchPanel.jsx';
 import TournamentMatchChat from './TournamentMatchChat.jsx';
 import { useLiveRead } from './useLiveRead.js';
@@ -128,10 +128,7 @@ export function TournamentLiveMatch({ tournamentId, matchId, canWrite = true, on
     <RefereeRequests requests={detail.referee_requests ?? []} />
     <div className="op-live-page-grid">
       <section className="op-card op-live-page-score" aria-label={p('score')}>
-        <div className="op-live-score">
-          {[['a', match.entrant_a, match.score_a], ['b', match.entrant_b, match.score_b]].map(([side, entrant, score]) =>
-            <div key={side} className={`op-live-score-side${entrant && entrant.id === match.winner_id ? ' is-winner' : ''}`}><span>{entrantName(entrant)}</span><strong>{score ?? '–'}</strong></div>)}
-        </div>
+        <MatchScore match={match} reports={needsAttention(match) ? detail.reports ?? [] : undefined} />
         <p className="op-live-meta">{t('match.bestOf', { count: match.best_of })} · {match.scheduled_at ? when(match.scheduled_at) : t('match.unscheduled')}</p>
       </section>
       <MatchRosters match={match} roster={detail.roster} />

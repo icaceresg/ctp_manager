@@ -1,12 +1,14 @@
-import { Router } from 'express';
+import { Router, json } from 'express';
 import { requireAuth,requireAdmin } from '../auth.js';
 import { queryAdministration,proposeAdministration } from '../administration.js';
 import { integrationServicesStatus,ownerAction,uploadAdministrationImage,staffAlertsAction } from '../administration-services.js';
 import { crmAction } from '../crm.js';
-import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,updateCtpClub,teamRosterService,rankedEventService,webPublicationService,siteNoticeService } from '../integration.js';
+import { getCtpUserProfile,updateCtpUserProfile,deleteCtpUser,updateCtpClub,teamRosterService,rankedEventService,webPublicationService,siteNoticeService,sanctionResolutionService } from '../integration.js';
 import { metricsHandler } from '../metrics.js';
 
 export const administrationRouter=Router();
+export const sanctionResolutionRouter = Router();
+sanctionResolutionRouter.use('/administration/sanction-resolutions', requireAuth, requireAdmin);
 administrationRouter.use('/administration',requireAuth,requireAdmin);
 administrationRouter.get('/administration/metrics',metricsHandler);
 administrationRouter.get('/administration',async(req,res)=>res.json(await queryAdministration(req.user,req.query)));
@@ -19,6 +21,18 @@ administrationRouter.post('/administration/ranked-event',async(req,res)=>res.jso
 administrationRouter.get('/administration/web-publication',async(req,res)=>res.json(await webPublicationService(req.user,{action:'status'})));
 administrationRouter.get('/administration/site-notice',async(req,res)=>res.json(await siteNoticeService(req.user,{action:'status'})));
 administrationRouter.post('/administration/site-notice',async(req,res)=>res.json(await siteNoticeService(req.user,req.body)));
+sanctionResolutionRouter.get('/administration/sanction-resolutions', async (req, res) => {
+  const offset = req.query.offset ?? '0';
+  const pageOffset = Object.keys(req.query).every(key => key === 'offset')
+    && typeof offset === 'string' && /^[0-9]{1,6}$/.test(offset) ? Number(offset) : NaN;
+  res.json(await sanctionResolutionService(req.user, { action: 'list', offset: pageOffset }));
+});
+sanctionResolutionRouter.post('/administration/sanction-resolutions', json({ limit: '3mb' }), async (req, res) => {
+  res.json(await sanctionResolutionService(req.user, { ...req.body, action: 'save' }));
+});
+sanctionResolutionRouter.get('/administration/sanction-resolutions/:id/document', async (req, res) => {
+  res.json(await sanctionResolutionService(req.user, { action: 'document', id: req.params.id }));
+});
 administrationRouter.post('/administration/web-publication',async(req,res)=>res.json(await webPublicationService(req.user,req.body)));
 administrationRouter.post('/administration/web-publication/search',async(req,res)=>res.json(await webPublicationService(req.user,{...req.body,action:'search'})));
 administrationRouter.post('/administration/web-publication/upload',async(req,res)=>res.json(await webPublicationService(req.user,{...req.body,action:'upload'})));

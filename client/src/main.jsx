@@ -33,6 +33,7 @@ import ChallengeWorkspacePage from './pages/ChallengeWorkspacePage.jsx';
 import { RankedSeasonsPage } from './operations/RankedSeasonPanel.jsx';
 import PlayerWorkspacePage from './pages/PlayerWorkspacePage.jsx';
 import WebPublicationPage from './pages/WebPublicationPage.jsx';
+import SanctionResolutionsPage from './pages/SanctionResolutionsPage.jsx';
 import MetricsPage from './pages/MetricsPage.jsx';
 import { metricsAllowedHost } from './pages/metricsModel.js';
 import CrmPage from './pages/CrmPage.jsx';
@@ -133,6 +134,7 @@ function App() {
           <Route path="retrospectivas/:retrospectiveId" element={guard('retrospectivas', <RetrospectivesPage />)} />
           <Route path="usuarios" element={canManageStaff(me) ? <UsersPage /> : <Navigate to={home} replace />} />
           <Route path="administracion" element={me.is_admin ? <Navigate to="/administracion/resumen" replace /> : <Navigate to={home} replace />} />
+          <Route path="administracion/resoluciones" element={me.is_admin ? <SanctionResolutionsPage /> : <Navigate to={home} replace />} />
           <Route path="administracion/:section" element={me.is_admin ? <AdministrationPage /> : <Navigate to={home} replace />} />
           <Route path="publicacion" element={me.is_admin ? <WebPublicationPage /> : <Navigate to={home} replace />} />
           <Route path="administration/metrics" element={me.is_admin === true && metricsAllowedHost(window.location.hostname) ? <MetricsPage /> : <Navigate to={home} replace />} />

@@ -1,0 +1,35 @@
+.sanction-editor {
+  display: grid;
+  gap: 16px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sanction-editor .op-field textarea {
+  resize: vertical;
+}
+
+.sanction-editor .op-check {
+  align-items: center;
+  justify-self: start;
+}
+
+.sanction-document {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.sanction-document > span,
+.sanction-player {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .sanction-editor-grid {
+    grid-template-columns: 1fr;
+  }
+}

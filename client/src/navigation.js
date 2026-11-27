@@ -39,6 +39,7 @@ export function managerNavigation(can, isAdmin, staffManager = false, rankedStaf
   }
   if (isAdmin) items.push(
     { id: 'publicacion', to: '/publicacion', title: 'Publicación web', group: 'Administración', keywords: 'publicar web pública mostrar ocultar anunciar anuncio lanzamiento torneos calendario fechas scrims entrenamientos equipos clubes team pass mercado secciones clasificado inscripción abrir iva impuestos zona país facturación oss vies ventanilla única' },
+    { id: 'sanction-resolutions', to: '/administracion/resoluciones', title: translate('manager.sanctionResolutions.title'), group: 'Administración', keywords: translate('manager.sanctionResolutions.navigationKeywords') },
     { id: 'administracion', to: '/administracion/resumen', title: 'Administración CTP', group: 'Administración', keywords: 'jugadores clubes accesos pases mapas campañas ranked integraciones auditoría' },
     { id: 'crm', to: '/crm/resumen', title: 'CRM y correos', group: 'Administración', keywords: 'campañas email newsletter contactos segmentos marketing promocionales transaccionales plantillas fluentcrm' },
     { id: 'usuarios', to: '/usuarios', title: 'Usuarios y roles', group: 'Administración', keywords: 'permisos staff cuentas' },

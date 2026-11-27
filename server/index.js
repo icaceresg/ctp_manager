@@ -17,7 +17,7 @@ import { integrationRouter } from './routes/integration.js';
 import { startOperationsSync } from './integration.js';
 import { startRuletaSync } from './ruleta.js';
 import { obsRouter } from './routes/obs.js';
-import { administrationRouter } from './routes/administration.js';
+import { administrationRouter, sanctionResolutionRouter } from './routes/administration.js';
 import { retrospectivesRouter } from './routes/retrospectives.js';
 import { backgroundJobsEnabled, createHttpDrain, startBackgroundJobs } from './process-lifecycle.js';
 
@@ -58,6 +58,8 @@ app.use(migrationShadowBoundary(migrationShadow, AUTH_CONFIG));
 app.use('/api/administration/images', express.json({limit:'3mb'}));
 app.use('/api/administration/web-publication/upload', express.json({limit:'3mb'}));
 app.use('/api/administration/crm', express.json({limit:'2mb'}));
+// Authenticate sanction editors before parsing their larger, dedicated PDF payload.
+app.use('/api', sanctionResolutionRouter);
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', authRouter, ruletaRouter, administrationRouter, obsRouter, integrationRouter, operationsRouter, retrospectivesRouter, adminRouter, boardRouter, apiRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));

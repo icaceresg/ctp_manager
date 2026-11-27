@@ -13,7 +13,7 @@ export function BrandMark({ size = 30 }) {
   return <img className="brand-mark" src="/brand/favicon.svg" width={size} height={size} alt="" />;
 }
 
-const ICONS = { retrospectivas: History, jugadores: UserRound, 'ranked-monitor': Activity, 'ranked-stats': ChartColumnBig, challenges: Swords, jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, metrics: ChartNoAxesCombined, discord: MessageSquare, sanciones: Gavel, arbitraje: ClipboardCheck, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
+const ICONS = { retrospectivas: History, jugadores: UserRound, 'ranked-monitor': Activity, 'ranked-stats': ChartColumnBig, challenges: Swords, jornada: Activity, torneos: Trophy, incidencias: ShieldCheck, turnos: Users, casters: FileText, realizacion: Radio, metrics: ChartNoAxesCombined, discord: MessageSquare, sanciones: Gavel, 'sanction-resolutions': FileText, arbitraje: ClipboardCheck, contenido: FileText, historico: History, decisiones: ListChecks, integracion: Settings2, usuarios: Users, calendario: CalendarDays, escaleta: Clapperboard, recursos: ListChecks, disponibilidad: CalendarCheck, tablero: SquareKanban, ruleta: Gift };
 
 function PendingBadge() {
   const { data: withResources } = useData(() => api.get('/contents?with_resources=1'));

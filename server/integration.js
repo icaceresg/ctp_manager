@@ -37,6 +37,7 @@ import {PLAYER_WORKSPACE_ERRORS} from './player-workspace-contract.js';
 import {createStaffAlertsClient} from './staff-alerts-client.js';
 import {createRankedEventClient} from './ranked-event-client.js';
 import {createWebPublicationClient} from './web-publication-client.js';
+import { createSanctionResolutionClient } from './sanction-resolution-client.js';
 import {createSiteNoticeClient} from './site-notice-client.js';
 import { createPlayerLiveReader } from './player-live-client.js';
 import { createPublicPlayerLiveRequest } from './player-live-public.js';
@@ -371,6 +372,9 @@ const staffAlertsService=createStaffAlertsClient({request,actorFor:user=>getOper
 export const rankedEventService=createRankedEventClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const webPublicationService=createWebPublicationClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
 export const siteNoticeService=createSiteNoticeClient({request,actorFor:user=>getOperatorIdentity(user.id),writesEnabled:()=>config.writes});
+export const sanctionResolutionService = createSanctionResolutionClient({
+  request, actorFor: user => getOperatorIdentity(user.id), writesEnabled: () => config.writes,
+});
 setIntegrationStatus({ configured: config.configured, write_enabled: config.configured && config.writes, local_test_mode: config.localTestMode === true, web_origin: webOrigin(), snapshot_on_demand: config.snapshotOnDemand === true });
 
 export function integrationStatus() {

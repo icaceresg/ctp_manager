@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Ban, Clock3, Gavel, Megaphone, RefreshCw, Search, UserRound } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
+import { translate } from '../i18n/runtime.js';
 import { Modal, Spinner } from '../components/ui.jsx';
 import { Badge, DataTable, Empty, Field, FormDialog } from './ui.jsx';
 import { dateTime } from './model.js';
@@ -40,6 +41,7 @@ function useRemote(url) {
 }
 
 export function SanctionsPanel({ data }) {
+  const { me } = useApp();
   const [params, setParams] = useSearchParams();
   const tab = TABS.some(item => item.id === params.get('tab')) ? params.get('tab') : 'activas';
   const userId = params.get('user');
@@ -58,6 +60,7 @@ export function SanctionsPanel({ data }) {
   if (!configured) return <Empty title="Conexión con CTP pendiente">Las sanciones se leen y se aplican directamente en CTP. Configura la conexión para usarlas.</Empty>;
   return <div className="sx-page">
     <p className="muted sx-intro">Sanciona o amonesta a cualquier cuenta de CTP. Se aplica al momento y el jugador recibe el aviso en la web.</p>
+    {me.is_admin && <div><Link className="btn sm" to="/administracion/resoluciones">{translate('manager.sanctionResolutions.title')}</Link></div>}
     {!writable && <p className="op-notice">El envío de cambios oficiales está desactivado en este Manager. Puedes consultar, pero no sancionar.</p>}
     <div className="sx-tabs">
       <nav className="op-dossier-nav" aria-label="Secciones de sanciones">

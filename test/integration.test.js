@@ -17,9 +17,28 @@ process.env.DATA_DIR = path.join(temp, 'unit'); process.env.DB_PATH = '';
 process.env.CTP_OPERATIONS_URL = ''; process.env.CTP_OPERATIONS_TOKEN = '';
 process.env.PUBLIC_ORIGIN = '';
 const { integrationConfig, createOperationsTransport, webOrigin } = await import('../server/integration.js');
+const { createSanctionResolutionClient } = await import('../server/sanction-resolution-client.js');
 const { db } = await import('../server/db.js');
 const token = 'ctp-test-secret-is-only-on-server-0123456789';
 const signingSecret = 'ctp-independent-signing-test-secret-0123456789';
+
+test('sanction resolutions accept the canonical bound CTP administrator identity', async () => {
+  const ctp_user_id = '53000000-0000-4000-8000-000000000002';
+  const user = { id: 1, is_admin: true, ctp_user_id, ctp_role: 'admin' };
+  const calls = [];
+  const clientFor = actorFor => createSanctionResolutionClient({
+    request: async request => { calls.push(request); return { items: [] }; },
+    actorFor,
+    writesEnabled: () => true,
+  });
+  const payload = { action: 'list', offset: 0 };
+  const official = clientFor(() => 'ctp:' + ctp_user_id);
+  assert.deepEqual(await official(user, payload), { items: [] });
+  assert.deepEqual(calls, [{ action: 'admin_service', service: 'sanction_resolutions', actor_id: 'ctp:' + ctp_user_id, payload }]);
+  await assert.rejects(official({ ...user, ctp_role: 'referee' }, payload), { status: 403 });
+  await assert.rejects(clientFor(() => ctp_user_id)(user, payload), { status: 403 });
+  assert.equal(calls.length, 1);
+});
 
 test('configuración del puente impide destinos inseguros y credenciales débiles', () => {
   assert.equal(integrationConfig({}).configured, false);
@@ -146,6 +165,8 @@ const challengeTicket = {
   id: '33333333-2222-4333-8444-555555555555', challenge_id: challengeId, code: 'CTP-CHALLENGE', type: 'no_show',
   status: 'resuelto', priority: 'alta', created_at: '2025-10-12T19:15:00.123456+00:00', author_name: 'Jugador', assigned_name: null,
 };
+const resolutionPath = '/administration/sanction-resolutions';
+const resolutions = new Map();
 async function api(method, route, body, session = cookie) {
   const response = await fetch(`http://localhost:${port}/api${route}`, { method, headers: { Cookie: session, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const setCookie = response.headers.get('set-cookie');
@@ -220,6 +241,24 @@ before(async () => {
       response.end(JSON.stringify({ ok: true, data: { ticket: { ...challengeTicket, manager_version: 1,
         description: 'No se presentó el rival.', author: { id: challengeAuthor, username: challengeTicket.author_name }, assigned: null },
       messages: [], events: [] } })); return;
+    }
+    if (parsed.action === 'admin_service' && parsed.service === 'sanction_resolutions') {
+      const { action, id, expected_version, document, published, offset, ...fields } = parsed.payload;
+      const current = resolutions.get(id);
+      let data;
+      if (action === 'list') data = { items: [...resolutions.values()].slice(offset, offset + 26).map(entry => entry.row) };
+      if (action === 'document') data = { document: current?.document ?? null };
+      if (action === 'save') {
+        if ((current?.row.version ?? 0) !== expected_version) { response.writeHead(409).end('{"ok":false,"code":"conflict"}'); return; }
+        const now = '2026-11-27T15:00:00Z';
+        const savedDocument = document === undefined ? current?.document ?? null : document;
+        const row = { ...fields, id, version: expected_version + 1, document_name: savedDocument?.name ?? null,
+          updated_at: now, published_at: published ? now : null };
+        resolutions.set(id, { row, document: savedDocument });
+        data = row;
+      }
+      response.end(JSON.stringify({ ok: true, data }));
+      return;
     }
     if (parsed.action === 'club_candidates') { response.end(JSON.stringify({ ok: true, data: clubCandidates })); return; }
     if (parsed.action === 'competition' && parsed.resource === 'tournaments') {
@@ -636,6 +675,46 @@ test('Ranked lobby local QA validates queries before transport and projects priv
  const session=(await api('POST','/auth/login',{username:'detail-referee',password:'detail-test-password'},'')).cookie;
  before=observed.length;assert.equal((await api('GET',`/operations/ranked/lobbies/${lobbyId}`,undefined,session)).status,403);assert.equal(observed.length,before);
  mode='forbidden';const denied=await api('GET',`/operations/ranked/lobbies/${lobbyId}`);assert.equal(denied.status,403);assert.equal(JSON.stringify(denied.data).includes(token),false);mode='ok';
+});
+
+test('sanction resolutions are edited by admins over the signed bridge, with optional PDFs and version conflicts', async () => {
+  await start(true);
+  mode = 'ok';
+  const count = observed.length;
+  assert.equal((await api('GET', resolutionPath, undefined, '')).status, 401);
+  const role = (await api('POST', '/roles', { name: 'PUBLICATION REFEREE', staff_kind: 'referee', sections: ['arbitraje'] })).data;
+  assert.equal((await api('POST', '/users', { username: 'publication-referee', password: 'publication-test-password', role_ids: [role.id] })).status, 201);
+  const referee = (await api('POST', '/auth/login', { username: 'publication-referee', password: 'publication-test-password' }, '')).cookie;
+  assert.equal((await api('GET', resolutionPath, undefined, referee)).status, 403);
+  assert.equal(observed.length, count);
+
+  const id = '53000000-0000-4000-8000-000000000001';
+  const draft = { id, expected_version: 0, player_name: 'QAPlayer', scope: 'ranked', reason: 'Synthetic reason',
+    starts_on: '2026-11-27', ends_on: null, comments: '', published: false };
+  const document = { name: 'decision.pdf', content_base64: Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(1024 * 1024)]).toString('base64') };
+  assert.equal((await api('POST', resolutionPath, { ...draft, document: { ...document, content_base64: 'dGV4dA==' } })).status, 422);
+  assert.equal((await api('POST', resolutionPath, { ...draft, document }, referee)).status, 403);
+  assert.equal(observed.length, count);
+
+  const added = await api('POST', resolutionPath, { ...draft, document });
+  assert.equal(added.status, 200);
+  assert.equal(added.data.version, 1);
+  assert.equal(added.data.published_at, null);
+  assert.ok(observed.at(-1).actor_id);
+  assert.deepEqual(observed.at(-1).payload, { ...draft, action: 'save', document });
+  assert.deepEqual((await api('GET', resolutionPath + '/' + id + '/document')).data, { document });
+  assert.deepEqual((await api('GET', resolutionPath)).data.items, [added.data]);
+
+  const publish = { ...draft, expected_version: 1, published: true, scope: 'circuit', ends_on: '2026-12-04', comments: 'Synthetic comment' };
+  const published = await api('POST', resolutionPath, publish);
+  assert.equal(published.status, 200);
+  assert.ok(published.data.published_at);
+  assert.equal(published.data.document_name, document.name);
+  assert.equal((await api('POST', resolutionPath, { ...publish, comments: 'A stale edit' })).status, 409);
+  const hidden = await api('POST', resolutionPath, { ...publish, expected_version: 2, published: false, document: null });
+  assert.equal(hidden.status, 200);
+  assert.equal(hidden.data.published_at, null);
+  assert.deepEqual((await api('GET', resolutionPath + '/' + id + '/document')).data, { document: null });
 });
 
 test('disabled Manager writes mask the remote chat capability and block sending before transport',async()=>{

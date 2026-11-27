@@ -19,6 +19,9 @@ const admin='10000000-0000-4000-8000-000000000001';
 const referee='10000000-0000-4000-8000-000000000002';
 const player='10000000-0000-4000-8000-000000000003';
 const observed=[], sessions=new Map();
+const operationsToken=crypto.randomBytes(32).toString('hex');
+const signingSecret=crypto.randomBytes(32).toString('hex');
+const resolutionsPath='/api/administration/sanction-resolutions';
 let provider, redirectTarget, child, managerPort, authOrigin, redirectVisits=0;
 
 function send(res,status,data){res.writeHead(status,{'Content-Type':'application/json','Connection':'close'});res.end(JSON.stringify(data));}
@@ -55,6 +58,15 @@ before(async()=>{
    return send(res,200,{ctp_user_id:subject,username:subject===admin?'DEV Admin':'DEV Referee',
     role:subject===admin?'admin':'referee',actor_id:`ctp:${subject}`,scopes:subject===admin?['admin.console','ranked.read']:['ranked.read']});
   }
+  if(req.method==='POST'&&req.url==='/functions/v1/manager-operations'){
+   const {['x-ctp-timestamp']:timestamp,['x-ctp-nonce']:nonce,['x-ctp-manager-origin']:origin,['x-ctp-signature']:signature}=req.headers;
+   const digest=crypto.createHash('sha256').update(raw,'utf8').digest('hex');
+   const canonical=['v1',timestamp,nonce,origin,req.method,req.url,digest].join('\n');
+   const expected=crypto.createHmac('sha256',signingSecret).update(canonical,'utf8').digest('hex');
+   if(req.headers.authorization!=='Bearer '+operationsToken||!timestamp||!nonce||signature!==expected)return send(res,401,{});
+   if(body.actor_id!=='ctp:'+admin||body.service!=='sanction_resolutions'||body.payload?.action!=='list')return send(res,403,{});
+   return send(res,200,{ok:true,data:{items:[]}});
+  }
   send(res,404,{});
  });
  const authPort=await listen(provider);authOrigin=`http://127.0.0.1:${authPort}`;
@@ -67,7 +79,7 @@ before(async()=>{
    CTP_AUTH_URL:authOrigin,CTP_WEB_ORIGIN:authOrigin,CTP_OPERATIONS_URL:authOrigin+'/functions/v1/manager-operations',
    CTP_AUTH_ANON_KEY:anon,CTP_AUTH_TOKEN_KEY:crypto.randomBytes(32).toString('base64url'),
    CTP_AUTH_CAPTCHA_REQUIRED:'false',CTP_AUTH_CAPTCHA_SITE_KEY:'',
-   CTP_OPERATIONS_TOKEN:crypto.randomBytes(32).toString('hex'),CTP_SIGNING_SECRET:crypto.randomBytes(32).toString('hex'),
+   CTP_OPERATIONS_TOKEN:operationsToken,CTP_SIGNING_SECRET:signingSecret,
    CTP_ALLOW_LOCAL_WRITES:'false',CTP_ENABLE_WRITES:'false',CTP_SYNC_SECONDS:'0',OBS_ENABLE_CONTROL:'false',
   }});
  let output='';child.stdout.on('data',chunk=>output+=chunk);child.stderr.on('data',chunk=>output+=chunk);
@@ -127,4 +139,18 @@ test('provider redirects are never followed and rejected credentials never creat
  const denied=await request('POST','/api/auth/login',{email:'admin@example.invalid',password:'wrong-synthetic-password'});
  assert.equal(denied.status,401);assert.equal(denied.headers['set-cookie'],undefined);
  assert.ok(observed.every(row=>['/auth/v1/token?grant_type=password','/rest/v1/rpc/manager_link_own_identity'].includes(row.path)));
+});
+
+test('a shared CTP session reaches sanction resolutions with its canonical signed actor',async()=>{
+ const login=await request('POST','/api/auth/login',{email:'admin@example.invalid',password:'synthetic-dev-password'});
+ assert.equal(login.status,200);
+ const cookie=login.headers['set-cookie'][0].split(';',1)[0];
+ const result=await request('GET',resolutionsPath,undefined,cookie);
+ assert.equal(result.status,200);
+ assert.deepEqual(result.data,{items:[]});
+ assert.deepEqual(observed.at(-1).body,{action:'admin_service',actor_id:'ctp:'+admin,service:'sanction_resolutions',payload:{action:'list',offset:0}});
+ const denied=await request('POST','/api/auth/login',{email:'referee@example.invalid',password:'synthetic-dev-password'});
+ const before=observed.filter(item=>item.path==='/functions/v1/manager-operations').length;
+ assert.equal((await request('GET',resolutionsPath,undefined,denied.headers['set-cookie'][0].split(';',1)[0])).status,403);
+ assert.equal(observed.filter(item=>item.path==='/functions/v1/manager-operations').length,before);
 });
